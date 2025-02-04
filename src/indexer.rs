@@ -5,9 +5,9 @@ use alloy::{
 };
 use eyre::Result;
 use futures_util::StreamExt;
+use tracing::info;
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 use twine_evm_contracts::evm::twine::l2_messenger::L2Messenger;
-use tracing::info;
 
 pub async fn run_indexer(rpc_url: String) -> Result<()> {
     let ws = WsConnect::new(&rpc_url);
