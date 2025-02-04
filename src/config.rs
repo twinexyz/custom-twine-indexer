@@ -5,6 +5,7 @@ use std::env;
 pub struct Config {
     pub database_url: String,
     pub rpc_url: String,
+    pub port: u16,
 }
 
 impl Config {
@@ -14,9 +15,15 @@ impl Config {
 
         let rpc_url = env::var("RPC_URL").unwrap_or_else(|_| "ws://localhost:8546".to_owned());
 
+        let port = env::var("HTTP_PORT")
+            .map(|addr| addr.parse().context("Invalid HTTP_PORT format"))
+            .unwrap_or_else(|_| Ok(7777))
+            .context("Failed to parse HTTP_PORT")?;
+
         Ok(Self {
             database_url,
             rpc_url,
+            port,
         })
     }
 }

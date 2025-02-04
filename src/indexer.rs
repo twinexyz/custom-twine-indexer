@@ -3,16 +3,12 @@ use alloy::{
     rpc::types::Filter,
     sol_types::SolEvent,
 };
-use chrono::format;
 use eyre::Result;
 use futures_util::StreamExt;
-use tracing::{info,error};
+use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
+use tracing::{error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 use twine_evm_contracts::evm::twine::l2_messenger::L2Messenger;
-use sea_orm::{
-    ActiveValue::Set,
-    DatabaseConnection, EntityTrait,
-};
 
 use crate::entities::{l1_deposit, l1_withdraw, sent_message};
 
@@ -42,7 +38,7 @@ pub async fn run_indexer(rpc_url: String, db: DatabaseConnection) -> Result<()> 
                             nonce,
                             chainId,
                             blockNumber,
-                            gasLimit
+                            gasLimit,
                         } = decoded.inner.data;
 
                         info!("Decoded SentMessage event");
