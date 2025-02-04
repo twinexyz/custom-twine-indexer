@@ -9,3 +9,5 @@ tokio = { version = "1", features = ["full"] }
 futures-util = "0.3.31"
 eyre = "0.6"
 twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git" }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
