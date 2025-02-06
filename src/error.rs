@@ -1,4 +1,5 @@
 use crate::api::ApiResponse;
+use crate::pagination::PlaceholderPagination;
 use axum::http::StatusCode;
 
 #[derive(Debug)]
@@ -26,7 +27,8 @@ impl axum::response::IntoResponse for AppError {
         };
         ApiResponse {
             success: false,
-            data: message,
+            items: message,
+            next_page_params: None::<PlaceholderPagination>,
         }
         .into_response()
     }

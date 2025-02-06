@@ -5,6 +5,7 @@ mod entities;
 mod error;
 mod indexer;
 mod server;
+mod pagination;
 
 use eyre::Result;
 
