@@ -3,12 +3,17 @@ name = "twine-indexer"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "api"
+path = "bin/api/main.rs"
+
+[[bin]]
+name = "indexer"
+path = "bin/indexer/main.rs"
+
 [dependencies]
-alloy = { version = "0.11.0", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
-futures-util = "0.3.31"
 eyre = "0.6"
-twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git" }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 sea-orm = {version = "1.1.4", features = [
@@ -16,6 +21,9 @@ sea-orm = {version = "1.1.4", features = [
         "sqlx-postgres",
         "runtime-tokio-native-tls"
 ] }
-chrono = "0.4.39"
 serde = "1.0.217"
-axum = "0.8.1"
+alloy = { version = "0.11.0", features = ["full"]}
+chrono = {version ="0.4.39"}
+futures-util = {version = "0.3.31"}
+twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git"}
+axum = {version = "0.8.1"}

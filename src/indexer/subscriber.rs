@@ -1,23 +1,15 @@
-use alloy::{
-    providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::Filter,
-    sol_types::SolEvent,
-};
+use crate::entities::{l1_deposit, l1_withdraw, sent_message};
+use alloy::{ providers::Provider, rpc::types::Filter, sol_types::SolEvent};
 use eyre::Result;
 use futures_util::StreamExt;
 use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
 use tracing::{error, info};
-use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
-use twine_evm_contracts::evm::twine::l2_messenger::L2Messenger;
+use twine_evm_contracts::evm::{
+    ethereum::l1_message_queue::L1MessageQueue,
+    twine::l2_messenger::L2Messenger
+};
 
-use crate::entities::{l1_deposit, l1_withdraw, sent_message};
-
-pub async fn run_indexer(rpc_url: String, db: DatabaseConnection) -> Result<()> {
-    let ws = WsConnect::new(&rpc_url);
-    let provider = ProviderBuilder::new().on_ws(ws).await?;
-    let chain_id = provider.get_chain_id().await?;
-    info!("Connected to blockchain. Chain ID: {chain_id}");
-
+pub async fn run_indexer(provider: impl Provider, db: DatabaseConnection) -> Result<()> {
     let filter = Filter::new(); // TODO: Filter contract addresses
     let subscription = provider.subscribe_logs(&filter).await?;
     let mut stream = subscription.into_stream();

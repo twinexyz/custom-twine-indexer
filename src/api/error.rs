@@ -1,30 +1,30 @@
+use crate::api::pagination::PlaceholderPagination;
 use crate::api::ApiResponse;
-use crate::pagination::PlaceholderPagination;
-use axum::http::StatusCode;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use sea_orm::DbErr;
 
 #[derive(Debug)]
 pub enum AppError {
-    Database(sea_orm::DbErr),
-    Config(String),
-    Indexer(String),
+    Database(DbErr),
+    Internal,
 }
 
-impl axum::response::IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
         let (_status, message) = match self {
             AppError::Database(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Database error: {}", e),
             ),
-            AppError::Config(msg) => (
+            AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Configuration error: {}", msg),
-            ),
-            AppError::Indexer(msg) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Indexer error: {}", msg),
+                format!("Internal Server Error"),
             ),
         };
+
         ApiResponse {
             success: false,
             items: message,
