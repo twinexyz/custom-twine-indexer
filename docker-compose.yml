@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  twine-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  migrations:
+    build: .
+    command: /usr/local/bin/sea-orm-cli migrate up
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      twine-db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    command: /usr/local/bin/api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      HTTP_PORT: ${HTTP_PORT}
+    depends_on:
+      twine-db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    ports:
+      - "7777:7777"
+
+  indexer:
+    build: .
+    command: /usr/local/bin/indexer
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RPC_URL: ${RPC_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      twine-db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+    driver: local

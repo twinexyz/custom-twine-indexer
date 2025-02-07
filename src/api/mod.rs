@@ -53,7 +53,7 @@ pub async fn start_api(db_conn: sea_orm::DatabaseConnection, port: u16) -> eyre:
         db: db_conn,
     };
     let server = make_server(state);
-    let addr = SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, port);
+    let addr = SocketAddrV4::new(std::net::Ipv4Addr::new(0, 0, 0, 0), port);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("API Server running on {}", addr);
     axum::serve(listener, server)
