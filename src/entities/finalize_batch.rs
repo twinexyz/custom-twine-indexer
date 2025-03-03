@@ -4,18 +4,14 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "l1_deposit")]
+#[sea_orm(table_name = "finalize_batch")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub tx_hash: String,
-    pub nonce: i64,
-    pub chain_id: i64,
+    pub batch_id: String,
+    pub start_block: i64,
+    pub end_block: i64,
     pub block_number: i64,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub from: String,
-    pub to_twine_address: String,
-    pub amount: String,
+    pub batch_hash: String,
     pub created_at: DateTimeWithTimeZone,
 }
 
