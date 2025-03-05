@@ -2,27 +2,32 @@ mod db;
 mod parser;
 mod subscriber;
 
-use alloy::providers::Provider;
+use alloy::providers::{Provider, WsConnect, ProviderBuilder};
 use eyre::Result;
 use futures_util::StreamExt;
 use sea_orm::DatabaseConnection;
 use tracing::info;
 
-pub struct EVMIndexer<P: Send + Sync + Provider> {
-    provider: P,
+pub struct EVMIndexer {
+    provider: Box<dyn Provider>,
     db: DatabaseConnection,
 }
 
-impl<P> EVMIndexer<P>
-where
-    P: Provider + Send + Sync,
+impl EVMIndexer
 {
-    pub fn new(provider: P, db: DatabaseConnection) -> Self {
-        Self { provider, db }
+    pub async fn new(rpc_url: String, db: DatabaseConnection) -> eyre::Result<Self>{
+        let provider = Self::create_provider(rpc_url).await?;
+        Ok(Self { provider: Box::new(provider), db })
     }
 
+   async fn create_provider(rpc_url: String) -> Result<impl Provider> {
+       let ws = WsConnect::new(&rpc_url);
+       let provider = ProviderBuilder::new().on_ws(ws).await?;
+       Ok(provider)
+   }
+
     pub async fn run(&self) -> Result<()> {
-        let mut stream = subscriber::subscribe(&self.provider).await?;
+        let mut stream = subscriber::subscribe(&*self.provider).await?;
         info!("Subscribed to EVM log stream. Listening for events...");
 
         while let Some(log) = stream.next().await {
