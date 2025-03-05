@@ -1,7 +1,7 @@
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use tracing::info;
 
-mod subscriber;
+mod evm;
 
 async fn get_provider(rpc_url: String) -> eyre::Result<impl Provider>{
     let ws = WsConnect::new(&rpc_url);
@@ -16,5 +16,6 @@ pub async fn start_indexer(
     db_conn: sea_orm::DatabaseConnection,
 ) -> eyre::Result<()> {
     let provider = get_provider(rpc_url).await?;
-    subscriber::run_indexer(provider, db_conn).await
+    // subscriber::run_indexer(provider, db_conn).await
+    evm::run_indexer(provider, db_conn).await
 }
