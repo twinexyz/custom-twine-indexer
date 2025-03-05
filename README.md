@@ -19,7 +19,7 @@ Before running the indexer, ensure you have:
 Export the required environment variables:
 
 ```sh
-export RPC_URL="ws://localhost:8546"
+export EVM_RPC_URL="ws://localhost:8546"
 export HTTP_PORT=7777
 export POSTGRES_USER=user
 export POSTGRES_PASSWORD=password

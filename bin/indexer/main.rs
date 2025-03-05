@@ -8,5 +8,5 @@ async fn main() -> Result<()> {
     let cfg = config::Config::from_env()?;
     let db_conn = db::connect(&cfg.database_url).await?;
     info!("Connected to Database");
-    indexer::start_indexer(cfg.rpc_url, db_conn).await
+    indexer::start_indexer(cfg, db_conn).await
 }
