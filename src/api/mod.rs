@@ -49,9 +49,7 @@ fn make_server(state: AppState) -> Router {
 }
 
 pub async fn start_api(db_conn: sea_orm::DatabaseConnection, port: u16) -> eyre::Result<()> {
-    let state = AppState {
-        db: db_conn,
-    };
+    let state = AppState { db: db_conn };
     let server = make_server(state);
     let addr = SocketAddrV4::new(std::net::Ipv4Addr::new(0, 0, 0, 0), port);
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -2,9 +2,8 @@ use crate::entities::{l1_deposit, l1_withdraw, sent_message};
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEvent;
 use chrono::Utc;
-use eyre::{Context, Report};
+use eyre::Report;
 use sea_orm::ActiveValue::Set;
-use tracing::error;
 use twine_evm_contracts::evm::{
     ethereum::l1_message_queue::L1MessageQueue, twine::l2_messenger::L2Messenger,
 };

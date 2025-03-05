@@ -1,7 +1,7 @@
-use sea_orm::{DatabaseConnection, EntityTrait, ActiveValue::Set};
-use tracing::error;
 use super::parser::DbModel;
 use crate::entities::{l1_deposit, l1_withdraw, sent_message};
+use sea_orm::{DatabaseConnection, EntityTrait};
+use tracing::error;
 
 pub async fn insert_model(model: DbModel, db: &DatabaseConnection) {
     match model {
