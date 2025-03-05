@@ -14,7 +14,7 @@ pub async fn run_indexer(provider: impl Provider, db: DatabaseConnection) -> Res
 
     while let Some(log) = stream.next().await {
         if let Some(event) = parser::parse_log(log) {
-            db::insert_event(event, &db).await;
+            db::insert_model(event, &db).await;
         }
     }
 
