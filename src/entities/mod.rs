@@ -4,4 +4,5 @@ pub mod prelude;
 
 pub mod l1_deposit;
 pub mod l1_withdraw;
+pub mod last_synced;
 pub mod sent_message;
