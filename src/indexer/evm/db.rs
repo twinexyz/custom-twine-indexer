@@ -3,7 +3,11 @@ use crate::entities::{l1_deposit, l1_withdraw, last_synced, sent_message};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 
-pub async fn insert_model(model: DbModel, last_synced: last_synced::ActiveModel, db: &DatabaseConnection) {
+pub async fn insert_model(
+    model: DbModel,
+    last_synced: last_synced::ActiveModel,
+    db: &DatabaseConnection,
+) {
     match model {
         DbModel::SentMessage(model) => {
             if let Err(e) = sent_message::Entity::insert(model).exec(db).await {
@@ -31,9 +35,10 @@ pub async fn insert_model(model: DbModel, last_synced: last_synced::ActiveModel,
                 .to_owned(),
         )
         .exec(db)
-        .await {
-            error!("Failed to upsert last synced event: {e:?}");
-        }
+        .await
+    {
+        error!("Failed to upsert last synced event: {e:?}");
+    }
 }
 
 pub async fn get_last_synced_block(db: &DatabaseConnection, chain_id: i64) -> eyre::Result<i64> {

@@ -9,9 +9,9 @@ use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use async_trait::async_trait;
 use eyre::Result;
 use futures_util::StreamExt;
+use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use tracing::info;
-use sea_orm::ActiveValue::Set;
 
 pub struct EVMIndexer {
     provider: Box<dyn Provider>,
@@ -31,8 +31,7 @@ impl ChainIndexer for EVMIndexer {
     async fn run(&self) -> Result<()> {
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
-        println!("last synced is {last_synced}");
-        subscriber::catch_up_historical_block(&*self.provider, last_synced as u64).await?;
+        subscriber::catchup_historical_block(&*self.provider, last_synced as u64, &self.db).await?;
         let mut stream = subscriber::subscribe(&*self.provider).await?;
         info!(
             "Subscribed to log stream on chain id {}. Listening for events...",
