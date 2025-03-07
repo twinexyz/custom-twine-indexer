@@ -2,6 +2,8 @@ mod db;
 mod parser;
 mod subscriber;
 
+use crate::entities::last_synced;
+
 use super::ChainIndexer;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use async_trait::async_trait;
@@ -9,6 +11,7 @@ use eyre::Result;
 use futures_util::StreamExt;
 use sea_orm::DatabaseConnection;
 use tracing::info;
+use sea_orm::ActiveValue::Set;
 
 pub struct EVMIndexer {
     provider: Box<dyn Provider>,
@@ -26,15 +29,24 @@ impl ChainIndexer for EVMIndexer {
     }
 
     async fn run(&self) -> Result<()> {
-        let mut stream = subscriber::subscribe(&*self.provider).await?;
         let id = self.chain_id().await?;
+        let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
+        println!("last synced is {last_synced}");
+        subscriber::catch_up_historical_block(&*self.provider, last_synced as u64).await?;
+        let mut stream = subscriber::subscribe(&*self.provider).await?;
         info!(
             "Subscribed to log stream on chain id {}. Listening for events...",
             id
         );
         while let Some(log) = stream.next().await {
             match parser::parse_log(log) {
-                Ok(model) => db::insert_model(model, &self.db).await,
+                Ok(parsed) => {
+                    let last_synced = last_synced::ActiveModel {
+                        chain_id: Set(id as i64),
+                        block_number: Set(parsed.block_number as i64),
+                    };
+                    db::insert_model(parsed.model, last_synced, &self.db).await;
+                }
                 Err(e) => self.handle_error(e)?,
             }
         }

@@ -43,12 +43,22 @@ pub enum DbModel {
     L1Withdraw(l1_withdraw::ActiveModel),
 }
 
-pub fn parse_log(log: Log) -> Result<DbModel, Report> {
+#[derive(Debug)]
+pub struct ParsedLog {
+    pub model: DbModel,
+    pub block_number: i64,
+}
+
+pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
     let tx_hash = log
         .transaction_hash
         .ok_or(ParserError::MissingTransactionHash)?;
 
     let tx_hash_str = format!("{tx_hash:?}");
+
+    let block_number = log
+        .block_number
+        .ok_or_else(|| eyre::eyre!("Missing block number in log"))? as i64;
 
     match log.topic0() {
         Some(sig) => match *sig {
@@ -61,7 +71,7 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                 })?;
 
                 let data = decoded.inner.data;
-                Ok(DbModel::SentMessage(sent_message::ActiveModel {
+                let model = DbModel::SentMessage(sent_message::ActiveModel {
                     tx_hash: Set(tx_hash_str),
                     from: Set(format!("{:?}", data.from)),
                     l2_token: Set(format!("{:?}", data.l2Token)),
@@ -73,7 +83,11 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                     block_number: Set(data.blockNumber.try_into().unwrap()),
                     gas_limit: Set(data.gasLimit.try_into().unwrap()),
                     created_at: Set(Utc::now().into()),
-                }))
+                });
+                Ok(ParsedLog {
+                    model,
+                    block_number,
+                })
             }
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
                 let decoded = log
@@ -84,7 +98,7 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                     })?;
 
                 let data = decoded.inner.data;
-                Ok(DbModel::L1Deposit(l1_deposit::ActiveModel {
+                let model = DbModel::L1Deposit(l1_deposit::ActiveModel {
                     tx_hash: Set(tx_hash_str),
                     nonce: Set(data.nonce.try_into().unwrap()),
                     chain_id: Set(data.chainId.try_into().unwrap()),
@@ -95,7 +109,11 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                     to_twine_address: Set(format!("{:?}", data.to_twine_address)),
                     amount: Set(data.amount.to_string()),
                     created_at: Set(Utc::now().into()),
-                }))
+                });
+                Ok(ParsedLog {
+                    model,
+                    block_number,
+                })
             }
             L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
                 let decoded = log
@@ -106,7 +124,7 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                     })?;
 
                 let data = decoded.inner.data;
-                Ok(DbModel::L1Withdraw(l1_withdraw::ActiveModel {
+                let model = DbModel::L1Withdraw(l1_withdraw::ActiveModel {
                     tx_hash: Set(tx_hash_str),
                     nonce: Set(data.nonce.try_into().unwrap()),
                     chain_id: Set(data.chainId.try_into().unwrap()),
@@ -117,7 +135,11 @@ pub fn parse_log(log: Log) -> Result<DbModel, Report> {
                     to_twine_address: Set(format!("{:?}", data.to_twine_address)),
                     amount: Set(data.amount.to_string()),
                     created_at: Set(Utc::now().into()),
-                }))
+                });
+                Ok(ParsedLog {
+                    model,
+                    block_number,
+                })
             }
             other => Err(ParserError::UnknownEvent { signature: other }.into()),
         },
