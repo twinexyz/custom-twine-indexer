@@ -1,6 +1,7 @@
 mod evm;
 mod twine;
 
+mod svm;
 use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
@@ -10,7 +11,7 @@ use crate::config::Config;
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
     /// Constructs a new indexer.
-    async fn new(rpc_url: String, db: DatabaseConnection) -> Result<Self>
+    async fn new(rpc_url: String, db: &DatabaseConnection) -> Result<Self>
     where
         Self: Sized;
 
@@ -22,8 +23,8 @@ pub trait ChainIndexer: Send + Sync {
 }
 
 pub async fn start_indexer(config: Config, db_conn: DatabaseConnection) -> Result<()> {
-    // let evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, db_conn).await?;
-    // evm_indexer.run().await
-    let twine_indexer = twine::TwineIndexer::new(config.evm_rpc_url, db_conn).await?;
-    twine_indexer.run().await
+    let evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, &db_conn).await?;
+    let svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
+    tokio::try_join!(evm_indexer.run(), svm_indexer.run())?;
+    Ok(())
 }

@@ -22,11 +22,12 @@ pub struct EVMIndexer {
 
 #[async_trait]
 impl ChainIndexer for EVMIndexer {
+    async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
     async fn new(rpc_url: String, db: DatabaseConnection) -> Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
-            provider: Arc::new(provider),
-            db,
+            provider: Box::new(provider),
+            db: db.clone(),
         })
     }
 
