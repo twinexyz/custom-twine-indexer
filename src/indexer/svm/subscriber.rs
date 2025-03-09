@@ -1,35 +1,16 @@
+use crate::indexer::svm::parser::DepositInfoResponse;
 use eyre::{self, Result};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
-
+use tracing::{error, info};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepositResponse {
     status: String,
     data: Vec<DepositInfoResponse>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DepositInfoResponse {
-    deposit_count: u64,
-    deposit_message: DepositMessage,
-    timestamp: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DepositMessage {
-    nonce: u64,
-    chain_id: u64,
-    slot_number: u64,
-    from_l1_pubkey: String,
-    to_twine_address: String,
-    l1_token: String,
-    l2_token: String,
-    amount: String,
-}
-
 pub async fn poll_deposits() -> Result<Vec<DepositInfoResponse>> {
-    // Adjust the path to svm_subscriber binary based on your setup
-    let output = Command::new("./svm_subscriber") // Use absolute path or ensure it's in PATH
+    let output = Command::new("./svm_subscriber")
         .arg("--get-deposits")
         .output()
         .map_err(|e| eyre::eyre!("Failed to execute svm_subscriber: {:?}", e))?;
@@ -45,5 +26,25 @@ pub async fn poll_deposits() -> Result<Vec<DepositInfoResponse>> {
     } else {
         let stderr = String::from_utf8(output.stderr)?;
         Err(eyre::eyre!("svm_subscriber failed: {:?}", stderr))
+    }
+}
+
+pub async fn start_polling() -> Result<Vec<DepositInfoResponse>> {
+    info!("Polling for new deposits...");
+    match poll_deposits().await {
+        Ok(deposits) => {
+            if deposits.is_empty() {
+                info!("No new deposits found.");
+            } else {
+                for deposit in &deposits {
+                    info!("New deposit: {:?}", deposit);
+                }
+            }
+            Ok(deposits)
+        }
+        Err(e) => {
+            error!("Failed to poll deposits: {:?}", e);
+            Err(e)
+        }
     }
 }
