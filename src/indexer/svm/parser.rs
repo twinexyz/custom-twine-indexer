@@ -26,3 +26,22 @@ pub struct DepositInfoResponse {
     pub deposit_message: DepositMessage,
     pub timestamp: DateTime<Utc>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WithdrawMessage {
+    pub nonce: u64,
+    pub chain_id: u64,
+    pub slot_number: u64,
+    pub from_twine_address: String,
+    pub to_l1_pubkey: String,
+    pub l1_token: String,
+    pub l2_token: String,
+    pub amount: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WithdrawInfoResponse {
+    pub withdraw_count: u64,
+    pub withdraw_message: WithdrawMessage,
+    pub timestamp: DateTime<Utc>,
+}

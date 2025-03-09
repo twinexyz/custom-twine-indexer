@@ -3,4 +3,7 @@
 pub use super::l1_deposit::Entity as L1Deposit;
 pub use super::l1_withdraw::Entity as L1Withdraw;
 pub use super::native_token_deposit::Entity as NativeTokenDeposit;
+pub use super::native_token_withdraw::Entity as NativeTokenWithdraw;
 pub use super::sent_message::Entity as SentMessage;
+pub use super::spl_token_deposit::Entity as SplTokenDeposit;
+pub use super::spl_token_withdraw::Entity as SplTokenWithdraw;

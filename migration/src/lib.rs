@@ -11,6 +11,9 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20250203_000001_create_tables::Migration),
             Box::new(svm_migrations::m20250203_000001_native_token_deposits::Migration),
+            Box::new(svm_migrations::m20250203_000002_spl_token_deposits::Migration),
+            Box::new(svm_migrations::m20250203_000003_native_token_withdrawls::Migration),
+            Box::new(svm_migrations::m20250203_000004_spl_token_withdrawls::Migration),
         ]
     }
 }
