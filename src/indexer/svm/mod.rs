@@ -1,6 +1,7 @@
 mod db;
 mod parser;
 mod subscriber;
+mod utils;
 
 use super::ChainIndexer;
 use async_trait::async_trait;
@@ -21,19 +22,28 @@ impl ChainIndexer for SVMIndexer {
 
     async fn run(&self) -> Result<()> {
         info!("SVM indexer running...");
-
-        // Polling interval (e.g., every 10 seconds)
-        let mut interval = time::interval(Duration::from_secs(5));
+        let mut interval = time::interval(Duration::from_secs(10));
 
         loop {
-            interval.tick().await; // Wait for the next tick
+            interval.tick().await;
+
+            let latest_nonce = db::get_latest_native_token_deposit_nonce(&self.db).await?;
+            info!("Latest nonce in DB: {:?}", latest_nonce);
 
             let deposits = subscriber::start_polling().await?;
             info!("SVM subscriber retrieved deposits: {:?}", deposits);
 
-            // Insert each deposit into the database
             for deposit in deposits {
-                db::insert_deposit(&deposit, &self.db).await?; // Pass reference with &
+                if let Some(latest) = latest_nonce {
+                    if deposit.deposit_message.nonce <= latest {
+                        info!(
+                            "Skipping deposit with nonce {} (not newer than {})",
+                            deposit.deposit_message.nonce, latest
+                        );
+                        continue;
+                    }
+                }
+                db::insert_sol_deposit(&deposit, &self.db).await?;
                 info!(
                     "Inserted deposit with nonce: {}",
                     deposit.deposit_message.nonce
@@ -43,6 +53,6 @@ impl ChainIndexer for SVMIndexer {
     }
 
     async fn chain_id(&self) -> Result<u64> {
-        Ok(900) // From your response, chain_id is 900
+        Ok(900)
     }
 }
