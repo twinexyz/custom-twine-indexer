@@ -24,5 +24,5 @@ pub struct DepositMessage {
 pub struct DepositInfoResponse {
     pub deposit_count: i64,
     pub deposit_message: DepositMessage,
-    pub timestamp: DateTime<Utc>, // Use chrono for DateTime parsing
+    pub timestamp: DateTime<Utc>,
 }
