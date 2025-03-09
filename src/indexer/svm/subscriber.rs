@@ -80,7 +80,7 @@ pub async fn start_polling() -> Result<(Vec<DepositInfoResponse>, Vec<WithdrawIn
                 info!("No new deposits found.");
             } else {
                 for deposit in &deposits {
-                    info!("New deposit: {:?}", deposit);
+                    info!("❤️❤️New deposit: {:?}", deposit);
                 }
             }
 

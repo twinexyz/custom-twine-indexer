@@ -56,8 +56,6 @@ impl ChainIndexer for SVMIndexer {
             );
 
             let (deposits, withdrawals) = subscriber::start_polling().await?;
-            info!("SVM subscriber retrieved deposits: {:?}", deposits);
-            info!("SVM subscriber retrieved withdrawals: {:?}", withdrawals);
 
             // Process deposits
             for deposit in deposits {
