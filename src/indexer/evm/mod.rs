@@ -1,10 +1,10 @@
 mod db;
 mod parser;
-mod subscriber;
+mod chain;
 
 use crate::entities::last_synced;
-
 use super::ChainIndexer;
+use alloy::rpc::types::Log;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use async_trait::async_trait;
 use eyre::Result;
@@ -31,8 +31,10 @@ impl ChainIndexer for EVMIndexer {
     async fn run(&self) -> Result<()> {
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
-        subscriber::catchup_historical_block(&*self.provider, last_synced as u64, &self.db).await?;
-        let mut stream = subscriber::subscribe(&*self.provider).await?;
+        let logs = chain::get_missing_logs(&*self.provider, last_synced as u64).await?;
+        self.catchup_missing_blocks(logs).await?;
+
+        let mut stream = chain::subscribe(&*self.provider).await?;
         info!(
             "Subscribed to log stream on chain id {}. Listening for events...",
             id
@@ -76,5 +78,22 @@ impl EVMIndexer {
                 Err(e)
             }
         }
+    }
+
+    async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()>{
+        let id = self.chain_id().await?;
+        for log in logs {
+            match parser::parse_log(log) {
+                Ok(parsed) => {
+                    let last_synced = last_synced::ActiveModel {
+                        chain_id: Set(id as i64),
+                        block_number: Set(parsed.block_number as i64),
+                    };
+                    db::insert_model(parsed.model, last_synced, &self.db).await;
+                }
+                Err(e) => {}
+            }
+        }
+        Ok(())
     }
 }
