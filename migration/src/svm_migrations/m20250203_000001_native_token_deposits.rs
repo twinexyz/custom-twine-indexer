@@ -1,4 +1,4 @@
-use crate::svm_migrations::shared_enums::native_deposit::NativeTokenDeposit;
+use crate::svm_migrations::shared_enums::enums::NativeTokenDeposit;
 use sea_orm_migration::{prelude::*, schema::*};
 
 #[derive(DeriveMigrationName)]
