@@ -2,8 +2,5 @@
 
 pub use super::l1_deposit::Entity as L1Deposit;
 pub use super::l1_withdraw::Entity as L1Withdraw;
-pub use super::last_synced::Entity as LastSynced;
 pub use super::native_token_deposit::Entity as NativeTokenDeposit;
 pub use super::sent_message::Entity as SentMessage;
-pub use super::twine_l1_deposit::Entity as TwineL1Deposit;
-pub use super::twine_l1_withdraw::Entity as TwineL1Withdraw;

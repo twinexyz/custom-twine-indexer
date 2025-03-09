@@ -11,4 +11,5 @@ pub enum NativeTokenDeposit {
     L2Token,
     Amount,
     CreatedAt,
+    UpdatedAt,
 }
