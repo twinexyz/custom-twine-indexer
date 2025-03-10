@@ -4,7 +4,8 @@ RUN apt update && \
     apt-get install -y \
     pkg-config \
     libssl-dev \
-    libpq-dev
+    libpq-dev \
+    git
 
 RUN cargo install sea-orm-cli
 
