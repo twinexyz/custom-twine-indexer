@@ -59,12 +59,12 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.TWINE_GH_ACTION_PAT }}
+          password: ${{ secrets.PAT_TOKEN }}
 
       - name: Build Docker Image
         run: |
           docker build \
-          --build-arg GITHUB_TOKEN=${{ secrets.TWINE_GH_ACTION_PAT }} \
+          --build-arg GITHUB_TOKEN=${{ secrets.PAT_TOKEN }} \
           --build-arg GITHUB_USERNAME=${{github.actor}} \
           -t ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA} \
           .
@@ -87,7 +87,7 @@ jobs:
         with:
           repository: twinexyz/argocd
           path: argocd
-          token: ${{ secrets.TWINE_GH_ACTION_PAT  }}
+          token: ${{ secrets.PAT_TOKEN  }}
 
       - name: Update Tag in Helm Values for argocd
         run: |
