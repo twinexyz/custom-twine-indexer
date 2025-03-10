@@ -60,7 +60,11 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA} .
+          docker build \
+          --build-arg GITHUB_TOKEN=${{ secrets.TWINE_GH_ACTION_PAT }} \
+          --build-arg GITHUB_USERNAME=${{github.actor}} \
+          -t ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA} \
+          .
 
       - name: Push Docker Image
         run: |

@@ -18,7 +18,7 @@ WORKDIR /app
 COPY . .
 
 RUN git config --global credential.helper store && \
-    echo "https://github.com/" > ~/.git-credentials && \
+    echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
     chmod 600 ~/.git-credentials
 
 RUN cargo build --release --bin api --bin indexer
