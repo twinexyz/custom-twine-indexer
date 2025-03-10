@@ -1,9 +1,13 @@
 bin
+.cargo
 docker-compose.yml
 Dockerfile
-.git
-.gitignore
+Dockerfile.org
+Dockerfile.test
 .dockerignore
+.env
+.git
+.github
+.gitignore
 ingress.yaml
 README.md
-Dockerfile.**
