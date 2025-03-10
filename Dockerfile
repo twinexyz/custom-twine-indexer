@@ -1,4 +1,4 @@
-FROM rust:1.81-slim AS builder
+FROM rust:1.81 AS builder
 
 ARG GITHUB_TOKEN
 ARG GITHUB_USERNAME
@@ -14,11 +14,7 @@ RUN cargo install sea-orm-cli
 
 WORKDIR /app
 
-#COPY Cargo.toml Cargo.lock ./
-#COPY src ./src
-#COPY bin ./bin
-#COPY migration ./migration
-#
+
 COPY . .
 
 RUN git config --global credential.helper store && \
@@ -27,7 +23,6 @@ RUN git config --global credential.helper store && \
 
 RUN cargo build --release --bin api --bin indexer
 
-FROM debian:bookworm-slim
 
 FROM rust:1.81
 

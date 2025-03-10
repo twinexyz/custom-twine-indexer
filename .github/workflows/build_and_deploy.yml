@@ -59,12 +59,12 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.PAT_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker Image
         run: |
           docker build \
-          --build-arg GITHUB_TOKEN=${{ secrets.PAT_TOKEN }} \
+          --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
           --build-arg GITHUB_USERNAME=${{github.actor}} \
           -t ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA} \
           .

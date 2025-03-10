@@ -1,4 +1,3 @@
-bin
 .cargo
 docker-compose.yml
 Dockerfile
