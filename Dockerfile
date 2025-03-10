@@ -1,5 +1,8 @@
 FROM rust:1.81-slim AS builder
 
+ARG GITHUB_TOKEN
+ARG GITHUB_USERNAME
+
 RUN apt update && \
     apt-get install -y \
     pkg-config \
