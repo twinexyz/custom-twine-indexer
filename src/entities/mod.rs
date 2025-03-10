@@ -6,3 +6,5 @@ pub mod l1_deposit;
 pub mod l1_withdraw;
 pub mod last_synced;
 pub mod sent_message;
+pub mod twine_l1_deposit;
+pub mod twine_l1_withdraw;
