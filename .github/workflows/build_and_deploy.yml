@@ -74,7 +74,7 @@ jobs:
           docker push ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
 
   deploy:
-    name: Build Image
+    name: Deploy Latest Tag
     runs-on: ubuntu-24.04
     #if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev'
     needs: ["build_and_push"]
@@ -91,6 +91,7 @@ jobs:
 
       - name: Update Tag in Helm Values for argocd
         run: |
+            ls -al
             cd apps/values/${{  env.REPO }} &&  sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-indexer.yaml
             git config --global user.email "devops@twinelabs.xyz"
             git config --global user.name "twinebot"
