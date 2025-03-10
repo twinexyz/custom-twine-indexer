@@ -1,14 +1,21 @@
 FROM rust:1.81-slim AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libpq-dev && rm -rf /var/lib/apt/lists/*
-RUN cargo install sea-orm-cli 
+RUN apt update && \
+    apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpq-dev
+
+RUN cargo install sea-orm-cli
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY bin ./bin
-COPY migration ./migration
+#COPY Cargo.toml Cargo.lock ./
+#COPY src ./src
+#COPY bin ./bin
+#COPY migration ./migration
+#
+COPY . .
 
 RUN cargo build --release --bin api --bin indexer
 
@@ -16,7 +23,11 @@ FROM debian:bookworm-slim
 
 FROM rust:1.81
 
-RUN apt-get update && apt-get install -y libssl-dev libpq-dev && rm -rf /var/lib/apt/lists/*
+RUN apt update && \
+    apt install -y \
+    libssl-dev \
+    libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
