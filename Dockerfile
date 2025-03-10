@@ -17,6 +17,10 @@ WORKDIR /app
 #
 COPY . .
 
+RUN git config --global credential.helper store && \
+    echo "https://github.com/" > ~/.git-credentials && \
+    chmod 600 ~/.git-credentials
+
 RUN cargo build --release --bin api --bin indexer
 
 FROM debian:bookworm-slim
