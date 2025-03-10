@@ -3,7 +3,7 @@ use eyre::Result;
 use futures_util::Stream;
 use tracing::info;
 
-pub async fn subscribe(
+pub async fn subscribe_stream(
     provider: &dyn Provider,
 ) -> Result<impl Stream<Item = alloy::rpc::types::Log>> {
     let filter = Filter::new(); // TODO: Add contract addresses to the filter
@@ -11,7 +11,7 @@ pub async fn subscribe(
     Ok(subscription.into_stream())
 }
 
-pub async fn get_missing_logs(
+pub async fn poll_missing_logs(
     provider: &dyn Provider,
     last_synced: u64,
 ) -> Result<Vec<Log>> {
