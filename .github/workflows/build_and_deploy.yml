@@ -16,8 +16,8 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   BRANCH: ${GITHUB_REF#refs/heads/}
-  REPO: ${{ github.repository }}
-  ORG: ${{ github.repository_owner }}
+  REPO: ${{ github.event.repository.name }}
+  ORG: ${GITHUB_REPOSITORY_OWNER}
 
 jobs:
 #  test:
@@ -66,12 +66,12 @@ jobs:
           docker build \
           --build-arg GITHUB_TOKEN=${{ secrets.PAT_TOKEN }} \
           --build-arg GITHUB_USERNAME=${{github.actor}} \
-          -t ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA} \
+          -t ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA} \
           .
 
       - name: Push Docker Image
         run: |
-          docker push ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA}
+          docker push ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
 
   deploy:
     name: Build Image
@@ -91,9 +91,9 @@ jobs:
 
       - name: Update Tag in Helm Values for argocd
         run: |
-            cd apps/values/${REPO} &&  sed -i "/tag:/s/tag:.*/tag: ${BRANCH}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${BRANCH}-${GITHUB_SHA}/" staging-indexer.yaml
+            cd apps/values/${{  env.REPO }} &&  sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-indexer.yaml
             git config --global user.email "devops@twinelabs.xyz"
             git config --global user.name "twinebot"
             git add .
-            git commit --allow-empty -m "updated image tag to ${SHORT_SHA} for ${REPO_NAME}"
+            git commit --allow-empty -m "updated image tag to ${GITHUB_SHA} for ${{ env.REPO }}"
             git push origin main
