@@ -92,7 +92,7 @@ jobs:
       - name: Update Tag in Helm Values for argocd
         run: |
             ls -al
-            cd apps/values/${{  env.REPO }} &&  sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-indexer.yaml
+            cd argocd/apps/values/${{  env.REPO }} &&  sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${{ env.BRANCH }}-${GITHUB_SHA}/" staging-indexer.yaml
             git config --global user.email "devops@twinelabs.xyz"
             git config --global user.name "twinebot"
             git add .
