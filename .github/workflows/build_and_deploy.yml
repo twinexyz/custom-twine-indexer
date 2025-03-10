@@ -15,6 +15,9 @@ env:
   # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
+  BRANCH: ${GITHUB_REF#refs/heads/}
+  REPO: ${{ github.repository }}
+  ORG: ${{ github.repository_owner }}
 
 jobs:
 #  test:
@@ -63,9 +66,34 @@ jobs:
           docker build \
           --build-arg GITHUB_TOKEN=${{ secrets.TWINE_GH_ACTION_PAT }} \
           --build-arg GITHUB_USERNAME=${{github.actor}} \
-          -t ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA} \
+          -t ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA} \
           .
 
       - name: Push Docker Image
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA}
+          docker push ghcr.io/${ORG}/${REPO}:${BRANCH}-${GITHUB_SHA}
+
+  deploy:
+    name: Build Image
+    runs-on: ubuntu-24.04
+    #if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev'
+    needs: ["build_and_push"]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout tools repo
+        uses: actions/checkout@v4
+        with:
+          repository: twinexyz/argocd
+          path: argocd
+          token: ${{ secrets.TWINE_GH_ACTION_PAT  }}
+
+      - name: Update Tag in Helm Values for argocd
+        run: |
+            cd apps/values/${REPO} &&  sed -i "/tag:/s/tag:.*/tag: ${BRANCH}-${GITHUB_SHA}/" staging-api.yaml && sed -i "/tag:/s/tag:.*/tag: ${BRANCH}-${GITHUB_SHA}/" staging-indexer.yaml
+            git config --global user.email "devops@twinelabs.xyz"
+            git config --global user.name "twinebot"
+            git add .
+            git commit --allow-empty -m "updated image tag to ${SHORT_SHA} for ${REPO_NAME}"
+            git push origin main
