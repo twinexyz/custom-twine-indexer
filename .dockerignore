@@ -1,0 +1,9 @@
+bin
+docker-compose.yml
+Dockerfile
+.git
+.gitignore
+.dockerignore
+ingress.yaml
+README.md
+Dockerfile.**
