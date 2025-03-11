@@ -15,9 +15,9 @@ env:
   # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  BRANCH: ${GITHUB_REF#refs/heads/}
+  BRANCH: ${{ github.ref_name }}
   REPO: ${{ github.event.repository.name }}
-  ORG: ${GITHUB_REPOSITORY_OWNER}
+  ORG: ${{ github.repository_owner }}
 
 jobs:
   test:
@@ -63,7 +63,7 @@ jobs:
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@0.29.0
       with:
-        image-ref: 'ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ github.event.repository.name }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA}'
+        image-ref: 'ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }}'
         format: 'table'
         ignore-unfixed: true
 
@@ -98,7 +98,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.29.0
         with:
-          image-ref: ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ github.event.repository.name }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA}
+          image-ref: 'ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }}'
           format: 'table'
           ignore-unfixed: true
 
