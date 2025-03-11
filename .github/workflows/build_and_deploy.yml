@@ -63,7 +63,7 @@ jobs:
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@0.29.0
       with:
-        image-ref: ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ github.event.repository.name }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA}
+        image-ref: 'ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ github.event.repository.name }}:${GITHUB_REF#refs/heads/}-${GITHUB_SHA}'
         format: 'table'
         ignore-unfixed: true
 
