@@ -15,6 +15,7 @@ pub struct Model {
     pub l1_token: String,
     pub l2_token: String,
     pub amount: String,
+    pub signature: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

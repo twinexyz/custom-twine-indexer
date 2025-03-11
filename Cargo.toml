@@ -31,3 +31,6 @@ async-trait = "0.1.87"
 sea-query = "0.32.2"
 serde_json = "1.0"
 anyhow = "1.0.97"
+
+tokio-tungstenite = "0.23.1"
+base64 = "0.22.0"

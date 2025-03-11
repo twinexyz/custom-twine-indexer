@@ -2,4 +2,6 @@ pub mod m20250203_000001_native_token_deposits;
 pub mod m20250203_000002_spl_token_deposits;
 pub mod m20250203_000003_native_token_withdrawls;
 pub mod m20250203_000004_spl_token_withdrawls;
+pub mod m20250203_000005_commit_batch;
+pub mod m20250203_000006_finalize_batch;
 pub mod shared_enums;

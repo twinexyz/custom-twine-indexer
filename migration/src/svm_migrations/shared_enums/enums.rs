@@ -11,6 +11,7 @@ pub enum NativeTokenDeposit {
     L1Token,
     L2Token,
     Amount,
+    Signature,
     CreatedAt,
     UpdatedAt,
 }
@@ -26,6 +27,7 @@ pub enum SPLTokenDeposit {
     L1Token,
     L2Token,
     Amount,
+    Signature,
     CreatedAt,
     UpdatedAt,
 }
@@ -41,6 +43,7 @@ pub enum NativeTokenWithdraw {
     L1Token,
     L2Token,
     Amount,
+    Signature,
     CreatedAt,
     UpdatedAt,
 }
@@ -56,6 +59,27 @@ pub enum SPLTokenWithdraw {
     L1Token,
     L2Token,
     Amount,
+    Signature,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum CommitBatch {
+    Table,
+    StartBlock,
+    EndBlock,
+    SlotNumber,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum FinalizedBatch {
+    Table,
+    StartBlock,
+    EndBlock,
+    SlotNumber,
     CreatedAt,
     UpdatedAt,
 }

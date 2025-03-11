@@ -2,6 +2,8 @@
 
 pub mod prelude;
 
+pub mod commit_batch;
+pub mod finalized_batch;
 pub mod l1_deposit;
 pub mod l1_withdraw;
 pub mod last_synced;

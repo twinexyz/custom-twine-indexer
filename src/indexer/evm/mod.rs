@@ -31,7 +31,8 @@ impl ChainIndexer for EVMIndexer {
         })
     }
 
-    async fn run(&self) -> Result<()> {
+    async fn run(&mut self) -> Result<()> {
+        let mut stream = subscriber::subscribe(&*self.provider).await?;
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         let current_block = self.provider.get_block_number().await?;
