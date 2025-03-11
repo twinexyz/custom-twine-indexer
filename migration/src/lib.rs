@@ -11,10 +11,8 @@ pub struct Migrator;
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
-            
             Box::new(m20250203_000001_create_tables::Migration),
             Box::new(svm_migrations::m20250203_000001_native_token_deposits::Migration),
-        ,
             Box::new(m20250306_000002_create_last_synced_table::Migration),
             Box::new(m20250310_000003_create_twine_tables::Migration),
             Box::new(svm_migrations::m20250203_000002_spl_token_deposits::Migration),

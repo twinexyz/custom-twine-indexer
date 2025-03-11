@@ -22,17 +22,16 @@ pub struct EVMIndexer {
 
 #[async_trait]
 impl ChainIndexer for EVMIndexer {
-    async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
-    async fn new(rpc_url: String, db: DatabaseConnection) -> Result<Self> {
+    async fn new(rpc_url: String, db: &DatabaseConnection) -> Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
-            provider: Box::new(provider),
+            provider: Arc::new(provider),
             db: db.clone(),
         })
     }
 
     async fn run(&mut self) -> Result<()> {
-        let mut stream = subscriber::subscribe(&*self.provider).await?;
+        let mut stream = chain::subscribe_stream(&*self.provider).await?;
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         let current_block = self.provider.get_block_number().await?;

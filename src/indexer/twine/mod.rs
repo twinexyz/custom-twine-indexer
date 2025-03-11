@@ -18,15 +18,15 @@ pub struct TwineIndexer {
 
 #[async_trait]
 impl ChainIndexer for TwineIndexer {
-    async fn new(rpc_url: String, db: DatabaseConnection) -> Result<Self> {
+    async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
             provider: Arc::new(provider),
-            db,
+            db: db.clone(),
         })
     }
 
-    async fn run(&self) -> Result<()> {
+    async fn run(&mut self) -> Result<()> {
         let chain_id = self.provider.get_chain_id().await?;
         info!("Connected to blockchain. Chain ID: {chain_id}");
         let filter = Filter::new();

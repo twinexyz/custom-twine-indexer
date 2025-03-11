@@ -26,10 +26,11 @@ pub trait ChainIndexer: Send + Sync {
 pub async fn start_indexer(config: Config, db_conn: DatabaseConnection) -> Result<()> {
     // Create indexers
     let mut evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, &db_conn).await?;
-    let mut svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
+    // let mut svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
+    evm_indexer.run().await;
 
     // Run indexers concurrently with mutable references
-    tokio::try_join!(evm_indexer.run(), svm_indexer.run())?;
+    // tokio::try_join!(evm_indexer.run(), svm_indexer.run())?;
 
     Ok(())
 }
