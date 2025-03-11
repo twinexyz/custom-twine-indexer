@@ -49,7 +49,7 @@ pub async fn get_l1_deposits(
 
     let next_page_params = deposits.last().map(|d| L1DepositPagination {
         items_count: Some(items_count),
-        l1_block_number: Some(d.block_number.unwrap_or(d.slot_number.unwrap()) as u64),
+        l1_block_number: Some(d.block_number.unwrap_or(0) as u64),
         transaction_hash: Some(d.tx_hash.clone()),
     });
 
