@@ -47,7 +47,7 @@ jobs:
           ignore-unfixed: true
 
   anchore_scan:
-    name: Trivy Docker Image Scan
+    name: Anchore Docker Image Scan
     runs-on: ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
@@ -71,7 +71,7 @@ jobs:
           image: 'ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }}'
 
   docker_scout_scan:
-    name: Trivy Docker Image Scan
+    name: Docker Scout Docker Image Scan
     runs-on: ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
