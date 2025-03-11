@@ -1,11 +1,9 @@
 use crate::api::error::AppError;
 use crate::api::pagination::{
-    items_count, L1DepositPagination, L1WithdrawalPagination, Pagination, PlaceholderPagination,
-    SentMessagePagination,
-};
+    items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination, PlaceholderPagination,};
 use crate::api::AppState;
 use crate::api::{ApiResponse, ApiResult};
-use crate::entities::{l1_deposit, l1_withdraw, sent_message};
+use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -51,7 +49,7 @@ pub async fn get_l1_deposits(
 
     let next_page_params = deposits.last().map(|d| L1DepositPagination {
         items_count: Some(items_count),
-        l1_block_number: Some(d.block_number as u64),
+        l1_block_number: Some(d.block_number.unwrap_or(d.slot_number.unwrap()) as u64),
         transaction_hash: Some(d.tx_hash.clone()),
     });
 
@@ -93,26 +91,26 @@ pub async fn get_l1_withdraws(
     })
 }
 
-pub async fn get_sent_messages(
+pub async fn get_l2_withdraws(
     State(state): State<AppState>,
-    Query(pagination): Query<SentMessagePagination>,
-) -> ApiResult<Vec<sent_message::Model>, impl Pagination> {
+    Query(pagination): Query<L2WithdrawalPagination>,
+) -> ApiResult<Vec<l2_withdraw::Model>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
-    let mut query = sent_message::Entity::find();
+    let mut query = l2_withdraw::Entity::find();
 
     // If nonce is provided, use it for pagination
     if let Some(nonce) = pagination.nonce {
-        query = query.filter(sent_message::Column::Nonce.lt(nonce));
+        query = query.filter(l2_withdraw::Column::Nonce.lt(nonce));
     }
 
     let withdraws = query
-        .order_by_desc(sent_message::Column::Nonce)
+        .order_by_desc(l2_withdraw::Column::Nonce)
         .limit(items_count)
         .all(&state.db)
         .await
         .map_err(AppError::Database)?;
 
-    let next_page_params = withdraws.last().map(|w| SentMessagePagination {
+    let next_page_params = withdraws.last().map(|w| L2WithdrawalPagination {
         items_count: Some(items_count),
         nonce: Some(w.nonce as u64),
     });

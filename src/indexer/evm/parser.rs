@@ -1,4 +1,4 @@
-use crate::entities::{l1_deposit, l1_withdraw, sent_message};
+use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw};
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEvent;
 use chrono::Utc;
@@ -38,9 +38,9 @@ impl std::fmt::Display for ParserError {
 
 #[derive(Debug)]
 pub enum DbModel {
-    SentMessage(sent_message::ActiveModel),
     L1Deposit(l1_deposit::ActiveModel),
     L1Withdraw(l1_withdraw::ActiveModel),
+    L2Withdraw(l2_withdraw::ActiveModel),
 }
 
 #[derive(Debug)]
@@ -65,33 +65,32 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
 
     match log.topic0() {
         Some(sig) => match *sig {
-            L2Messenger::SentMessage::SIGNATURE_HASH => {
-                let decoded = log.log_decode::<L2Messenger::SentMessage>().map_err(|e| {
-                    ParserError::DecodeError {
-                        event_type: "SentMessage",
-                        source: Box::new(e),
-                    }
-                })?;
+            // L2Messenger::SentMessage::SIGNATURE_HASH => {
+            //     let decoded = log.log_decode::<L2Messenger::SentMessage>().map_err(|e| {
+            //         ParserError::DecodeError {
+            //             event_type: "SentMessage",
+            //             source: Box::new(e),
+            //         }
+            //     })?;
 
-                let data = decoded.inner.data;
-                let model = DbModel::SentMessage(sent_message::ActiveModel {
-                    tx_hash: Set(tx_hash_str),
-                    from: Set(format!("{:?}", data.from)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
-                    to: Set(format!("{:?}", data.to)),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    amount: Set(data.amount.to_string()),
-                    nonce: Set(data.nonce.try_into().unwrap()),
-                    chain_id: Set(data.chainId.try_into().unwrap()),
-                    block_number: Set(data.blockNumber.try_into().unwrap()),
-                    gas_limit: Set(data.gasLimit.try_into().unwrap()),
-                    created_at: Set(Utc::now().into()),
-                });
-                Ok(ParsedLog {
-                    model,
-                    block_number,
-                })
-            }
+            //     let data = decoded.inner.data;
+            //     let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
+            //         from: Set(format!("{:?}", data.from)),
+            //         l2_token: Set(format!("{:?}", data.l2Token)),
+            //         to: Set(format!("{:?}", data.to)),
+            //         l1_token: Set(format!("{:?}", data.l1Token)),
+            //         amount: Set(data.amount.to_string()),
+            //         nonce: Set(data.nonce.try_into().unwrap()),
+            //         chain_id: Set(data.chainId.try_into().unwrap()),
+            //         block_number: Set(data.blockNumber.try_into().unwrap()),
+            //         gas_limit: Set(data.gasLimit.try_into().unwrap()),
+            //         created_at: Set(Utc::now().into()),
+            //     });
+            //     Ok(ParsedLog {
+            //         model,
+            //         block_number,
+            //     })
+            // }
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
                 let decoded = log
                     .log_decode::<L1MessageQueue::QueueDepositTransaction>()
@@ -100,16 +99,18 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                         source: Box::new(e),
                     })?;
 
+                // let datetime = NaiveDateTime::from_timestamp_opt(log.block_timestamp, 0).unwrap();
                 let data = decoded.inner.data;
                 let model = DbModel::L1Deposit(l1_deposit::ActiveModel {
-                    tx_hash: Set(tx_hash_str),
                     nonce: Set(data.nonce.try_into().unwrap()),
                     chain_id: Set(data.chainId.try_into().unwrap()),
-                    block_number: Set(data.blockNumber.try_into().unwrap()),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
+                    block_number: Set(Some(data.blockNumber.try_into().unwrap())),
+                    slot_number: Set(None),
                     from: Set(format!("{:?}", data.from)),
                     to_twine_address: Set(format!("{:?}", data.toTwineAddress)),
+                    l1_token: Set(format!("{:?}", data.l1Token)),
+                    l2_token: Set(format!("{:?}", data.l2Token)),
+                    tx_hash: Set(tx_hash_str),
                     amount: Set(data.amount.to_string()),
                     created_at: Set(Utc::now().into()),
                 });
@@ -131,7 +132,8 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     tx_hash: Set(tx_hash_str),
                     nonce: Set(data.nonce.try_into().unwrap()),
                     chain_id: Set(data.chainId.try_into().unwrap()),
-                    block_number: Set(data.blockNumber.try_into().unwrap()),
+                    block_number: Set(Some(data.blockNumber.try_into().unwrap())),
+                    slot_number: Set(None),
                     l1_token: Set(format!("{:?}", data.l1Token)),
                     l2_token: Set(format!("{:?}", data.l2Token)),
                     from: Set(format!("{:?}", data.from)),

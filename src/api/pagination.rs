@@ -34,9 +34,9 @@ pub struct L1WithdrawalPagination {
 impl Pagination for L1WithdrawalPagination {}
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct SentMessagePagination {
+pub struct L2WithdrawalPagination {
     pub items_count: Option<u64>,
     pub nonce: Option<u64>,
 }
 
-impl Pagination for SentMessagePagination {}
+impl Pagination for L2WithdrawalPagination {}

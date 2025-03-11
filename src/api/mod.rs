@@ -43,7 +43,7 @@ fn make_server(state: AppState) -> Router {
     Router::new()
         .route("/l1_deposits", get(controller::get_l1_deposits))
         .route("/l1_withdraws", get(controller::get_l1_withdraws))
-        .route("/sent_messages", get(controller::get_sent_messages))
+        .route("/l2_withdraws", get(controller::get_l2_withdraws))
         .route("/status", get(controller::health_check))
         .with_state(state)
 }
