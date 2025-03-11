@@ -26,7 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: cargo test --all-features
+      - run: |
+          git config --global credential.helper store && \
+          echo "https://${{github.actor}}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials && \
+          chmod 600 ~/.git-credentials
+          cargo test --all-features
 
   # Check formatting with rustfmt
   formatting:
