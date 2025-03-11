@@ -1,0 +1,59 @@
+name: Secrets and code scan
+
+on:
+  push:
+    branches:
+      - '**'  # This will trigger on all tags
+    tags:
+      - '**'  # This will trigger on all tags
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Disable incremental compilation for faster from-scratch builds
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  trivy_scan:
+    name: scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: 'fs'
+          cache: 'false'
+          scan-ref: '.'
+  secret_scan:
+    name: scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified,unknown
+  anchore_scan:
+    name: scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - name: Scan current project
+        uses: anchore/scan-action@v6
+        with:
+          path: "."
