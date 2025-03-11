@@ -25,7 +25,7 @@ impl ChainIndexer for EVMIndexer {
         })
     }
 
-    async fn run(&self) -> Result<()> {
+    async fn run(&mut self) -> Result<()> {
         let mut stream = subscriber::subscribe(&*self.provider).await?;
         let id = self.chain_id().await?;
         info!(

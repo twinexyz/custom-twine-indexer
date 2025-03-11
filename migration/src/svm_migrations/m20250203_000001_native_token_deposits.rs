@@ -54,6 +54,12 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
+                        ColumnDef::new(NativeTokenDeposit::Signature)
+                            .string_len(88)
+                            .not_null()
+                            .default(""),
+                    )
+                    .col(
                         ColumnDef::new(NativeTokenDeposit::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null()

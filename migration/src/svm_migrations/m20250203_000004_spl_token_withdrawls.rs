@@ -40,18 +40,24 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(SPLTokenWithdraw::L1Token)
-                            .string_len(42)
+                            .string_len(88)
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(SPLTokenWithdraw::L2Token)
-                            .string_len(42)
+                            .string_len(88)
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(SPLTokenWithdraw::Amount)
                             .string_len(64)
                             .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SPLTokenWithdraw::Signature)
+                            .string_len(88)
+                            .not_null()
+                            .default(""),
                     )
                     .col(
                         ColumnDef::new(SPLTokenWithdraw::CreatedAt)

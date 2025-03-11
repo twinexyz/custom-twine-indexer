@@ -1,111 +1,109 @@
-use crate::indexer::svm::parser::{DepositInfoResponse, WithdrawInfoResponse}; // Import WithdrawInfoResponse
-use eyre::{self, Result};
-use serde::{Deserialize, Serialize};
-use std::process::Command;
-use tracing::{error, info};
+use anyhow::{Context, Result};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{json, Value};
+use tokio::sync::mpsc::Sender;
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tracing::{debug, error, info};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DepositResponse {
-    status: String,
-    data: Vec<DepositInfoResponse>,
-}
+pub async fn subscribe_to_logs(
+    ws_url: &str,
+    program_id: &str,
+    data_sender: Sender<(String, Option<String>, String)>,
+) -> Result<()> {
+    let (ws_stream, _) = connect_async(ws_url)
+        .await
+        .context("Failed to connect to WebSocket")?;
+    let (mut write, mut read) = ws_stream.split();
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WithdrawResponse {
-    status: String,
-    data: Vec<WithdrawInfoResponse>,
-}
+    let subscription = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "logsSubscribe",
+        "params": [
+            {
+                "mentions": [program_id]
+            },
+            {
+                "commitment": "finalized"
+            }
+        ]
+    });
 
-pub async fn poll_deposits() -> Result<Vec<DepositInfoResponse>> {
-    let output = Command::new("./svm_subscriber")
-        .arg("--get-deposits")
-        .output()
-        .map_err(|e| eyre::eyre!("Failed to execute svm_subscriber for deposits: {:?}", e))?;
+    write
+        .send(Message::Text(subscription.to_string()))
+        .await
+        .context("Failed to send subscription request")?;
+    info!("Subscribed to logs for program: {}", program_id);
 
-    if output.status.success() {
-        let stdout = String::from_utf8(output.stdout)?;
-        let response: DepositResponse = serde_json::from_str(&stdout)?;
-        if response.status == "success" {
-            Ok(response.data)
-        } else {
-            Err(eyre::eyre!(
-                "svm_subscriber returned error for deposits: {:?}",
-                response
-            ))
-        }
-    } else {
-        let stderr = String::from_utf8(output.stderr)?;
-        Err(eyre::eyre!(
-            "svm_subscriber failed for deposits: {:?}",
-            stderr
-        ))
-    }
-}
+    while let Some(message) = read.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                debug!("Received WebSocket message: {}", text);
+                let value: Value =
+                    serde_json::from_str(&text).context("Failed to parse WebSocket message")?;
 
-pub async fn poll_withdrawals() -> Result<Vec<WithdrawInfoResponse>> {
-    let output = Command::new("./svm_subscriber")
-        .arg("--get-withdrawals") // Assuming this flag exists
-        .output()
-        .map_err(|e| eyre::eyre!("Failed to execute svm_subscriber for withdrawals: {:?}", e))?;
+                if let Some(params) = value.get("params") {
+                    if let Some(result) = params.get("result") {
+                        let signature = result
+                            .get("value")
+                            .and_then(|v| v.get("signature"))
+                            .and_then(|s| s.as_str())
+                            .map(String::from);
 
-    if output.status.success() {
-        let stdout = String::from_utf8(output.stdout)?;
-        let response: WithdrawResponse = serde_json::from_str(&stdout)?;
-        if response.status == "success" {
-            Ok(response.data)
-        } else {
-            Err(eyre::eyre!(
-                "svm_subscriber returned error for withdrawals: {:?}",
-                response
-            ))
-        }
-    } else {
-        let stderr = String::from_utf8(output.stderr)?;
-        Err(eyre::eyre!(
-            "svm_subscriber failed for withdrawals: {:?}",
-            stderr
-        ))
-    }
-}
+                        if let Some(logs) = result.get("value").and_then(|v| v.get("logs")) {
+                            if let Some(logs_array) = logs.as_array() {
+                                let mut event_type = None;
+                                let mut encoded_data = None;
 
-pub async fn start_polling() -> Result<(Vec<DepositInfoResponse>, Vec<WithdrawInfoResponse>)> {
-    info!("Polling for new deposits and withdrawals...");
+                                for log in logs_array {
+                                    if let Some(log_str) = log.as_str() {
+                                        // Detect the event type based on the instruction log
+                                        if log_str == "Program log: Instruction: NativeTokenDeposit" {
+                                            event_type = Some("native_deposit");
+                                        } else if log_str == "Program log: Instruction: SplTokensDeposit" {
+                                            event_type = Some("spl_deposit");
+                                        } else if log_str == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
+                                            event_type = Some("native_withdrawal");
+                                        } else if log_str == "Program log: Instruction: ForcedSplTokenWithdrawal" {
+                                            event_type = Some("spl_withdrawal");
+                                        } else if log_str.starts_with("Program data: ") {
+                                            encoded_data = Some(log_str.trim_start_matches("Program data: ").to_string());
+                                        }
+                                    }
+                                }
 
-    let deposit_result = poll_deposits().await;
-    let withdraw_result = poll_withdrawals().await;
-
-    match (deposit_result, withdraw_result) {
-        (Ok(deposits), Ok(withdrawals)) => {
-            if deposits.is_empty() {
-                info!("No new deposits found.");
-            } else {
-                for deposit in &deposits {
-                    info!("❤️❤️New deposit: {:?}", deposit);
+                                if let (Some(event_type), Some(encoded_data)) =
+                                    (event_type, encoded_data)
+                                {
+                                    info!("Found encoded {} data: {}", event_type, encoded_data);
+                                    if data_sender
+                                        .send((
+                                            encoded_data,
+                                            signature.clone(),
+                                            event_type.to_string(),
+                                        ))
+                                        .await
+                                        .is_err()
+                                    {
+                                        error!(
+                                            "Failed to send {} data through channel",
+                                            event_type
+                                        );
+                                        return Err(anyhow::anyhow!("Channel send error"));
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            if withdrawals.is_empty() {
-                info!("No new withdrawals found.");
-            } else {
-                for withdraw in &withdrawals {
-                    info!("New withdrawal: {:?}", withdraw);
-                }
+            Ok(_) => continue,
+            Err(e) => {
+                error!("WebSocket error: {}", e);
+                return Err(anyhow::anyhow!("WebSocket error: {}", e));
             }
-
-            Ok((deposits, withdrawals))
-        }
-        (Err(deposit_err), Ok(_)) => {
-            error!("Failed to poll deposits: {:?}", deposit_err);
-            Err(deposit_err)
-        }
-        (Ok(_), Err(withdraw_err)) => {
-            error!("Failed to poll withdrawals: {:?}", withdraw_err);
-            Err(withdraw_err)
-        }
-        (Err(deposit_err), Err(withdraw_err)) => {
-            error!("Failed to poll deposits: {:?}", deposit_err);
-            error!("Failed to poll withdrawals: {:?}", withdraw_err);
-            Err(deposit_err)
         }
     }
+
+    Ok(())
 }
