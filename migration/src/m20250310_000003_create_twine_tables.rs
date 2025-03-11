@@ -54,6 +54,31 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineL2Withdraw::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(TwineL2Withdraw::From).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::L2Token).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::To).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::L1Token).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::Amount).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::Value).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::Nonce).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::ChainId).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::BlockNumber).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::GasLimit).string().not_null())
+                    .col(ColumnDef::new(TwineL1Withdraw::TxHash).string().not_null())
+                    .primary_key(
+                        Index::create()
+                            .col(TwineL2Withdraw::Nonce)
+                            .col(TwineL2Withdraw::ChainId),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
@@ -64,11 +89,14 @@ impl MigrationTrait for Migration {
         manager
             .drop_table(Table::drop().table(TwineL1Deposit::Table).to_owned())
             .await?;
+        manager
+            .drop_table(Table::drop().table(TwineL2Withdraw::Table).to_owned())
+            .await?;
         Ok(())
     }
 }
 
-#[derive(Iden)]
+#[derive(DeriveIden)]
 enum TwineL1Deposit {
     Table,
     L1Nonce,
@@ -83,7 +111,7 @@ enum TwineL1Deposit {
     TxHash,
 }
 
-#[derive(Iden)]
+#[derive(DeriveIden)]
 enum TwineL1Withdraw {
     Table,
     L1Nonce,
@@ -95,5 +123,21 @@ enum TwineL1Withdraw {
     L1Token,
     L2Token,
     Amount,
+    TxHash,
+}
+
+#[derive(DeriveIden)]
+enum TwineL2Withdraw {
+    Table,
+    From,
+    L2Token,
+    To,
+    L1Token,
+    Amount,
+    Value,
+    Nonce,
+    ChainId,
+    BlockNumber,
+    GasLimit,
     TxHash,
 }

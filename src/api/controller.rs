@@ -3,12 +3,12 @@ use crate::api::pagination::{
     items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination, PlaceholderPagination,};
 use crate::api::AppState;
 use crate::api::{ApiResponse, ApiResult};
-use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw};
+use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
 };
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect, PaginatorTrait};
 
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse {
@@ -23,6 +23,7 @@ pub async fn get_l1_deposits(
     Query(pagination): Query<L1DepositPagination>,
 ) -> ApiResult<Vec<l1_deposit::Model>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
+
     let mut query = l1_deposit::Entity::find();
 
     // If pagination parameters are provided use them
@@ -33,10 +34,6 @@ pub async fn get_l1_deposits(
             Condition::any().add(l1_deposit::Column::BlockNumber.lt(last_block)),
             //TODO: case when 2 different txs exist in the same block.
             // Add a condition to order them by nonce or date.
-            // .add(
-            //     Condition::all()
-            //         .add(l1_deposit::Column::BlockNumber.eq(last_block))
-            // ),
         );
     }
 
@@ -46,6 +43,24 @@ pub async fn get_l1_deposits(
         .all(&state.db)
         .await
         .map_err(AppError::Database)?;
+
+    // let mut valid_deposits = Vec::new();
+
+    // for deposit in &deposits {
+    //     let twine_l1_deposits_count = twine_l1_deposit::Entity::find()
+    //         .filter(
+    //             Condition::all()
+    //                 .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id.clone()))
+    //                 .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce))
+    //         )
+    //         .count(&state.db)
+    //         .await
+    //         .map_err(AppError::Database)?;
+
+    //     if twine_l1_deposits_count > 0 {
+    //         valid_deposits.push(deposit.clone());
+    //     }
+    // }
 
     let next_page_params = deposits.last().map(|d| L1DepositPagination {
         items_count: Some(items_count),

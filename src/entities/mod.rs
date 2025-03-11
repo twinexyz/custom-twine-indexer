@@ -10,6 +10,7 @@ pub mod twine_batch_l2_blocks;
 pub mod twine_batch_l2_transactions;
 pub mod twine_l1_deposit;
 pub mod twine_l1_withdraw;
+pub mod twine_l2_withdraw;
 pub mod twine_lifecycle_l1_transactions;
 pub mod twine_transaction_batch;
 pub mod twine_transaction_batch_detail;

@@ -1,9 +1,9 @@
-use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch};
+use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch, twine_l2_withdraw};
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
 use chrono::{DateTime, Utc};
 use eyre::Report;
-use sea_orm::ActiveValue;
+use sea_orm::ActiveValue::Set;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain;
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
 
@@ -39,6 +39,7 @@ impl std::fmt::Display for ParserError {
 pub enum DbModel {
     TwineL1Deposit(twine_l1_deposit::ActiveModel),
     TwineL1Withdraw(twine_l1_withdraw::ActiveModel),
+    TwineL2Withdraw(twine_l2_withdraw::ActiveModel),
     TwineTransactionBatch(twine_transaction_batch::ActiveModel),
 }
 
@@ -56,32 +57,32 @@ fn process_precompile_return(
     if let Some(deposit_txn) = pr.deposit.first() {
         Ok(ParsedLog {
             model: DbModel::TwineL1Deposit(twine_l1_deposit::ActiveModel {
-                l1_nonce: ActiveValue::Set(deposit_txn.l1_nonce as i64),
-                chain_id: ActiveValue::Set(deposit_txn.detail.chain_id as i64),
-                status: ActiveValue::Set(deposit_txn.detail.status as i16),
-                slot_number: ActiveValue::Set(deposit_txn.detail.slot_number as i64),
-                from_address: ActiveValue::Set(deposit_txn.detail.from_address.clone()),
-                to_twine_address: ActiveValue::Set(deposit_txn.detail.to_twine_address.clone()),
-                l1_token: ActiveValue::Set(deposit_txn.detail.l1_token.clone()),
-                l2_token: ActiveValue::Set(deposit_txn.detail.l2_token.clone()),
-                amount: ActiveValue::Set(deposit_txn.detail.amount.clone()),
-                tx_hash: ActiveValue::Set(tx_hash.to_string()),
+                l1_nonce: Set(deposit_txn.l1_nonce as i64),
+                chain_id: Set(deposit_txn.detail.chain_id as i64),
+                status: Set(deposit_txn.detail.status as i16),
+                slot_number: Set(deposit_txn.detail.slot_number as i64),
+                from_address: Set(deposit_txn.detail.from_address.clone()),
+                to_twine_address: Set(deposit_txn.detail.to_twine_address.clone()),
+                l1_token: Set(deposit_txn.detail.l1_token.clone()),
+                l2_token: Set(deposit_txn.detail.l2_token.clone()),
+                amount: Set(deposit_txn.detail.amount.clone()),
+                tx_hash: Set(tx_hash.to_string()),
             }),
             block_number,
         })
     } else if let Some(withdraw_txn) = pr.withdraws.first() {
         Ok(ParsedLog {
             model: DbModel::TwineL1Withdraw(twine_l1_withdraw::ActiveModel {
-                l1_nonce: ActiveValue::Set(withdraw_txn.l1_nonce as i64),
-                chain_id: ActiveValue::Set(withdraw_txn.detail.chain_id as i64),
-                status: ActiveValue::Set(withdraw_txn.detail.status as i16),
-                slot_number: ActiveValue::Set(withdraw_txn.detail.slot_number as i64),
-                from_address: ActiveValue::Set(withdraw_txn.detail.from_address.clone()),
-                to_twine_address: ActiveValue::Set(withdraw_txn.detail.to_twine_address.clone()),
-                l1_token: ActiveValue::Set(withdraw_txn.detail.l1_token.clone()),
-                l2_token: ActiveValue::Set(withdraw_txn.detail.l2_token.clone()),
-                amount: ActiveValue::Set(withdraw_txn.detail.amount.clone()),
-                tx_hash: ActiveValue::Set(tx_hash.to_string()),
+                l1_nonce: Set(withdraw_txn.l1_nonce as i64),
+                chain_id: Set(withdraw_txn.detail.chain_id as i64),
+                status: Set(withdraw_txn.detail.status as i16),
+                slot_number: Set(withdraw_txn.detail.slot_number as i64),
+                from_address: Set(withdraw_txn.detail.from_address.clone()),
+                to_twine_address: Set(withdraw_txn.detail.to_twine_address.clone()),
+                l1_token: Set(withdraw_txn.detail.l1_token.clone()),
+                l2_token: Set(withdraw_txn.detail.l2_token.clone()),
+                amount: Set(withdraw_txn.detail.amount.clone()),
+                tx_hash: Set(tx_hash.to_string()),
             }),
             block_number,
         })
@@ -141,6 +142,27 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                 root_hash: ActiveValue::Set(data.batchHash.0.to_vec()),
                 created_at: ActiveValue::Set(timestamp.into()),
                 updated_at: ActiveValue::Set(timestamp.into()),
+            });
+            Ok(ParsedLog {
+                model,
+                block_number,
+            })
+        }
+        L2Messenger::SentMessage::SIGNATURE_HASH => {
+            let decoded = log.log_decode::<L2Messenger::SentMessage>()?;
+            let data = decoded.inner.data;
+            let model = DbModel::TwineL2Withdraw(twine_l2_withdraw::ActiveModel {
+                from: Set(format!("{:?}", data.from)),
+                l2_token: Set(format!("{:?}", data.l2Token)),
+                to: Set(format!("{:?}", data.to)),
+                l1_token: Set(format!("{:?}", data.l1Token)),
+                amount: Set(data.amount.to_string()),
+                nonce: Set(data.nonce.to_string()),
+                value: Set(data.value.to_string()),
+                chain_id: Set(data.chainId.to_string()),
+                block_number: Set(data.blockNumber.to_string()),
+                gas_limit: Set(data.gasLimit.to_string()),
+                tx_hash: Set(tx_hash.to_string()),
             });
             Ok(ParsedLog {
                 model,
