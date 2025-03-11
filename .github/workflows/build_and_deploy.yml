@@ -59,6 +59,14 @@ jobs:
         cache: 'false'
         scan-ref: '.'
 
+    #added for test
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@0.29.0
+      with:
+        image-ref: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+        format: 'table'
+        ignore-unfixed: true
+
   build_and_push:
     name: Build Image
     runs-on: ubuntu-24.04
@@ -90,7 +98,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.29.0
         with:
-          image-ref: 'ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}'
+          image-ref: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
           format: 'table'
           ignore-unfixed: true
 
