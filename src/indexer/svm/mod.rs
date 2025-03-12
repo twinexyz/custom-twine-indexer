@@ -1,7 +1,6 @@
 mod db;
 mod parser;
 mod subscriber;
-mod utils;
 
 use super::ChainIndexer;
 use async_trait::async_trait;
@@ -19,7 +18,6 @@ pub struct SVMIndexer {
 #[async_trait]
 impl ChainIndexer for SVMIndexer {
     async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
-        // Determine WebSocket URL
         let ws_url = if rpc_url.starts_with("http://") {
             rpc_url.replace("http://", "ws://")
         } else if rpc_url.starts_with("https://") {
@@ -29,9 +27,8 @@ impl ChainIndexer for SVMIndexer {
         } else {
             format!("wss://{}", rpc_url)
         };
-        let program_id = "F2fAXerKhd4yq9NMbpucygsnWm77HDpm962TW8HupFHp";
+        let program_id = "9Q9FQZWzbEznXaFChEuipbHLWiGvvYrv9csKDK1sJz2N";
 
-        // Create channels
         let (data_sender, mut data_receiver) =
             mpsc::channel::<(String, Option<String>, String)>(100);
         let (event_sender, event_receiver) = mpsc::channel(100);
@@ -63,84 +60,88 @@ impl ChainIndexer for SVMIndexer {
     async fn run(&mut self) -> Result<()> {
         info!("SVM indexer running...");
 
-        let mut latest_native_deposit_nonce = db::get_latest_native_token_deposit_nonce(&self.db)
+        // Fetch the latest nonces for deposits and withdrawals for chain_id
+        let chain_id = self.chain_id().await? as i64;
+        let mut latest_deposit_nonce = db::get_latest_deposit_nonce(&self.db, chain_id)
             .await?
             .unwrap_or(0);
-        let mut latest_spl_deposit_nonce = db::get_latest_spl_token_deposit_nonce(&self.db)
-            .await?
-            .unwrap_or(0);
-        let mut latest_native_withdrawal_nonce = db::get_latest_native_withdrawal_nonce(&self.db) // Assuming this function exists
-            .await?
-            .unwrap_or(0);
-        let mut latest_spl_withdrawal_nonce = db::get_latest_spl_withdrawal_nonce(&self.db) // Assuming this function exists
+        let mut latest_withdrawal_nonce = db::get_latest_withdrawal_nonce(&self.db, chain_id)
             .await?
             .unwrap_or(0);
 
-        // Process incoming events from the channel
+        info!(
+            "Starting with latest deposit nonce: {}, withdrawal nonce: {} for chain_id: {}",
+            latest_deposit_nonce, latest_withdrawal_nonce, chain_id
+        );
+
         while let Some(event) = self.event_receiver.recv().await {
-            // Try to deserialize as DepositSuccessful
+            info!("Received raw event: {:?}", event);
+
             if let Ok(deposit) = serde_json::from_value::<parser::DepositSuccessful>(event.clone())
             {
-                let nonce = deposit.nonce;
+                let nonce = deposit.nonce as i64;
+                if deposit.chain_id as i64 != chain_id {
+                    info!("Skipping deposit with chain_id {} (expected {})", deposit.chain_id, chain_id);
+                    continue;
+                }
+                if nonce <= latest_deposit_nonce {
+                    info!(
+                        "Skipping deposit with nonce {} (not newer than {})",
+                        nonce, latest_deposit_nonce
+                    );
+                    continue;
+                }
+
                 let is_native = deposit.l1_token == "11111111111111111111111111111111";
+                info!(
+                    "Parsed deposit event: native={}, nonce={}",
+                    is_native, nonce
+                );
 
                 if is_native {
-                    if (nonce as i64) <= latest_native_deposit_nonce {
-                        info!(
-                            "Skipping native deposit with nonce {} (not newer than {})",
-                            nonce, latest_native_deposit_nonce
-                        );
-                        continue;
-                    }
                     db::insert_sol_deposit(&deposit, &self.db).await?;
-                    latest_native_deposit_nonce = nonce as i64;
                     info!("Inserted native deposit with nonce: {}", nonce);
                 } else {
-                    if (nonce as i64) <= latest_spl_deposit_nonce {
-                        info!(
-                            "Skipping SPL deposit with nonce {} (not newer than {})",
-                            nonce, latest_spl_deposit_nonce
-                        );
-                        continue;
-                    }
                     db::insert_spl_deposit(&deposit, &self.db).await?;
-                    latest_spl_deposit_nonce = nonce as i64;
                     info!("Inserted SPL deposit with nonce: {}", nonce);
                 }
+                latest_deposit_nonce = nonce;
             } else if let Ok(withdrawal) =
                 serde_json::from_value::<parser::ForcedWithdrawSuccessful>(event.clone())
             {
-                let nonce = withdrawal.nonce;
+                let nonce = withdrawal.nonce as i64;
+                if withdrawal.chain_id as i64 != chain_id {
+                    info!("Skipping withdrawal with chain_id {} (expected {})", withdrawal.chain_id, chain_id);
+                    continue;
+                }
+                if nonce <= latest_withdrawal_nonce {
+                    info!(
+                        "Skipping withdrawal with nonce {} (not newer than {})",
+                        nonce, latest_withdrawal_nonce
+                    );
+                    continue;
+                }
+
                 let is_native = withdrawal.l1_token == "11111111111111111111111111111111";
+                info!(
+                    "Parsed withdrawal event: native={}, nonce={}",
+                    is_native, nonce
+                );
 
                 if is_native {
-                    if (nonce as i64) <= latest_native_withdrawal_nonce {
-                        info!(
-                            "Skipping native withdrawal with nonce {} (not newer than {})",
-                            nonce, latest_native_withdrawal_nonce
-                        );
-                        continue;
-                    }
                     db::insert_native_withdrawal(&withdrawal, &self.db).await?;
-                    latest_native_withdrawal_nonce = nonce as i64;
                     info!("Inserted native withdrawal with nonce: {}", nonce);
                 } else {
-                    if (nonce as i64) <= latest_spl_withdrawal_nonce {
-                        info!(
-                            "Skipping SPL withdrawal with nonce {} (not newer than {})",
-                            nonce, latest_spl_withdrawal_nonce
-                        );
-                        continue;
-                    }
                     db::insert_spl_withdrawal(&withdrawal, &self.db).await?;
-                    latest_spl_withdrawal_nonce = nonce as i64;
                     info!("Inserted SPL withdrawal with nonce: {}", nonce);
                 }
+                latest_withdrawal_nonce = nonce;
             } else {
-                error!("Failed to deserialize event into DepositSuccessful or ForcedWithdrawSuccessful");
+                error!("Failed to deserialize event: {:?}", event);
             }
         }
 
+        info!("SVM indexer stopped");
         Ok(())
     }
 
