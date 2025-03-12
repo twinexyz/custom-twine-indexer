@@ -147,59 +147,59 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                 })
             }
             // waiting for somes changes in smart contract
-            FinalizeWithdrawERC20::SIGNATURE_HASH => {
-                let decoded = log.log_decode::<FinalizeWithdrawERC20>().map_err(|e| {
-                    ParserError::DecodeError {
-                        event_type: "FinalizeWithdrawERC20",
-                        source: Box::new(e),
-                    }
-                })?;
-                let data = decoded.inner.data;
-                let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
-                    // chain_id: Set(data.chainId.try_into().unwrap()),
-                    // nonce: Set(data.nonce.try_into().unwrap()),
-                    block_number: Set(Some(data.blockNumber.try_into().unwrap())),
-                    slot_number: Set(None),
-                    // tx_hash: Set(tx_hash_str),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
-                    // from: Set(format!("{:?}", data.from)),
-                    to_twine_address: Set(format!("{:?}", data.to.to_string())),
-                    amount: Set(data.amount.to_string()),
-                    created_at: Set(Utc::now().into()),
-                });
-                Ok(ParsedLog {
-                    model,
-                    block_number,
-                })
-            }
-            FinalizeWithdrawETH::SIGNATURE_HASH => {
-                let decoded = log.log_decode::<FinalizeWithdrawETH>().map_err(|e| {
-                    ParserError::DecodeError {
-                        event_type: "FinalizeWithdrawETH",
-                        source: Box::new(e),
-                    }
-                })?;
-                let data = decoded.inner.data;
-                // waiting for this change in smart contract
-                let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
-                    // chain_id: Set(data.chainId.try_into().unwrap()),
-                    // nonce: Set(data.nonce.try_into().unwrap()),
-                    block_number: Set(Some(data.blockNumber.try_into().unwrap())),
-                    slot_number: Set(None),
-                    // tx_hash: Set(tx_hash_str),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
-                    // from: Set(format!("{:?}", data.from)),
-                    to_twine_address: Set(format!("{:?}", data.to.to_string())),
-                    amount: Set(data.amount.to_string()),
-                    created_at: Set(Utc::now().into()),
-                });
-                Ok(ParsedLog {
-                    model,
-                    block_number,
-                })
-            }
+            // FinalizeWithdrawERC20::SIGNATURE_HASH => {
+            //     let decoded = log.log_decode::<FinalizeWithdrawERC20>().map_err(|e| {
+            //         ParserError::DecodeError {
+            //             event_type: "FinalizeWithdrawERC20",
+            //             source: Box::new(e),
+            //         }
+            //     })?;
+            //     let data = decoded.inner.data;
+            //     let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
+            //         // chain_id: Set(data.chainId.try_into().unwrap()),
+            //         // nonce: Set(data.nonce.try_into().unwrap()),
+            //         block_number: Set(Some(data.blockNumber.try_into().unwrap())),
+            //         slot_number: Set(None),
+            //         // tx_hash: Set(tx_hash_str),
+            //         l1_token: Set(format!("{:?}", data.l1Token)),
+            //         l2_token: Set(format!("{:?}", data.l2Token)),
+            //         // from: Set(format!("{:?}", data.from)),
+            //         to_twine_address: Set(format!("{:?}", data.to.to_string())),
+            //         amount: Set(data.amount.to_string()),
+            //         created_at: Set(Utc::now().into()),
+            //     });
+            //     Ok(ParsedLog {
+            //         model,
+            //         block_number,
+            //     })
+            // }
+            // FinalizeWithdrawETH::SIGNATURE_HASH => {
+            //     let decoded = log.log_decode::<FinalizeWithdrawETH>().map_err(|e| {
+            //         ParserError::DecodeError {
+            //             event_type: "FinalizeWithdrawETH",
+            //             source: Box::new(e),
+            //         }
+            //     })?;
+            //     let data = decoded.inner.data;
+            //     // waiting for this change in smart contract
+            //     let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
+            //         // chain_id: Set(data.chainId.try_into().unwrap()),
+            //         // nonce: Set(data.nonce.try_into().unwrap()),
+            //         block_number: Set(Some(data.blockNumber.try_into().unwrap())),
+            //         slot_number: Set(None),
+            //         // tx_hash: Set(tx_hash_str),
+            //         l1_token: Set(format!("{:?}", data.l1Token)),
+            //         l2_token: Set(format!("{:?}", data.l2Token)),
+            //         // from: Set(format!("{:?}", data.from)),
+            //         to_twine_address: Set(format!("{:?}", data.to.to_string())),
+            //         amount: Set(data.amount.to_string()),
+            //         created_at: Set(Utc::now().into()),
+            //     });
+            //     Ok(ParsedLog {
+            //         model,
+            //         block_number,
+            //     })
+            // }
             other => Err(ParserError::UnknownEvent { signature: other }.into()),
         },
         None => Err(ParserError::UnknownEvent {

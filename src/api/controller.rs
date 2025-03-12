@@ -4,6 +4,8 @@ use crate::api::pagination::{
 use crate::api::AppState;
 use crate::api::{ApiResponse, ApiResult};
 use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw};
+use crate::api::response::{L1DepositResponse, L1WithdrawResponse};
+use axum::http::response;
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -21,7 +23,7 @@ pub async fn health_check() -> impl IntoResponse {
 pub async fn get_l1_deposits(
     State(state): State<AppState>,
     Query(pagination): Query<L1DepositPagination>,
-) -> ApiResult<Vec<l1_deposit::Model>, impl Pagination> {
+) -> ApiResult<Vec<L1DepositResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
 
     let mut query = l1_deposit::Entity::find();
@@ -44,23 +46,38 @@ pub async fn get_l1_deposits(
         .await
         .map_err(AppError::Database)?;
 
-    // let mut valid_deposits = Vec::new();
+    let mut response_items = Vec::new();
 
-    // for deposit in &deposits {
-    //     let twine_l1_deposits_count = twine_l1_deposit::Entity::find()
-    //         .filter(
-    //             Condition::all()
-    //                 .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id.clone()))
-    //                 .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce))
-    //         )
-    //         .count(&state.db)
-    //         .await
-    //         .map_err(AppError::Database)?;
+    for deposit in &deposits {
+        let twine_record = twine_l1_deposit::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id.clone()))
+                    .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce))
+            )
+            .one(&state.db)
+            .await
+            .map_err(AppError::Database)?;
 
-    //     if twine_l1_deposits_count > 0 {
-    //         valid_deposits.push(deposit.clone());
-    //     }
-    // }
+        let response_item = L1DepositResponse {
+            l1_tx_hash: deposit.tx_hash.clone(),
+            l2_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            slot_number: deposit.slot_number,
+            l2_slot_number: twine_record.as_ref().map(|r| r.slot_number.clone()).unwrap_or_default(),
+            block_number: deposit.block_number,
+            status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
+            nonce: deposit.nonce,
+            chain_id: deposit.chain_id,
+            l1_token: deposit.l1_token.clone(),
+            l2_token: deposit.l2_token.clone(),
+            from: deposit.from.clone(),
+            to_twine_address: deposit.to_twine_address.clone(),
+            amount: deposit.amount.clone(),
+            created_at: deposit.created_at,
+        };
+
+        response_items.push(response_item);
+    }
 
     let next_page_params = deposits.last().map(|d| L1DepositPagination {
         items_count: Some(items_count),
@@ -70,7 +87,7 @@ pub async fn get_l1_deposits(
 
     Ok(ApiResponse {
         success: true,
-        items: deposits,
+        items: response_items,
         next_page_params,
     })
 }
@@ -78,7 +95,7 @@ pub async fn get_l1_deposits(
 pub async fn get_l1_withdraws(
     State(state): State<AppState>,
     Query(pagination): Query<L1WithdrawalPagination>,
-) -> ApiResult<Vec<l1_withdraw::Model>, impl Pagination> {
+) -> ApiResult<Vec<L1WithdrawResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
     let mut query = l1_withdraw::Entity::find();
 
@@ -94,6 +111,37 @@ pub async fn get_l1_withdraws(
         .await
         .map_err(AppError::Database)?;
 
+    let mut response_items = Vec::new();
+
+    for withdraw in &withdraws {
+        let twine_record = twine_l1_withdraw::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(twine_l1_withdraw::Column::ChainId.eq(withdraw.chain_id.clone()))
+                    .add(twine_l1_withdraw::Column::L1Nonce.eq(withdraw.nonce))
+            )
+            .one(&state.db)
+            .await
+            .map_err(AppError::Database)?;
+        let response_item = L1WithdrawResponse {
+            l1_tx_hash: withdraw.tx_hash.clone(),
+            l2_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            slot_number: withdraw.slot_number,
+            l2_slot_number: twine_record.as_ref().map(|r| r.slot_number.clone()).unwrap_or_default(),
+            block_number: withdraw.block_number,
+            status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
+            nonce: withdraw.nonce,
+            chain_id: withdraw.chain_id,
+            l1_token: withdraw.l1_token.clone(),
+            l2_token: withdraw.l2_token.clone(),
+            from: withdraw.from.clone(),
+            to_twine_address: withdraw.to_twine_address.clone(),
+            amount: withdraw.amount.clone(),
+            created_at: withdraw.created_at,
+        };
+        response_items.push(response_item);
+    }
+
     let next_page_params = withdraws.last().map(|w| L1WithdrawalPagination {
         items_count: Some(items_count),
         nonce: Some(w.nonce as u64),
@@ -101,7 +149,7 @@ pub async fn get_l1_withdraws(
 
     Ok(ApiResponse {
         success: true,
-        items: withdraws,
+        items: response_items,
         next_page_params,
     })
 }
