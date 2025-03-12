@@ -20,6 +20,8 @@ Export the required environment variables:
 
 ```sh
 export EVM_RPC_URL="ws://localhost:8546"
+export SVM_RPC_URL="ws://localhost:8900"
+export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
 export HTTP_PORT=7777
 export POSTGRES_USER=user
 export POSTGRES_PASSWORD=password

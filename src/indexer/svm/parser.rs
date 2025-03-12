@@ -81,7 +81,6 @@ pub fn parse_deposit_data(
 
     let (nonce, pos) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Nonce: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -89,7 +88,6 @@ pub fn parse_deposit_data(
 
     let (to_twine_address, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("To Twine Address: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -97,7 +95,6 @@ pub fn parse_deposit_data(
 
     let (l1_token, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("L1 Token: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -105,7 +102,6 @@ pub fn parse_deposit_data(
 
     let (l2_token, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("L2 Token: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -113,7 +109,6 @@ pub fn parse_deposit_data(
 
     let (chain_id, pos) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Chain ID: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -121,7 +116,6 @@ pub fn parse_deposit_data(
 
     let (amount, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Amount: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -129,7 +123,6 @@ pub fn parse_deposit_data(
 
     let (slot_number, _) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Slot Number: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -200,7 +193,6 @@ pub fn parse_forced_withdraw_data(
 
     let (nonce, pos) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Nonce: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -208,7 +200,6 @@ pub fn parse_forced_withdraw_data(
 
     let (from_twine_address, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("From Twine Address: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -216,7 +207,6 @@ pub fn parse_forced_withdraw_data(
 
     let (to_l1_pub_key, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("To L1 Pubkey: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -224,7 +214,6 @@ pub fn parse_forced_withdraw_data(
 
     let (l1_token, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("L1 Token: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -232,7 +221,6 @@ pub fn parse_forced_withdraw_data(
 
     let (l2_token, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("L2 Token: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -240,7 +228,6 @@ pub fn parse_forced_withdraw_data(
 
     let (chain_id, pos) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Chain ID: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -248,7 +235,6 @@ pub fn parse_forced_withdraw_data(
 
     let (amount, pos) = match parse_string(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Amount: {}", val);
             (val, new_pos)
         }
         None => return None,
@@ -256,7 +242,6 @@ pub fn parse_forced_withdraw_data(
 
     let (slot_number, _) = match parse_u64(&decoded_data, pos) {
         Some((val, new_pos)) => {
-            info!("Slot Number: {}", val);
             (val, new_pos)
         }
         None => return None,

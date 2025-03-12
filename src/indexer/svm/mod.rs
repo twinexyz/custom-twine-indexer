@@ -4,11 +4,12 @@ mod subscriber;
 
 use super::ChainIndexer;
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, eyre};
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{error, info};
+use std::env;
 
 pub struct SVMIndexer {
     db: DatabaseConnection,
@@ -18,6 +19,7 @@ pub struct SVMIndexer {
 #[async_trait]
 impl ChainIndexer for SVMIndexer {
     async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
+        // Determine WebSocket URL
         let ws_url = if rpc_url.starts_with("http://") {
             rpc_url.replace("http://", "ws://")
         } else if rpc_url.starts_with("https://") {
@@ -27,15 +29,17 @@ impl ChainIndexer for SVMIndexer {
         } else {
             format!("wss://{}", rpc_url)
         };
-        let program_id = "9Q9FQZWzbEznXaFChEuipbHLWiGvvYrv9csKDK1sJz2N";
+
+        let twine_chain_program_id = env::var("TWINE_CHAIN_PROGRAM_ID")
+            .map_err(|_| eyre!("TWINE_CHAIN_PROGRAM_ID environment variable not set"))?;
+        info!("Using twine_chain_program_id: {}", twine_chain_program_id);
 
         let (data_sender, mut data_receiver) =
             mpsc::channel::<(String, Option<String>, String)>(100);
         let (event_sender, event_receiver) = mpsc::channel(100);
 
-        // Spawn the subscription task
         tokio::spawn(async move {
-            if let Err(e) = subscriber::subscribe_to_logs(&ws_url, program_id, data_sender).await {
+            if let Err(e) = subscriber::subscribe_to_logs(&ws_url, &twine_chain_program_id, data_sender).await {
                 error!("Subscription error: {:?}", e);
             }
         });
@@ -56,7 +60,6 @@ impl ChainIndexer for SVMIndexer {
             event_receiver,
         })
     }
-
     async fn run(&mut self) -> Result<()> {
         info!("SVM indexer running...");
 
@@ -75,7 +78,6 @@ impl ChainIndexer for SVMIndexer {
         );
 
         while let Some(event) = self.event_receiver.recv().await {
-            info!("Received raw event: {:?}", event);
 
             if let Ok(deposit) = serde_json::from_value::<parser::DepositSuccessful>(event.clone())
             {
@@ -93,17 +95,13 @@ impl ChainIndexer for SVMIndexer {
                 }
 
                 let is_native = deposit.l1_token == "11111111111111111111111111111111";
-                info!(
-                    "Parsed deposit event: native={}, nonce={}",
-                    is_native, nonce
-                );
 
                 if is_native {
                     db::insert_sol_deposit(&deposit, &self.db).await?;
-                    info!("Inserted native deposit with nonce: {}", nonce);
+                    info!("✅ Inserted native deposit with nonce: {}", nonce);
                 } else {
                     db::insert_spl_deposit(&deposit, &self.db).await?;
-                    info!("Inserted SPL deposit with nonce: {}", nonce);
+                    info!("✅ Inserted SPL deposit with nonce: {}", nonce);
                 }
                 latest_deposit_nonce = nonce;
             } else if let Ok(withdrawal) =
@@ -130,10 +128,10 @@ impl ChainIndexer for SVMIndexer {
 
                 if is_native {
                     db::insert_native_withdrawal(&withdrawal, &self.db).await?;
-                    info!("Inserted native withdrawal with nonce: {}", nonce);
+                    info!("✅ Inserted native withdrawal with nonce: {}", nonce);
                 } else {
                     db::insert_spl_withdrawal(&withdrawal, &self.db).await?;
-                    info!("Inserted SPL withdrawal with nonce: {}", nonce);
+                    info!("✅ Inserted SPL withdrawal with nonce: {}", nonce);
                 }
                 latest_withdrawal_nonce = nonce;
             } else {
