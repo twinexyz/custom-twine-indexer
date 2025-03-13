@@ -1,6 +1,9 @@
 use chrono::Utc;
 use eyre::Result;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set, EntityTrait, QueryOrder, QuerySelect, QueryFilter, ColumnTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
+};
 use tracing::{error, info};
 
 use super::parser;
@@ -15,7 +18,7 @@ pub async fn insert_sol_deposit(
         chain_id: Set(deposit.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(deposit.slot_number as i64)),
-        from: Set(String::new()),
+        from: Set(deposit.from_l1_pubkey.clone()), // Updated to use from_l1_pubkey
         to_twine_address: Set(deposit.to_twine_address.clone()),
         l1_token: Set(deposit.l1_token.clone()),
         l2_token: Set(deposit.l2_token.clone()),
@@ -37,7 +40,7 @@ pub async fn insert_spl_deposit(
         chain_id: Set(deposit.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(deposit.slot_number as i64)),
-        from: Set(String::new()),
+        from: Set(deposit.from_l1_pubkey.clone()), // Updated to use from_l1_pubkey
         to_twine_address: Set(deposit.to_twine_address.clone()),
         l1_token: Set(deposit.l1_token.clone()),
         l2_token: Set(deposit.l2_token.clone()),
@@ -94,7 +97,54 @@ pub async fn insert_spl_withdrawal(
     Ok(())
 }
 
-pub async fn get_latest_deposit_nonce(db: &DatabaseConnection, chain_id: i64) -> Result<Option<i64>> {
+pub async fn insert_native_withdrawal_successful(
+    withdrawal: &parser::NativeWithdrawalSuccessful,
+    db: &DatabaseConnection,
+) -> Result<()> {
+    let withdrawal_model = l1_withdraw::ActiveModel {
+        nonce: Set(withdrawal.nonce as i64),
+        chain_id: Set(withdrawal.chain_id as i64),
+        block_number: Set(None),
+        slot_number: Set(Some(withdrawal.slot_number as i64)),
+        from: Set(String::new()), // No "from" address provided in event, using empty string
+        to_twine_address: Set(withdrawal.receiver_l1_pubkey.clone()),
+        l1_token: Set(withdrawal.l1_token.clone()),
+        l2_token: Set(withdrawal.l2_token.clone()),
+        tx_hash: Set(withdrawal.signature.clone()),
+        amount: Set(withdrawal.amount.to_string()),
+        created_at: Set(Utc::now().into()),
+    };
+
+    withdrawal_model.insert(db).await?;
+    Ok(())
+}
+
+pub async fn insert_spl_withdrawal_successful(
+    withdrawal: &parser::SplWithdrawalSuccessful,
+    db: &DatabaseConnection,
+) -> Result<()> {
+    let withdrawal_model = l1_withdraw::ActiveModel {
+        nonce: Set(withdrawal.nonce as i64),
+        chain_id: Set(withdrawal.chain_id as i64),
+        block_number: Set(None),
+        slot_number: Set(Some(withdrawal.slot_number as i64)),
+        from: Set(String::new()), // No "from" address provided in event, using empty string
+        to_twine_address: Set(withdrawal.receiver_l1_pubkey.clone()),
+        l1_token: Set(withdrawal.l1_token.clone()),
+        l2_token: Set(withdrawal.l2_token.clone()),
+        tx_hash: Set(withdrawal.signature.clone()),
+        amount: Set(withdrawal.amount.to_string()),
+        created_at: Set(Utc::now().into()),
+    };
+
+    withdrawal_model.insert(db).await?;
+    Ok(())
+}
+
+pub async fn get_latest_deposit_nonce(
+    db: &DatabaseConnection,
+    chain_id: i64,
+) -> Result<Option<i64>> {
     info!("Fetching latest deposit nonce for chain_id: {}", chain_id);
     let result = l1_deposit::Entity::find()
         .filter(l1_deposit::Column::ChainId.eq(chain_id))
@@ -107,7 +157,10 @@ pub async fn get_latest_deposit_nonce(db: &DatabaseConnection, chain_id: i64) ->
 
     match result {
         Ok(Some(model)) => {
-            info!("Found latest deposit nonce: {} for chain_id: {}", model.nonce, chain_id);
+            info!(
+                "Found latest deposit nonce: {} for chain_id: {}",
+                model.nonce, chain_id
+            );
             Ok(Some(model.nonce))
         }
         Ok(None) => {
@@ -115,14 +168,23 @@ pub async fn get_latest_deposit_nonce(db: &DatabaseConnection, chain_id: i64) ->
             Ok(None)
         }
         Err(e) => {
-            error!("Error fetching latest deposit nonce for chain_id: {}: {:?}", chain_id, e);
+            error!(
+                "Error fetching latest deposit nonce for chain_id: {}: {:?}",
+                chain_id, e
+            );
             Err(e.into())
         }
     }
 }
 
-pub async fn get_latest_withdrawal_nonce(db: &DatabaseConnection, chain_id: i64) -> Result<Option<i64>> {
-    info!("Fetching latest withdrawal nonce for chain_id: {}", chain_id);
+pub async fn get_latest_withdrawal_nonce(
+    db: &DatabaseConnection,
+    chain_id: i64,
+) -> Result<Option<i64>> {
+    info!(
+        "Fetching latest withdrawal nonce for chain_id: {}",
+        chain_id
+    );
     let result = l1_withdraw::Entity::find()
         .filter(l1_withdraw::Column::ChainId.eq(chain_id))
         .select_only()
@@ -134,7 +196,10 @@ pub async fn get_latest_withdrawal_nonce(db: &DatabaseConnection, chain_id: i64)
 
     match result {
         Ok(Some(model)) => {
-            info!("Found latest withdrawal nonce: {} for chain_id: {}", model.nonce, chain_id);
+            info!(
+                "Found latest withdrawal nonce: {} for chain_id: {}",
+                model.nonce, chain_id
+            );
             Ok(Some(model.nonce))
         }
         Ok(None) => {
@@ -142,7 +207,10 @@ pub async fn get_latest_withdrawal_nonce(db: &DatabaseConnection, chain_id: i64)
             Ok(None)
         }
         Err(e) => {
-            error!("Error fetching latest withdrawal nonce for chain_id: {}: {:?}", chain_id, e);
+            error!(
+                "Error fetching latest withdrawal nonce for chain_id: {}: {:?}",
+                chain_id, e
+            );
             Err(e.into())
         }
     }

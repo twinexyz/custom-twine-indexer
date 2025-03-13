@@ -22,6 +22,7 @@ Export the required environment variables:
 export EVM_RPC_URL="ws://localhost:8546"
 export SVM_RPC_URL="ws://localhost:8900"
 export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
+export TOKENS_GATEWAY_PROGRAM_ID="tokens gateway program id"
 export HTTP_PORT=7777
 export POSTGRES_USER=user
 export POSTGRES_PASSWORD=password
@@ -74,3 +75,5 @@ Ensure you have Docker and Docker Compose installed. Also, make sure the executi
 docker compose up -d
 ```
 ---
+
+
