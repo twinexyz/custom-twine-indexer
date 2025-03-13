@@ -1,0 +1,322 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineTransactionBatch::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::Number)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::Timestamp)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::StartBlock)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::EndBlock)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::RootHash)
+                            .binary()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatch::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .primary_key(Index::create().col(TwineTransactionBatch::Number))
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Blocks::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::BatchNumber)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(TwineBatchL2Blocks::Hash).binary().not_null())
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Blocks::BatchNumber))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_batch_l2_blocks_batch_number")
+                            .from(TwineBatchL2Blocks::Table, TwineBatchL2Blocks::BatchNumber)
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineTransactionBatchDetail::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::BatchNumber)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L2TransactionCount)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
+                            .decimal()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L2FairGasPrice)
+                            .decimal()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::ChainId)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).big_unsigned())
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).big_unsigned())
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .primary_key(Index::create().col(TwineTransactionBatchDetail::BatchNumber))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_batch_detail_batch_number")
+                            .from(
+                                TwineTransactionBatchDetail::Table,
+                                TwineTransactionBatchDetail::BatchNumber,
+                            )
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineLifecycleL1Transactions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Id)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Hash)
+                            .binary()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::ChainId)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .primary_key(Index::create().col(TwineLifecycleL1Transactions::Id))
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Transactions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::BatchNumber)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::Hash)
+                            .binary()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Transactions::BatchNumber))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_batch_l2_transactions_batch_number")
+                            .from(
+                                TwineBatchL2Transactions::Table,
+                                TwineBatchL2Transactions::BatchNumber,
+                            )
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineBatchL2Transactions::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineLifecycleL1Transactions::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineTransactionBatchDetail::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TwineBatchL2Blocks::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TwineTransactionBatch::Table).to_owned())
+            .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum TwineTransactionBatch {
+    Table,
+    Number,
+    Timestamp,
+    StartBlock,
+    EndBlock,
+    RootHash,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Blocks {
+    Table,
+    BatchNumber,
+    Hash,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineTransactionBatchDetail {
+    Table,
+    BatchNumber,
+    L1TransactionCount,
+    L2TransactionCount,
+    L1GasPrice,
+    L2FairGasPrice,
+    ChainId,
+    CommitId,
+    ExecuteId,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineLifecycleL1Transactions {
+    Table,
+    Id,
+    Hash,
+    ChainId,
+    Timestamp,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Transactions {
+    Table,
+    BatchNumber,
+    Hash,
+    CreatedAt,
+    UpdatedAt,
+}
