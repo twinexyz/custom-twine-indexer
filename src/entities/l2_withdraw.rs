@@ -16,6 +16,7 @@ pub struct Model {
     pub to_twine_address: String,
     pub l1_token: String,
     pub l2_token: String,
+    pub tx_hash: String,
     pub amount: String,
     pub created_at: DateTimeWithTimeZone,
 }
