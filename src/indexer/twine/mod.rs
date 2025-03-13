@@ -3,13 +3,13 @@ mod parser;
 
 use super::ChainIndexer;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::rpc::types::Filter;
 use async_trait::async_trait;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tracing::info;
-use alloy::rpc::types::Filter;
 
 pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,

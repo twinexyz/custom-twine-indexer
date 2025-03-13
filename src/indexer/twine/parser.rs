@@ -1,8 +1,10 @@
-use crate::entities::{twine_l1_deposit, twine_l1_withdraw};
+use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch};
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
+use chrono::{DateTime, Utc};
 use eyre::Report;
 use sea_orm::ActiveValue;
+use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain;
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
 
 #[derive(Debug)]
@@ -37,6 +39,7 @@ impl std::fmt::Display for ParserError {
 pub enum DbModel {
     TwineL1Deposit(twine_l1_deposit::ActiveModel),
     TwineL1Withdraw(twine_l1_withdraw::ActiveModel),
+    TwineTransactionBatch(twine_transaction_batch::ActiveModel),
 }
 
 #[derive(Debug)]
@@ -96,6 +99,13 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
         .block_number
         .ok_or_else(|| eyre::eyre!("Missing block number in log"))? as i64;
 
+    // Get the block timestamp from the log
+    let timestamp = log
+        .block_timestamp
+        .map(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
+        .ok_or_else(|| eyre::eyre!("Missing block timestamp in log"))?
+        .ok_or_else(|| eyre::eyre!("Invalid block timestamp"))?;
+
     let topic = log
         .topic0()
         .ok_or_else(|| eyre::eyre!("Missing topic0 in log"))?;
@@ -114,6 +124,28 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
             process_precompile_return(pr, tx_hash, block_number)
+        }
+        TwineChain::FinalizedBatch::SIGNATURE_HASH => {
+            let decoded = log.log_decode::<TwineChain::FinalizedBatch>()?;
+            let data = decoded.inner.data;
+
+            let model = DbModel::TwineTransactionBatch(twine_transaction_batch::ActiveModel {
+                number: ActiveValue::Set(
+                    data.blockNumber
+                        .try_into()
+                        .map_err(|e| eyre::eyre!("Failed to convert blockNumber to i64: {}", e))?,
+                ),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                start_block: ActiveValue::Set(data.startBlock as i64),
+                end_block: ActiveValue::Set(data.endBlock as i64),
+                root_hash: ActiveValue::Set(data.batchHash.0.to_vec()),
+                created_at: ActiveValue::Set(timestamp.into()),
+                updated_at: ActiveValue::Set(timestamp.into()),
+            });
+            Ok(ParsedLog {
+                model,
+                block_number,
+            })
         }
         _ => Err(eyre::eyre!("Unknown event signature: {:?}", topic)),
     }

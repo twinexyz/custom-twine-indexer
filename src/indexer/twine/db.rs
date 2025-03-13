@@ -1,12 +1,9 @@
 use super::parser::DbModel;
-use crate::entities::{twine_l1_deposit, twine_l1_withdraw};
+use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 
-pub async fn insert_model(
-    model: DbModel,
-    db: &DatabaseConnection,
-) {
+pub async fn insert_model(model: DbModel, db: &DatabaseConnection) {
     match model {
         DbModel::TwineL1Deposit(model) => {
             if let Err(e) = twine_l1_deposit::Entity::insert(model).exec(db).await {
@@ -16,6 +13,14 @@ pub async fn insert_model(
         DbModel::TwineL1Withdraw(model) => {
             if let Err(e) = twine_l1_withdraw::Entity::insert(model).exec(db).await {
                 error!("Failed to insert L1Deposit: {e:?}");
+            }
+        }
+        DbModel::TwineTransactionBatch(model) => {
+            if let Err(e) = twine_transaction_batch::Entity::insert(model)
+                .exec(db)
+                .await
+            {
+                error!("Failed to insert TwineTransactionBatch: {e:?}");
             }
         }
     }

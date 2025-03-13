@@ -4,9 +4,7 @@ use alloy::sol_types::SolEvent;
 use chrono::Utc;
 use eyre::Report;
 use sea_orm::ActiveValue::Set;
-use twine_evm_contracts::evm::{
-    ethereum::l1_message_queue::L1MessageQueue, twine::l2_messenger::L2Messenger,
-};
+use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 
 #[derive(Debug)]
 pub enum ParserError {
