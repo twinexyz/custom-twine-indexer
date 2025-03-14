@@ -27,8 +27,7 @@ impl ChainIndexer for TwineIndexer {
     }
 
     async fn run(&mut self) -> Result<()> {
-        let chain_id = self.provider.get_chain_id().await?;
-        info!("Connected to blockchain. Chain ID: {chain_id}");
+        info!("Connected to Twine RPC.");
         let filter = Filter::new();
         let subscription = self.provider.subscribe_logs(&filter).await?;
         let mut stream = subscription.into_stream();
