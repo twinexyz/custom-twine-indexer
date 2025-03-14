@@ -3,9 +3,8 @@ use crate::api::pagination::{
     items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination, PlaceholderPagination,};
 use crate::api::AppState;
 use crate::api::{ApiResponse, ApiResult};
-use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw};
-use crate::api::response::{L1DepositResponse, L1WithdrawResponse};
-use axum::http::response;
+use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw};
+use crate::api::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -157,7 +156,7 @@ pub async fn get_l1_withdraws(
 pub async fn get_l2_withdraws(
     State(state): State<AppState>,
     Query(pagination): Query<L2WithdrawalPagination>,
-) -> ApiResult<Vec<l2_withdraw::Model>, impl Pagination> {
+) -> ApiResult<Vec<L2WithdrawResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
     let mut query = l2_withdraw::Entity::find();
 
@@ -173,6 +172,42 @@ pub async fn get_l2_withdraws(
         .await
         .map_err(AppError::Database)?;
 
+    let mut response_items = Vec::new();
+
+    for withdraw in &withdraws {
+        let twine_record = twine_l2_withdraw::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(twine_l2_withdraw::Column::ChainId.eq(withdraw.chain_id.to_string()))
+                    .add(twine_l2_withdraw::Column::Nonce.eq(withdraw.nonce.to_string())),
+            )
+            .one(&state.db)
+            .await
+            .map_err(AppError::Database)?;
+
+        let response_item = L2WithdrawResponse {
+            l1_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            l2_tx_hash: withdraw.tx_hash.clone(),
+            slot_number: withdraw.slot_number,
+            l2_slot_number: twine_record
+                .as_ref()
+                .and_then(|r| r.block_number.parse::<i64>().ok())
+                .unwrap_or_default(),
+            block_number: withdraw.block_number,
+            status: 0, //TODO: Ask for change in smart contract
+            nonce: withdraw.nonce,
+            chain_id: withdraw.chain_id,
+            l1_token: withdraw.l1_token.clone(),
+            l2_token: withdraw.l2_token.clone(),
+            from: withdraw.from.clone(),
+            to_twine_address: withdraw.to_twine_address.clone(),
+            amount: withdraw.amount.clone(),
+            created_at: withdraw.created_at,
+        };
+
+        response_items.push(response_item);
+    }
+
     let next_page_params = withdraws.last().map(|w| L2WithdrawalPagination {
         items_count: Some(items_count),
         nonce: Some(w.nonce as u64),
@@ -180,7 +215,7 @@ pub async fn get_l2_withdraws(
 
     Ok(ApiResponse {
         success: true,
-        items: withdraws,
+        items: response_items,
         next_page_params,
     })
 }
