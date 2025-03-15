@@ -1,5 +1,7 @@
 // indexer/svm/subscriber.rs
-use anchor_client::{Client, Cluster};
+use anchor_client::{
+    solana_client::rpc_response::RpcConfirmedTransactionStatusWithSignature, Client, Cluster,
+};
 use eyre::Result;
 use futures_util::{SinkExt, Stream, StreamExt};
 use serde_json::json;
@@ -13,7 +15,7 @@ use tracing::{debug, error, info};
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
 pub async fn subscribe_stream(
-    ws_url: &str,
+    ws_url: &str, // Explicitly WebSocket URL
     twine_chain_id: &str,
     tokens_gateway_id: &str,
 ) -> Result<impl Stream<Item = (String, Option<String>, String)>> {
@@ -42,7 +44,7 @@ pub async fn subscribe_stream(
 }
 
 pub async fn poll_missing_slots(
-    rpc_url: &str,
+    rpc_url: &str, // Explicitly HTTP RPC URL
     twine_chain_id: &str,
     tokens_gateway_id: &str,
     last_synced: u64,
@@ -51,7 +53,6 @@ pub async fn poll_missing_slots(
     let twine_chain_id_clone = twine_chain_id.to_string();
 
     let current_slot = tokio::task::spawn_blocking(move || {
-        // Explicitly annotate the Client type with Arc<Keypair>
         let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
             Cluster::Custom(rpc_url_clone, "".to_string()),
             Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
@@ -82,14 +83,13 @@ pub async fn poll_missing_slots(
         let rpc_url_clone = rpc_url.to_string();
         let program_id_clone = program_id.to_string();
 
-        let signatures = tokio::task::spawn_blocking(move || {
-            // Explicitly annotate the Client type with Arc<Keypair>
+        let signatures = tokio::task::spawn_blocking(move || -> Result<Vec<RpcConfirmedTransactionStatusWithSignature>, eyre::Error> {
             let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
                 Cluster::Custom(rpc_url_clone, "".to_string()),
                 Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
             );
             let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?)?;
-            program
+            let sigs = program
                 .rpc()
                 .get_signatures_for_address_with_config(
                     &program.id(),
@@ -100,9 +100,16 @@ pub async fn poll_missing_slots(
                         commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
                     },
                 )
-                .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))
+                .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))?;
+            Ok(sigs)
         })
         .await??;
+
+        info!(
+            "Found {} signatures for program {}",
+            signatures.len(),
+            program_id
+        );
 
         for sig_info in signatures {
             let signature =
@@ -111,7 +118,6 @@ pub async fn poll_missing_slots(
             let program_id_clone = program_id.to_string();
 
             let tx = tokio::task::spawn_blocking(move || {
-                // Explicitly annotate the Client type with Arc<Keypair>
                 let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
                     Cluster::Custom(rpc_url_clone, "".to_string()),
                     Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
@@ -140,6 +146,10 @@ pub async fn poll_missing_slots(
                 .log_messages
                 .as_ref()
                 .unwrap_or(&empty_logs);
+            debug!(
+                "Transaction logs for signature {}: {:?}",
+                sig_info.signature, logs
+            );
 
             let mut event_type = None;
             let mut encoded_data = None;
@@ -170,6 +180,10 @@ pub async fn poll_missing_slots(
 
             if let (Some(event_type), Some(encoded_data)) = (event_type, encoded_data) {
                 if tx.slot > last_synced && tx.slot <= current_slot {
+                    info!(
+                        "Found event: type={}, slot={}, signature={}",
+                        event_type, tx.slot, sig_info.signature
+                    );
                     events.push((
                         encoded_data,
                         Some(sig_info.signature),
@@ -190,7 +204,12 @@ async fn subscribe_to_single_program(
     twine_chain_id: String,
     tokens_gateway_id: String,
 ) -> Result<()> {
-    let (ws_stream, _) = connect_async(&ws_url).await?;
+    info!("Attempting to connect to WebSocket: {}", ws_url);
+    let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| {
+        error!("Failed to connect to WebSocket {}: {:?}", ws_url, e);
+        eyre::eyre!("WebSocket connection error: {}", e)
+    })?;
+    info!("WebSocket connected to: {}", ws_url);
     let (mut write, mut read) = ws_stream.split();
 
     let subscription = json!({
@@ -209,6 +228,16 @@ async fn subscribe_to_single_program(
 
     write.send(Message::Text(subscription.to_string())).await?;
     info!("Subscribed to logs for program: {}", program_id);
+
+    if let Some(first_message) = read.next().await {
+        match first_message {
+            Ok(Message::Text(text)) => {
+                debug!("First WebSocket response for {}: {}", program_id, text);
+            }
+            Ok(_) => debug!("Received non-text first message for {}", program_id),
+            Err(e) => error!("First WebSocket message error for {}: {:?}", program_id, e),
+        }
+    }
 
     while let Some(message) = read.next().await {
         match message {
@@ -294,5 +323,6 @@ async fn subscribe_to_single_program(
         }
     }
 
+    info!("WebSocket stream for {} ended", program_id);
     Ok(())
 }
