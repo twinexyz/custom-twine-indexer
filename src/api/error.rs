@@ -33,3 +33,8 @@ impl IntoResponse for AppError {
         .into_response()
     }
 }
+
+// Example function where the Internal variant is used
+fn handle_internal_error() -> AppError {
+    AppError::Internal
+}

@@ -20,7 +20,7 @@ pub trait ChainIndexer: Send + Sync {
     async fn chain_id(&self) -> Result<u64>;
 }
 
-pub async fn start_indexer(config: Config, db_conn: DatabaseConnection, ) -> Result<()> {
+pub async fn start_indexer(config: Config, db_conn: DatabaseConnection) -> Result<()> {
     let evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, db_conn).await?;
     evm_indexer.run().await
 }
