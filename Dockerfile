@@ -1,5 +1,8 @@
 FROM rust:1.81-alpine AS base
 
+ARG GITHUB_TOKEN
+ARG GITHUB_USERNAME
+
 RUN apk add --virtual .build-deps \
     pkgconf \
     openssl-dev \
@@ -18,9 +21,6 @@ FROM base AS dependency
 RUN cargo install sea-orm-cli@1.1.7
 
 FROM base AS app
-
-ARG GITHUB_TOKEN
-ARG GITHUB_USERNAME
 
 WORKDIR /app
 
