@@ -12,29 +12,35 @@ RUN apk add --no-cache \
     libcrypto3 \
     openssl-libs-static
 
-#RUN cargo install sea-orm-cli
-
 WORKDIR /app
 
-COPY Cargo.* ./
+# Copy dependency files and bin/ directory
+COPY Cargo.toml Cargo.lock ./
+COPY bin bin
 
-RUN git config --global credential.helper store && \
-    echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
-    chmod 600 ~/.git-credentials
+# Cache dependencies with real entry points
+RUN if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_USERNAME" ]; then \
+        git config --global credential.helper store && \
+        echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
+        chmod 600 ~/.git-credentials; \
+    fi && \
+    cargo build --release --target x86_64-unknown-linux-musl --bin api --bin indexer && \
+    rm -f ~/.git-credentials
 
-RUN mkdir src &&  \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release
-
-RUN rm -rf src && \
-    rm -rf ~/.git-credentials
-
+# Copy remaining source and rebuild
 COPY . .
 
-RUN cargo build --release --bin api --bin indexer
+RUN if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_USERNAME" ]; then \
+        git config --global credential.helper store && \
+        echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
+        chmod 600 ~/.git-credentials; \
+    fi && \
+    cargo build --release --target x86_64-unknown-linux-musl --bin api --bin indexer && \
+    rm -f ~/.git-credentials
 
 FROM gcr.io/distroless/cc-debian12
+
 COPY --from=builder /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
-COPY --from=builder /app/target/release/api /usr/local/bin/api
-COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/api /usr/local/bin/api
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/indexer /usr/local/bin/indexer
 COPY --from=builder /app/migration /app/migration
