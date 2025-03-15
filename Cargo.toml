@@ -3,6 +3,11 @@ name = "twine-indexer"
 version = "0.1.0"
 edition = "2021"
 
+# Define the library crate
+[lib]
+name = "twine_indexer"
+path = "src/lib.rs"
+
 [[bin]]
 name = "api"
 path = "bin/api/main.rs"
