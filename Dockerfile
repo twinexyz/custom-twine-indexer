@@ -18,14 +18,18 @@ WORKDIR /app
 
 COPY Cargo.* ./
 
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
-
-COPY . .
-
 RUN git config --global credential.helper store && \
     echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
-    chmod 600 ~/.git-credentials && \
+    chmod 600 ~/.git-credentias
+
+RUN mkdir src &&  \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build --release
+
+RUN rm -rf src && \
     rm -rf ~/.git-credentials
+
+COPY . .
 
 RUN cargo build --release --bin api --bin indexer
 
