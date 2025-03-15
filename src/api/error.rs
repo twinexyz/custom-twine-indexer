@@ -9,6 +9,7 @@ use sea_orm::DbErr;
 #[derive(Debug)]
 pub enum AppError {
     Database(DbErr),
+    #[allow(dead_code)]
     Internal,
 }
 
@@ -27,14 +28,9 @@ impl IntoResponse for AppError {
 
         ApiResponse {
             success: false,
-            items: message,
+            items: vec![ErrorMessage { message }], // Wrap the message in a struct
             next_page_params: None::<PlaceholderPagination>,
         }
         .into_response()
     }
-}
-
-// Example function where the Internal variant is used
-fn handle_internal_error() -> AppError {
-    AppError::Internal
 }
