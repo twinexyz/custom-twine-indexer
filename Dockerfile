@@ -12,7 +12,7 @@ ARG GITHUB_USERNAME
 #    libcrypto3 \
 #    openssl-libs-static
 # Install system dependencies in a single layer
-RUN apk add --no-cache --virtual .build-deps \
+RUN apk add --virtual .build-deps \
     pkgconf \
     openssl-dev \
     postgresql-dev \
@@ -46,6 +46,6 @@ RUN rm -f ~/.git-credentials && \
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/api /usr/local/bin/api
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/indexer /usr/local/bin/indexer
+COPY --from=builder /app/target/release/api /usr/local/bin/api
+COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
 COPY --from=builder /app/migration /app/migration

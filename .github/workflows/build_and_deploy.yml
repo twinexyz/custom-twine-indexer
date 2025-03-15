@@ -42,16 +42,34 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GH_ACTION_PAT }}
-      - name: Build Docker Image
-        run: |
-          docker build \
-          --build-arg GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }} \
-          --build-arg GITHUB_USERNAME=${{github.actor}} \
-          -t ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA} \
-          .
-      - name: Push Docker Image
-        run: |
-          docker push ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          build-args:
+            - GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
+            - GITHUB_USERNAME=${{github.actor}}
+          platforms:
+            - linux/amd64
+            - linux/arm64
+          push: true
+          tags: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+#      - name: Build Docker Image
+#        run: |
+#          docker build \
+#          --build-arg GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }} \
+#          --build-arg GITHUB_USERNAME=${{github.actor}} \
+#          -t ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA} \
+#          .
+#      - name: Push Docker Image
+#        run: |
+#          docker push ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
 
   deploy:
     name: Deploy Latest Tag
