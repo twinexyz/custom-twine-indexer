@@ -57,7 +57,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          build-args:
+          build-args: |
             GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
             GITHUB_USERNAME=${{ github.actor }}
           platforms: linux/amd64,linux/arm64
