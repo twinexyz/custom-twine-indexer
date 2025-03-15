@@ -3,9 +3,9 @@ name: Build and Deploy
 on:
   push:
     branches:
-      - 'develop'  # This will trigger on all branches
-    #tags:
-    #  - '**'  # This will trigger on all tags
+      - '**'  # This will trigger on all branches
+    tags:
+      - '**'  # This will trigger on all tags
   pull_request:
 
 concurrency:
