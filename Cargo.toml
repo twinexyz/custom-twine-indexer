@@ -28,3 +28,6 @@ futures-util = {version = "0.3.31"}
 twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git"}
 axum = {version = "0.8.1"}
 async-trait = "0.1.87"
+
+[dev-dependencies]
+sea-orm-cli = "1.1.7"
