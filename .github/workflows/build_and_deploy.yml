@@ -60,16 +60,99 @@ jobs:
           build-args: |
             GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
             GITHUB_USERNAME=${{ github.actor }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }},ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-latest
           cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
           cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
 
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Move cache
         run: |
           rm -rf ${{ runner.temp }}/.buildx-cache
           mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
+
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
+
+#      - name: Build Docker Image
+#        run: |
+#          docker build \
+#          --build-arg GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }} \
+#          --build-arg GITHUB_USERNAME=${{github.actor}} \
+#          -t ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA} \
+#          .
+#      - name: Push Docker Image
+#        run: |
+#          docker push ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+#
+  build_and_push_arm64:
+    name: Build Image
+    runs-on: ubuntu-24.04
+    #if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev'
+    #needs: ["test", "lint"]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@v4
+      # Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_ACTION_PAT }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/.buildx-cache-arm
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
+            GITHUB_USERNAME=${{ github.actor }}
+          platforms: linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }},ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-latest
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache-arm
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-arm-new,mode=max
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/.buildx-cache-arm
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Move cache
+        run: |
+          rm -rf ${{ runner.temp }}/.buildx-cache-arm
+          mv ${{ runner.temp }}/.buildx-cache-arm-new ${{ runner.temp }}/.buildx-cache-arm
 
       - name: Handle build failure
         if: ${{ failure() }}
