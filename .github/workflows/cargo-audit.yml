@@ -19,17 +19,17 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@v4
 
-      - name: Build Docker Image
+      - name: Add Private Repo
         run: |
-          git config --global credential.helper store && \
-          echo "https://${{ github.actor }}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials && \
+          git config --global credential.helper store
+          echo "https://${{ github.actor }}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials
           chmod 600 ~/.git-credentials
 
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GH_ACTION_PAT }}
 
-      - name: Build Docker Image
+      - name: Remove Private Repo
         run: rm -f ~/.git-credentials
 
       - name: Handle build failure

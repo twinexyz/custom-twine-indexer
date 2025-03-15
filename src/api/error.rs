@@ -28,7 +28,7 @@ impl IntoResponse for AppError {
 
         ApiResponse {
             success: false,
-            items: vec![ErrorMessage { message }], // Wrap the message in a struct
+            items: message,
             next_page_params: None::<PlaceholderPagination>,
         }
         .into_response()

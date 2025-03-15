@@ -37,12 +37,12 @@ RUN cargo build --release
 
 # Copy full source and build binaries
 COPY . .
-
-RUN cargo install sea-orm-cli
 RUN cargo build --release --bin api --bin indexer
 
 RUN rm -f ~/.git-credentials && \
     apk del .build-deps
+
+RUN cargo install sea-orm-cli
 
 FROM gcr.io/distroless/cc-debian12
 
