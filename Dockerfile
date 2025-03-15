@@ -38,6 +38,7 @@ RUN cargo build --release
 # Copy full source and build binaries
 COPY . .
 
+RUN cargo install sea-orm-cli
 RUN cargo build --release --bin api --bin indexer
 
 RUN rm -f ~/.git-credentials && \

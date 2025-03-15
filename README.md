@@ -1,3 +1,11 @@
+[![Build and Deploy](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/build_and_deploy.yml/badge.svg?branch=main)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/build_and_deploy.yml)
+[![Secrets and code scan](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/scan.yml/badge.svg)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/scan.yml)
+[![Security Audit](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/cargo-audit.yml/badge.svg)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/cargo-audit.yml)
+[![Test](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/test.yml/badge.svg)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/test.yml)
+
+
+
+
 # Twine Indexer Setup Guide
 
 Twine Indexer is a Rust-based indexing service that listens to an Ethereum execution client (e.g., Reth) and indexes relevant blockchain data into a PostgreSQL database.
