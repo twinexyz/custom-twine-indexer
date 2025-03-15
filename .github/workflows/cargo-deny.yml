@@ -1,0 +1,33 @@
+name: Cargo Deny
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  security_audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          log-level: warn
+          manifest-path: ./Cargo.toml
+          command: check
+          arguments: --all-features
+          command-arguments: ""
+          credentials: https://${{ github.actor }}:${{ secrets.GH_ACTION_PAT }}@github.com
+
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
