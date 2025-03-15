@@ -1,17 +1,5 @@
-FROM rust:1.81-alpine AS builder
+FROM rust:1.81-alpine AS base
 
-ARG GITHUB_TOKEN
-ARG GITHUB_USERNAME
-
-#RUN apk add \
-#    pkgconf \
-#    openssl-dev \
-#    postgresql-dev \
-#    git \
-#    musl-dev \
-#    libcrypto3 \
-#    openssl-libs-static
-# Install system dependencies in a single layer
 RUN apk add --virtual .build-deps \
     pkgconf \
     openssl-dev \
@@ -25,9 +13,17 @@ RUN apk add --virtual .build-deps \
     echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
     chmod 600 ~/.git-credentials
 
+FROM base AS dependency
+
+RUN cargo install sea-orm-cli@1.1.7
+
+FROM base AS app
+
+ARG GITHUB_TOKEN
+ARG GITHUB_USERNAME
+
 WORKDIR /app
 
-# Copy dependency files and bin/ directory
 COPY Cargo.toml Cargo.lock ./
 
 RUN  sed -i -E '/\[\[bin\]\]/{N;/name = "api"/{N;d}}; /name = "indexer"/{N;s/path = "[^"]+"/path = "dummy.rs"/}' Cargo.toml
@@ -39,14 +35,12 @@ RUN cargo build --release
 COPY . .
 RUN cargo build --release --bin api --bin indexer
 
-RUN cargo install sea-orm-cli
-
 RUN rm -f ~/.git-credentials && \
     apk del .build-deps
 
 FROM gcr.io/distroless/cc-debian12
 
-COPY --from=builder /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
+COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=builder /app/target/release/api /usr/local/bin/api
 COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
 COPY --from=builder /app/migration /app/migration
