@@ -1,10 +1,11 @@
 name: SonarQube Scan
 on:
+  pull_request:
   push:
     branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
+      - '**'
+    tags:
+      - '**'
 jobs:
   sonarqube:
     name: SonarQube
@@ -20,3 +21,4 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
