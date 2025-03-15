@@ -20,7 +20,7 @@ COPY Cargo.* ./
 
 RUN git config --global credential.helper store && \
     echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
-    chmod 600 ~/.git-credentias
+    chmod 600 ~/.git-credentials
 
 RUN mkdir src &&  \
     echo "fn main() {}" > src/main.rs && \
