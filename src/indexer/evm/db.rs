@@ -1,5 +1,6 @@
 use super::parser::DbModel;
 use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
+use eyre::Result;
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 
@@ -7,28 +8,38 @@ pub async fn insert_model(
     model: DbModel,
     last_synced: last_synced::ActiveModel,
     db: &DatabaseConnection,
-) {
+) -> Result<()> {
     match model {
         DbModel::L2Withdraw(model) => {
-            if let Err(e) = l2_withdraw::Entity::insert(model).exec(db).await {
-                error!("Failed to insert SentMessage: {e:?}");
-            }
+            l2_withdraw::Entity::insert(model)
+                .exec(db)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert SentMessage: {:?}", e);
+                    eyre::eyre!("Failed to insert L2Withdraw: {:?}", e)
+                })?;
         }
         DbModel::L1Deposit(model) => {
-            if let Err(e) = l1_deposit::Entity::insert(model).exec(db).await {
-                error!("Failed to insert L1Deposit: {e:?}");
-            }
+            l1_deposit::Entity::insert(model)
+                .exec(db)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert L1Deposit: {:?}", e);
+                    eyre::eyre!("Failed to insert L1Deposit: {:?}", e)
+                })?;
         }
         DbModel::L1Withdraw(model) => {
-            if let Err(e) = l1_withdraw::Entity::insert(model).exec(db).await {
-                error!("Failed to insert L1Withdraw: {e:?}");
-            }
+            l1_withdraw::Entity::insert(model)
+                .exec(db)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert L1Withdraw: {:?}", e);
+                    eyre::eyre!("Failed to insert L1Withdraw: {:?}", e)
+                })?;
         }
     }
 
-    // if the row does not exist, it will be inserted;
-    // if it does exist, block_number will be updated.
-    if let Err(e) = last_synced::Entity::insert(last_synced)
+    last_synced::Entity::insert(last_synced)
         .on_conflict(
             sea_query::OnConflict::column(last_synced::Column::ChainId)
                 .update_column(last_synced::Column::BlockNumber)
@@ -36,9 +47,12 @@ pub async fn insert_model(
         )
         .exec(db)
         .await
-    {
-        error!("Failed to upsert last synced event: {e:?}");
-    }
+        .map_err(|e| {
+            error!("Failed to upsert last synced event: {:?}", e);
+            eyre::eyre!("Failed to upsert last synced event: {:?}", e)
+        })?;
+
+    Ok(())
 }
 
 pub async fn get_last_synced_block(db: &DatabaseConnection, chain_id: i64) -> eyre::Result<i64> {

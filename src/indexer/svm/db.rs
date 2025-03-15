@@ -7,7 +7,7 @@ use sea_orm::{
 use tracing::{error, info};
 
 use super::parser;
-use crate::entities::{l1_deposit, l1_withdraw};
+use crate::entities::{l1_deposit, l1_withdraw, last_synced};
 
 pub async fn insert_sol_deposit(
     deposit: &parser::DepositSuccessful,
@@ -18,7 +18,7 @@ pub async fn insert_sol_deposit(
         chain_id: Set(deposit.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(deposit.slot_number as i64)),
-        from: Set(deposit.from_l1_pubkey.clone()), // Updated to use from_l1_pubkey
+        from: Set(deposit.from_l1_pubkey.clone()),
         to_twine_address: Set(deposit.to_twine_address.clone()),
         l1_token: Set(deposit.l1_token.clone()),
         l2_token: Set(deposit.l2_token.clone()),
@@ -40,7 +40,7 @@ pub async fn insert_spl_deposit(
         chain_id: Set(deposit.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(deposit.slot_number as i64)),
-        from: Set(deposit.from_l1_pubkey.clone()), // Updated to use from_l1_pubkey
+        from: Set(deposit.from_l1_pubkey.clone()),
         to_twine_address: Set(deposit.to_twine_address.clone()),
         l1_token: Set(deposit.l1_token.clone()),
         l2_token: Set(deposit.l2_token.clone()),
@@ -106,7 +106,7 @@ pub async fn insert_native_withdrawal_successful(
         chain_id: Set(withdrawal.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(withdrawal.slot_number as i64)),
-        from: Set(String::new()), // No "from" address provided in event, using empty string
+        from: Set(String::new()), // No "from" address provided in event
         to_twine_address: Set(withdrawal.receiver_l1_pubkey.clone()),
         l1_token: Set(withdrawal.l1_token.clone()),
         l2_token: Set(withdrawal.l2_token.clone()),
@@ -128,7 +128,7 @@ pub async fn insert_spl_withdrawal_successful(
         chain_id: Set(withdrawal.chain_id as i64),
         block_number: Set(None),
         slot_number: Set(Some(withdrawal.slot_number as i64)),
-        from: Set(String::new()), // No "from" address provided in event, using empty string
+        from: Set(String::new()), // No "from" address provided in event
         to_twine_address: Set(withdrawal.receiver_l1_pubkey.clone()),
         l1_token: Set(withdrawal.l1_token.clone()),
         l2_token: Set(withdrawal.l2_token.clone()),
@@ -213,5 +213,24 @@ pub async fn get_latest_withdrawal_nonce(
             );
             Err(e.into())
         }
+    }
+}
+
+pub async fn get_last_synced_slot(db: &DatabaseConnection, chain_id: i64) -> Result<i64> {
+    let result = last_synced::Entity::find()
+        .filter(last_synced::Column::ChainId.eq(chain_id))
+        .select_only()
+        .column(last_synced::Column::BlockNumber)
+        .one(db)
+        .await;
+
+    match result {
+        Ok(Some(model)) => Ok(model.block_number),
+        Ok(None) => Ok(0), // If no last synced slot, start from 0
+        Err(e) => Err(eyre::eyre!(
+            "Failed to fetch last synced slot for chain_id {}: {}",
+            chain_id,
+            e
+        )),
     }
 }

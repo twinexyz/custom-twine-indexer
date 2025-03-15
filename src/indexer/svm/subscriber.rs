@@ -1,110 +1,196 @@
-use anyhow::{Context, Result};
-use futures_util::{SinkExt, StreamExt};
-use serde_json::{json, Value};
+// indexer/svm/subscriber.rs
+use anchor_client::{Client, Cluster};
+use eyre::Result;
+use futures_util::{SinkExt, Stream, StreamExt};
+use serde_json::json;
+use std::str::FromStr;
 use std::sync::Arc;
-use tokio::select;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::Notify;
-use tokio::time::{sleep, Duration};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info};
 
-#[derive(Clone)]
-pub struct LogSubscriber {
-    ws_url: String,
-    twine_chain_id: String,
-    tokens_gateway_id: String,
-    data_sender: Sender<(String, Option<String>, String)>,
-    shutdown: Arc<Notify>,
+use solana_transaction_status_client_types::UiTransactionEncoding;
+
+pub async fn subscribe_stream(
+    ws_url: &str,
+    twine_chain_id: &str,
+    tokens_gateway_id: &str,
+) -> Result<impl Stream<Item = (String, Option<String>, String)>> {
+    let (data_sender, data_receiver) = tokio::sync::mpsc::channel(100);
+
+    let ws_url_owned = ws_url.to_string();
+    let twine_chain_id_owned = twine_chain_id.to_string();
+    let tokens_gateway_id_owned = tokens_gateway_id.to_string();
+
+    tokio::spawn(subscribe_to_single_program(
+        ws_url_owned.clone(),
+        twine_chain_id_owned.clone(),
+        data_sender.clone(),
+        twine_chain_id_owned.clone(),
+        tokens_gateway_id_owned.clone(),
+    ));
+    tokio::spawn(subscribe_to_single_program(
+        ws_url_owned,
+        tokens_gateway_id_owned.clone(),
+        data_sender,
+        twine_chain_id_owned,
+        tokens_gateway_id_owned,
+    ));
+
+    Ok(ReceiverStream::new(data_receiver))
 }
 
-impl LogSubscriber {
-    pub fn new(
-        ws_url: &str,
-        twine_chain_id: &str,
-        tokens_gateway_id: &str,
-        data_sender: Sender<(String, Option<String>, String)>,
-    ) -> Self {
-        Self {
-            ws_url: ws_url.to_string(),
-            twine_chain_id: twine_chain_id.to_string(),
-            tokens_gateway_id: tokens_gateway_id.to_string(),
-            data_sender,
-            shutdown: Arc::new(Notify::new()),
-        }
+pub async fn poll_missing_slots(
+    rpc_url: &str,
+    twine_chain_id: &str,
+    tokens_gateway_id: &str,
+    last_synced: u64,
+) -> Result<Vec<(String, Option<String>, String)>> {
+    let rpc_url_clone = rpc_url.to_string();
+    let twine_chain_id_clone = twine_chain_id.to_string();
+
+    let current_slot = tokio::task::spawn_blocking(move || {
+        // Explicitly annotate the Client type with Arc<Keypair>
+        let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
+            Cluster::Custom(rpc_url_clone, "".to_string()),
+            Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+        );
+        let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(
+            &twine_chain_id_clone,
+        )?)?;
+        program
+            .rpc()
+            .get_slot_with_commitment(
+                anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
+            )
+            .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
+    })
+    .await??;
+
+    info!("Current slot is: {}", current_slot);
+    info!("Last synced slot is: {}", last_synced);
+
+    if last_synced >= current_slot {
+        return Ok(Vec::new());
     }
 
-    pub async fn run(&self) -> Result<()> {
-        let twine_chain_task = self.spawn_subscription(&self.twine_chain_id);
-        let tokens_gateway_task = self.spawn_subscription(&self.tokens_gateway_id);
+    let mut events = Vec::new();
+    let program_ids = vec![twine_chain_id, tokens_gateway_id];
 
-        select! {
-            _ = self.shutdown.notified() => {
-                info!("Received shutdown signal");
-                Ok(())
-            }
-            results = async {
-                let r1 = twine_chain_task.await;
-                let r2 = tokens_gateway_task.await;
-                (r1, r2)
-            } => {
-                if let (Ok(r1), Ok(r2)) = results {
-                    r1?;
-                    r2?;
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!("Subscription tasks failed"))
-                }
-            }
-        }
-    }
+    for program_id in program_ids {
+        let rpc_url_clone = rpc_url.to_string();
+        let program_id_clone = program_id.to_string();
 
-    fn spawn_subscription(&self, program_id: &str) -> tokio::task::JoinHandle<Result<()>> {
-        let ws_url = self.ws_url.clone();
-        let program_id = program_id.to_string();
-        let data_sender = self.data_sender.clone();
-        let shutdown = self.shutdown.clone();
-        let twine_chain_id = self.twine_chain_id.clone();
-        let tokens_gateway_id = self.tokens_gateway_id.clone();
-
-        tokio::spawn(async move {
-            loop {
-                select! {
-                    _ = shutdown.notified() => {
-                        info!("Shutting down subscription for program: {}", program_id);
-                        break;
-                    }
-                    result = subscribe_to_single_program(&ws_url, &program_id, data_sender.clone(), &twine_chain_id, &tokens_gateway_id) => {
-                        match result {
-                            Ok(_) => info!("Subscription completed for {}", program_id),
-                            Err(e) => {
-                                error!("Subscription error for {}: {}. Reconnecting in 5s...", program_id, e);
-                                sleep(Duration::from_secs(5)).await;
-                                continue;
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
+        let signatures = tokio::task::spawn_blocking(move || {
+            // Explicitly annotate the Client type with Arc<Keypair>
+            let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
+                Cluster::Custom(rpc_url_clone, "".to_string()),
+                Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+            );
+            let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?)?;
+            program
+                .rpc()
+                .get_signatures_for_address_with_config(
+                    &program.id(),
+                    anchor_client::solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
+                        before: None,
+                        until: None,
+                        limit: None,
+                        commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
+                    },
+                )
+                .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))
         })
+        .await??;
+
+        for sig_info in signatures {
+            let signature =
+                anchor_client::solana_sdk::signature::Signature::from_str(&sig_info.signature)?;
+            let rpc_url_clone = rpc_url.to_string();
+            let program_id_clone = program_id.to_string();
+
+            let tx = tokio::task::spawn_blocking(move || {
+                // Explicitly annotate the Client type with Arc<Keypair>
+                let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
+                    Cluster::Custom(rpc_url_clone, "".to_string()),
+                    Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+                );
+                let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?)?;
+                program
+                    .rpc()
+                    .get_transaction_with_config(
+                        &signature,
+                        anchor_client::solana_client::rpc_config::RpcTransactionConfig {
+                            commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
+                            encoding: Some(UiTransactionEncoding::Json),
+                            max_supported_transaction_version: Some(0),
+                        },
+                    )
+                    .map_err(|e| eyre::eyre!("Failed to get transaction: {}", e))
+            })
+            .await??;
+
+            let empty_logs = vec![];
+            let logs = tx
+                .transaction
+                .meta
+                .as_ref()
+                .unwrap()
+                .log_messages
+                .as_ref()
+                .unwrap_or(&empty_logs);
+
+            let mut event_type = None;
+            let mut encoded_data = None;
+
+            for log in logs {
+                if program_id == twine_chain_id {
+                    if log == "Program log: Instruction: NativeTokenDeposit" {
+                        event_type = Some("native_deposit");
+                    } else if log == "Program log: Instruction: SplTokensDeposit" {
+                        event_type = Some("spl_deposit");
+                    } else if log == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
+                        event_type = Some("native_withdrawal");
+                    } else if log == "Program log: Instruction: ForcedSplTokenWithdrawal" {
+                        event_type = Some("spl_withdrawal");
+                    }
+                } else if program_id == tokens_gateway_id {
+                    if log == "Program log: Instruction: NativeWithdrawalSuccessful" {
+                        event_type = Some("native_withdrawal_successful");
+                    } else if log == "Program log: Instruction: SplWithdrawalSuccessful" {
+                        event_type = Some("spl_withdrawal_successful");
+                    }
+                }
+
+                if log.starts_with("Program data: ") {
+                    encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+                }
+            }
+
+            if let (Some(event_type), Some(encoded_data)) = (event_type, encoded_data) {
+                if tx.slot > last_synced && tx.slot <= current_slot {
+                    events.push((
+                        encoded_data,
+                        Some(sig_info.signature),
+                        event_type.to_string(),
+                    ));
+                }
+            }
+        }
     }
 
-    pub fn shutdown(&self) {
-        self.shutdown.notify_one();
-    }
+    Ok(events)
 }
 
 async fn subscribe_to_single_program(
-    ws_url: &str,
-    program_id: &str,
+    ws_url: String,
+    program_id: String,
     data_sender: Sender<(String, Option<String>, String)>,
-    twine_chain_id: &str,
-    tokens_gateway_id: &str,
+    twine_chain_id: String,
+    tokens_gateway_id: String,
 ) -> Result<()> {
-    let (ws_stream, _) = connect_async(ws_url)
-        .await
-        .context("Failed to connect to WebSocket")?;
+    let (ws_stream, _) = connect_async(&ws_url).await?;
     let (mut write, mut read) = ws_stream.split();
 
     let subscription = json!({
@@ -121,19 +207,14 @@ async fn subscribe_to_single_program(
         ]
     });
 
-    write
-        .send(Message::Text(subscription.to_string()))
-        .await
-        .context("Failed to send subscription request")?;
+    write.send(Message::Text(subscription.to_string())).await?;
     info!("Subscribed to logs for program: {}", program_id);
 
     while let Some(message) = read.next().await {
         match message {
             Ok(Message::Text(text)) => {
                 debug!("Received WebSocket message for {}: {}", program_id, text);
-                let value: Value =
-                    serde_json::from_str(&text).context("Fallbacked to parse WebSocket message")?;
-
+                let value: serde_json::Value = serde_json::from_str(&text)?;
                 if let Some(params) = value.get("params") {
                     if let Some(result) = params.get("result") {
                         let signature = result
@@ -149,7 +230,6 @@ async fn subscribe_to_single_program(
 
                                 for log in logs_array {
                                     if let Some(log_str) = log.as_str() {
-                                        // Events for twine_chain_id
                                         if program_id == twine_chain_id {
                                             if log_str == "Program log: Instruction: NativeTokenDeposit" {
                                                 event_type = Some("native_deposit");
@@ -160,9 +240,7 @@ async fn subscribe_to_single_program(
                                             } else if log_str == "Program log: Instruction: ForcedSplTokenWithdrawal" {
                                                 event_type = Some("spl_withdrawal");
                                             }
-                                        }
-                                        // Events for tokens_gateway_id
-                                        else if program_id == tokens_gateway_id {
+                                        } else if program_id == tokens_gateway_id {
                                             if log_str == "Program log: Instruction: NativeWithdrawalSuccessful" {
                                                 event_type = Some("native_withdrawal_successful");
                                             } else if log_str == "Program log: Instruction: SplWithdrawalSuccessful" {
@@ -170,7 +248,6 @@ async fn subscribe_to_single_program(
                                             }
                                         }
 
-                                        // Capture encoded data for both program IDs
                                         if log_str.starts_with("Program data: ") {
                                             encoded_data = Some(
                                                 log_str
@@ -181,7 +258,6 @@ async fn subscribe_to_single_program(
                                     }
                                 }
 
-                                // Send event if both event_type and encoded_data are present
                                 if let (Some(event_type), Some(encoded_data)) =
                                     (event_type, encoded_data)
                                 {
@@ -202,7 +278,7 @@ async fn subscribe_to_single_program(
                                             "Failed to send {} data through channel for {}",
                                             event_type, program_id
                                         );
-                                        return Err(anyhow::anyhow!("Channel send error"));
+                                        return Err(eyre::eyre!("Channel send error"));
                                     }
                                 }
                             }
@@ -213,7 +289,7 @@ async fn subscribe_to_single_program(
             Ok(_) => continue,
             Err(e) => {
                 error!("WebSocket error for {}: {}", program_id, e);
-                return Err(anyhow::anyhow!("WebSocket error: {}", e));
+                return Err(eyre::eyre!("WebSocket error: {}", e));
             }
         }
     }

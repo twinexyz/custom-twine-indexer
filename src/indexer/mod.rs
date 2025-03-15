@@ -1,35 +1,40 @@
 mod evm;
-mod twine;
 mod svm;
+mod twine;
 
 use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
+use tokio::task::JoinHandle;
+use tracing::info;
 
 use crate::config::Config;
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
-    /// Constructs a new indexer.
     async fn new(rpc_url: String, db: &DatabaseConnection) -> Result<Self>
     where
         Self: Sized;
-
-    /// Runs the indexer event loop.
     async fn run(&mut self) -> Result<()>;
-
-    /// Returns the chain id.
     async fn chain_id(&self) -> Result<u64>;
 }
 
-pub async fn start_indexer(config: Config, db_conn: DatabaseConnection) -> Result<()> {
-    // Create indexers
+pub async fn start_indexer(
+    config: Config,
+    db_conn: DatabaseConnection,
+) -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
     let mut evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, &db_conn).await?;
     let mut svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
-    // evm_indexer.run().await;
 
-    // Run indexers concurrently with mutable references
-    tokio::try_join!(evm_indexer.run(), svm_indexer.run())?;
+    let evm_handle = tokio::spawn(async move {
+        info!("Starting EVM indexer");
+        evm_indexer.run().await
+    });
 
-    Ok(())
+    let svm_handle = tokio::spawn(async move {
+        info!("Starting SVM indexer");
+        svm_indexer.run().await
+    });
+
+    Ok((evm_handle, svm_handle))
 }

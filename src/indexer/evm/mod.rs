@@ -8,12 +8,11 @@ use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use eyre::{Report, Result};
-use futures_util::StreamExt;
+use futures_util::{future, StreamExt};
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 pub struct EVMIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
@@ -31,45 +30,47 @@ impl ChainIndexer for EVMIndexer {
     }
 
     async fn run(&mut self) -> Result<()> {
-        let mut stream = chain::subscribe_stream(&*self.provider).await?;
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         let current_block = self.provider.get_block_number().await?;
 
-        let historical_indexer = self.clone();
+        // Process historical logs
+        let logs = chain::poll_missing_logs(&*self.provider, last_synced as u64).await?;
+        self.catchup_missing_blocks(logs).await?;
+
+        // Live indexing in a separate task
         let live_indexer = self.clone();
-
-        let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
-            info!("Starting historical sync up to block {}", current_block);
-            let logs =
-                chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64).await?;
-
-            historical_indexer.catchup_missing_blocks(logs).await
-        });
-
-        let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+        tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
-            let mut stream = chain::subscribe_stream(&*live_indexer.provider).await?;
-
-            while let Some(log) = stream.next().await {
-                match parser::parse_log(log) {
-                    Ok(parsed) => {
-                        let last_synced = last_synced::ActiveModel {
-                            chain_id: Set(id as i64),
-                            block_number: Set(parsed.block_number as i64),
-                        };
-                        db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
+            if let Ok(mut stream) = chain::subscribe_stream(&*live_indexer.provider).await {
+                while let Some(log) = stream.next().await {
+                    match parser::parse_log(log) {
+                        Ok(parsed) => {
+                            let last_synced = last_synced::ActiveModel {
+                                chain_id: Set(id as i64),
+                                block_number: Set(parsed.block_number as i64),
+                            };
+                            if let Err(e) =
+                                db::insert_model(parsed.model, last_synced, &live_indexer.db).await
+                            {
+                                error!("Failed to insert model: {:?}", e);
+                            }
+                        }
+                        Err(e) => {
+                            if let Err(e) = live_indexer.handle_error(e) {
+                                error!("Error processing log: {:?}", e);
+                            }
+                        }
                     }
-                    Err(e) => live_indexer.handle_error(e)?,
                 }
+                info!("Live indexing stream ended");
+            } else {
+                error!("Failed to start live stream");
             }
-            Ok(())
         });
 
-        let (historical_res, live_res) = tokio::join!(historical_handle, live_handle);
-        historical_res??;
-        live_res??;
-
+        // Keep the main task alive
+        future::pending::<()>().await;
         Ok(())
     }
 
@@ -93,7 +94,7 @@ impl EVMIndexer {
                         chain_id: Set(id as i64),
                         block_number: Set(parsed.block_number as i64),
                     };
-                    db::insert_model(parsed.model, last_synced, &self.db).await;
+                    db::insert_model(parsed.model, last_synced, &self.db).await?;
                 }
                 Err(e) => self.handle_error(e)?,
             }
