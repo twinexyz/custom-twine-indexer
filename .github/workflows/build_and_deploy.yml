@@ -57,14 +57,17 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          build-args: |
-            GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
-            GITHUB_USERNAME=${{ github.actor }}
+          #build-args: |
+          #  GITHUB_TOKEN=${{ secrets.GH_ACTION_PAT }}
+          #  GITHUB_USERNAME=${{ github.actor }}
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }},ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-latest
           cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
           cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+          secrets: |
+            "github_token=${{ secrets.GH_ACTION_PAT }}"
+            "github_username=${{ github.actor }}"
 
       - name: Cache Docker layers
         uses: actions/cache@v4

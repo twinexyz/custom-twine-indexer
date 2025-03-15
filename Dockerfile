@@ -1,8 +1,10 @@
 FROM rust:1.81-alpine AS base
 
-ARG GITHUB_TOKEN
-ARG GITHUB_USERNAME
+#ARG GITHUB_TOKEN
+#ARG GITHUB_USERNAME
 
+RUN --mount-type=secret,id=github_token,env=GITHUB_TOKEN
+RUN --mount-type=secret,id=github_username,env=GITHUB_USERNAME
 RUN apk add --virtual .build-deps \
     pkgconf \
     openssl-dev \
