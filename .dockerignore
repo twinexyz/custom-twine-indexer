@@ -10,3 +10,4 @@ Dockerfile.test
 .gitignore
 ingress.yaml
 README.md
+sonar-project.properties

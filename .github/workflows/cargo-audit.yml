@@ -18,20 +18,10 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@v4
-
-      - name: Add Private Repo
-        run: |
-          git config --global credential.helper store
-          echo "https://${{ github.actor }}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials
-          chmod 600 ~/.git-credentials
-
-      - uses: rustsec/audit-check@v2.0.0
         with:
-          token: ${{ secrets.GH_ACTION_PAT }}
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Remove Private Repo
-        run: rm -f ~/.git-credentials
-
-      - name: Handle build failure
-        if: ${{ failure() }}
-        run: echo "Build failed. Check logs for details."
