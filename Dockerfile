@@ -8,9 +8,11 @@ RUN apk add --no-cache \
     openssl-dev \
     postgresql-dev \
     git \
-    musl-dev
+    musl-dev \
+    libcrypto3 \
+    openssl-libs-static
 
-RUN cargo install sea-orm-cli
+#RUN cargo install sea-orm-cli
 
 WORKDIR /app
 
