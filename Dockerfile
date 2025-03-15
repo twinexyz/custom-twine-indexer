@@ -41,6 +41,6 @@ RUN rm -f ~/.git-credentials && \
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
-COPY --from=builder /app/target/release/api /usr/local/bin/api
-COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
-COPY --from=builder /app/migration /app/migration
+COPY --from=app /app/target/release/api /usr/local/bin/api
+COPY --from=app /app/target/release/indexer /usr/local/bin/indexer
+COPY --from=app /app/migration /app/migration
