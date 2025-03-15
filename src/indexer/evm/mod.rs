@@ -1,13 +1,13 @@
+mod chain;
 mod db;
 mod parser;
-mod chain;
 
-use crate::entities::last_synced;
 use super::ChainIndexer;
-use alloy::rpc::types::Log;
+use crate::entities::last_synced;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::rpc::types::Log;
 use async_trait::async_trait;
-use eyre::{Result, Report};
+use eyre::{Report, Result};
 use futures_util::StreamExt;
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
@@ -41,8 +41,8 @@ impl ChainIndexer for EVMIndexer {
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting historical sync up to block {}", current_block);
-            let logs = chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64)
-                .await?;
+            let logs =
+                chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64).await?;
 
             historical_indexer.catchup_missing_blocks(logs).await
         });

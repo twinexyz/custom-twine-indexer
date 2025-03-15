@@ -125,8 +125,8 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
             process_precompile_return(pr, tx_hash, block_number)
         }
-        TwineChain::FinalizedBatch::SIGNATURE_HASH => {
-            let decoded = log.log_decode::<TwineChain::FinalizedBatch>()?;
+        TwineChain::CommitBatch::SIGNATURE_HASH => {
+            let decoded = log.log_decode::<TwineChain::CommitBatch>()?;
             let data = decoded.inner.data;
 
             let model = DbModel::TwineTransactionBatch(twine_transaction_batch::ActiveModel {

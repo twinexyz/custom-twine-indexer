@@ -64,6 +64,8 @@ impl LogSubscriber {
         let program_id = program_id.to_string();
         let data_sender = self.data_sender.clone();
         let shutdown = self.shutdown.clone();
+        let twine_chain_id = self.twine_chain_id.clone();
+        let tokens_gateway_id = self.tokens_gateway_id.clone();
 
         tokio::spawn(async move {
             loop {
@@ -72,7 +74,7 @@ impl LogSubscriber {
                         info!("Shutting down subscription for program: {}", program_id);
                         break;
                     }
-                    result = subscribe_to_single_program(&ws_url, &program_id, data_sender.clone()) => {
+                    result = subscribe_to_single_program(&ws_url, &program_id, data_sender.clone(), &twine_chain_id, &tokens_gateway_id) => {
                         match result {
                             Ok(_) => info!("Subscription completed for {}", program_id),
                             Err(e) => {
@@ -97,6 +99,8 @@ async fn subscribe_to_single_program(
     ws_url: &str,
     program_id: &str,
     data_sender: Sender<(String, Option<String>, String)>,
+    twine_chain_id: &str,
+    tokens_gateway_id: &str,
 ) -> Result<()> {
     let (ws_stream, _) = connect_async(ws_url)
         .await
@@ -128,7 +132,7 @@ async fn subscribe_to_single_program(
             Ok(Message::Text(text)) => {
                 debug!("Received WebSocket message for {}: {}", program_id, text);
                 let value: Value =
-                    serde_json::from_str(&text).context("Failed to parse WebSocket message")?;
+                    serde_json::from_str(&text).context("Fallbacked to parse WebSocket message")?;
 
                 if let Some(params) = value.get("params") {
                     if let Some(result) = params.get("result") {
@@ -145,15 +149,29 @@ async fn subscribe_to_single_program(
 
                                 for log in logs_array {
                                     if let Some(log_str) = log.as_str() {
-                                        if log_str == "Program log: Instruction: NativeTokenDeposit" {
-                                            event_type = Some("native_deposit");
-                                        } else if log_str == "Program log: Instruction: SplTokensDeposit" {
-                                            event_type = Some("spl_deposit");
-                                        } else if log_str == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
-                                            event_type = Some("native_withdrawal");
-                                        } else if log_str == "Program log: Instruction: ForcedSplTokenWithdrawal" {
-                                            event_type = Some("spl_withdrawal");
-                                        } else if log_str.starts_with("Program data: ") {
+                                        // Events for twine_chain_id
+                                        if program_id == twine_chain_id {
+                                            if log_str == "Program log: Instruction: NativeTokenDeposit" {
+                                                event_type = Some("native_deposit");
+                                            } else if log_str == "Program log: Instruction: SplTokensDeposit" {
+                                                event_type = Some("spl_deposit");
+                                            } else if log_str == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
+                                                event_type = Some("native_withdrawal");
+                                            } else if log_str == "Program log: Instruction: ForcedSplTokenWithdrawal" {
+                                                event_type = Some("spl_withdrawal");
+                                            }
+                                        }
+                                        // Events for tokens_gateway_id
+                                        else if program_id == tokens_gateway_id {
+                                            if log_str == "Program log: Instruction: NativeWithdrawalSuccessful" {
+                                                event_type = Some("native_withdrawal_successful");
+                                            } else if log_str == "Program log: Instruction: SplWithdrawalSuccessful" {
+                                                event_type = Some("spl_withdrawal_successful");
+                                            }
+                                        }
+
+                                        // Capture encoded data for both program IDs
+                                        if log_str.starts_with("Program data: ") {
                                             encoded_data = Some(
                                                 log_str
                                                     .trim_start_matches("Program data: ")
@@ -163,8 +181,9 @@ async fn subscribe_to_single_program(
                                     }
                                 }
 
+                                // Send event if both event_type and encoded_data are present
                                 if let (Some(event_type), Some(encoded_data)) =
-                                    (event_type, encoded_data.clone())
+                                    (event_type, encoded_data)
                                 {
                                     info!(
                                         "Found encoded {} data for {}: {}",
@@ -184,42 +203,6 @@ async fn subscribe_to_single_program(
                                             event_type, program_id
                                         );
                                         return Err(anyhow::anyhow!("Channel send error"));
-                                    }
-                                } else if let Some(encoded_data) = encoded_data {
-                                    let potential_event_types = if program_id
-                                        == "8untebEqrCndtV6NaqhxEybS3A32sfQFXmJqmBiDYNVw"
-                                    {
-                                        vec![
-                                            "deposit_successful",
-                                            "native_withdrawal_successful",
-                                            "spl_withdrawal_successful",
-                                        ]
-                                    } else {
-                                        vec![
-                                            "native_withdrawal_successful",
-                                            "spl_withdrawal_successful",
-                                        ]
-                                    };
-                                    for event_type in potential_event_types {
-                                        info!(
-                                            "Found encoded {} data for {}: {}",
-                                            event_type, program_id, encoded_data
-                                        );
-                                        if data_sender
-                                            .send((
-                                                encoded_data.clone(),
-                                                signature.clone(),
-                                                event_type.to_string(),
-                                            ))
-                                            .await
-                                            .is_err()
-                                        {
-                                            error!(
-                                                "Failed to send {} data through channel for {}",
-                                                event_type, program_id
-                                            );
-                                            return Err(anyhow::anyhow!("Channel send error"));
-                                        }
                                     }
                                 }
                             }
