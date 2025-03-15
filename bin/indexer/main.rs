@@ -1,3 +1,4 @@
+//- Only a comment
 use eyre::Result;
 use tracing::info;
 use twine_indexer::{config, db, indexer};

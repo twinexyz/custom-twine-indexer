@@ -41,7 +41,7 @@ COPY . .
 RUN cargo build --release --bin api --bin indexer
 
 RUN rm -f ~/.git-credentials && \
-    apk adel .build-deps
+    apk del .build-deps
 
 FROM gcr.io/distroless/cc-debian12
 
