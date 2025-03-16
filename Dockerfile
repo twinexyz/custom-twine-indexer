@@ -46,4 +46,3 @@ COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-c
 COPY --from=app /app/target/release/api /usr/local/bin/api
 COPY --from=app /app/target/release/indexer /usr/local/bin/indexer
 COPY --from=app /app/migration /app/migration
-RUN ls -al /usr/local/bin/
