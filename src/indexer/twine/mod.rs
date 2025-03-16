@@ -1,15 +1,20 @@
 mod db;
 mod parser;
+mod chain;
 
+use crate::entities::last_synced;
 use super::ChainIndexer;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Filter;
 use async_trait::async_trait;
+use alloy::rpc::types::Log;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tracing::info;
+use tokio::task::JoinHandle;
+use sea_orm::ActiveValue::Set;
 
 pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
@@ -27,21 +32,44 @@ impl ChainIndexer for TwineIndexer {
     }
 
     async fn run(&mut self) -> Result<()> {
-        info!("Connected to Twine RPC.");
-        let filter = Filter::new();
-        let subscription = self.provider.subscribe_logs(&filter).await?;
-        let mut stream = subscription.into_stream();
+        let id = self.chain_id().await?;
+        let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
+        println!("last synced in twine is: {last_synced}");
+        let current_block = self.provider.get_block_number().await?;
 
-        while let Some(log) = stream.next().await {
-            match parser::parse_log(log) {
-                Ok(parsed) => {
-                    db::insert_model(parsed.model, &self.db).await;
-                }
-                Err(e) => {
-                    tracing::error!("Error parsing log: {e:?}");
+        let historical_indexer = self.clone();
+        let live_indexer = self.clone();
+
+        let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            info!("Starting historical sync up to block {}", current_block);
+            let logs = chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64)
+                .await?;
+
+            historical_indexer.catchup_missing_blocks(logs).await
+        });
+
+        let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            info!("Starting live indexing from block {}", current_block + 1);
+            let mut stream = chain::subscribe_stream(&*live_indexer.provider).await?;
+
+            while let Some(log) = stream.next().await {
+                match parser::parse_log(log) {
+                    Ok(parsed) => {
+                        let last_synced = last_synced::ActiveModel{
+                            chain_id: Set(id as i64),
+                            block_number: Set(parsed.block_number as i64),
+                        };
+                        db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
+                    }
+                    Err(e) => live_indexer.handle_error(e)?,
                 }
             }
-        }
+            Ok(())
+        });
+        let (historical_res, live_res) = tokio::join!(historical_handle, live_handle);
+        historical_res??;
+        live_res??;
+
         Ok(())
     }
 
@@ -54,6 +82,33 @@ impl TwineIndexer {
     async fn create_provider(rpc_url: String) -> Result<impl Provider> {
         let ws = WsConnect::new(&rpc_url);
         ProviderBuilder::new().on_ws(ws).await.map_err(Report::from)
+    }
+
+    async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
+        let id = self.chain_id().await?;
+        for log in logs {
+            match parser::parse_log(log) {
+                Ok(parsed) => {
+                    let last_synced = last_synced::ActiveModel {
+                        chain_id: Set(id as i64),
+                        block_number: Set(parsed.block_number as i64),
+                    };
+                    db::insert_model(parsed.model, last_synced, &self.db).await;
+                }
+                Err(e) => self.handle_error(e)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_error(&self, e: Report) -> Result<()> {
+        match e.downcast_ref::<parser::ParserError>() {
+            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()), // Skip unknown events
+            _ => {
+                tracing::error!("Error processing log: {:?}", e);
+                Err(e)
+            }
+        }
     }
 }
 
