@@ -1,5 +1,5 @@
 use super::parser::DbModel;
-use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch, twine_l2_withdraw, last_synced};
+use crate::entities::{last_synced, twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch, twine_l2_withdraw};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 

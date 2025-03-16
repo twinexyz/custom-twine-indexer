@@ -1,15 +1,21 @@
 use crate::api::error::AppError;
 use crate::api::pagination::{
-    items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination, PlaceholderPagination,};
+    items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination,
+    PlaceholderPagination,
+};
+use crate::api::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
 use crate::api::AppState;
 use crate::api::{ApiResponse, ApiResult};
-use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw};
-use crate::api::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
+use crate::entities::{
+    l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
+};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
 };
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect, PaginatorTrait};
+use sea_orm::{
+    ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse {
@@ -52,7 +58,7 @@ pub async fn get_l1_deposits(
             .filter(
                 Condition::all()
                     .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id.clone()))
-                    .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce))
+                    .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce)),
             )
             .one(&state.db)
             .await
@@ -60,9 +66,15 @@ pub async fn get_l1_deposits(
 
         let response_item = L1DepositResponse {
             l1_tx_hash: deposit.tx_hash.clone(),
-            l2_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            l2_tx_hash: twine_record
+                .as_ref()
+                .map(|r| r.tx_hash.clone())
+                .unwrap_or_default(),
             slot_number: deposit.slot_number,
-            l2_slot_number: twine_record.as_ref().map(|r| r.slot_number.clone()).unwrap_or_default(),
+            l2_slot_number: twine_record
+                .as_ref()
+                .map(|r| r.slot_number.clone())
+                .unwrap_or_default(),
             block_number: deposit.block_number,
             status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
             nonce: deposit.nonce,
@@ -117,16 +129,22 @@ pub async fn get_l1_withdraws(
             .filter(
                 Condition::all()
                     .add(twine_l1_withdraw::Column::ChainId.eq(withdraw.chain_id.clone()))
-                    .add(twine_l1_withdraw::Column::L1Nonce.eq(withdraw.nonce))
+                    .add(twine_l1_withdraw::Column::L1Nonce.eq(withdraw.nonce)),
             )
             .one(&state.db)
             .await
             .map_err(AppError::Database)?;
         let response_item = L1WithdrawResponse {
             l1_tx_hash: withdraw.tx_hash.clone(),
-            l2_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            l2_tx_hash: twine_record
+                .as_ref()
+                .map(|r| r.tx_hash.clone())
+                .unwrap_or_default(),
             slot_number: withdraw.slot_number,
-            l2_slot_number: twine_record.as_ref().map(|r| r.slot_number.clone()).unwrap_or_default(),
+            l2_slot_number: twine_record
+                .as_ref()
+                .map(|r| r.slot_number.clone())
+                .unwrap_or_default(),
             block_number: withdraw.block_number,
             status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
             nonce: withdraw.nonce,
@@ -186,7 +204,10 @@ pub async fn get_l2_withdraws(
             .map_err(AppError::Database)?;
 
         let response_item = L2WithdrawResponse {
-            l1_tx_hash: twine_record.as_ref().map(|r| r.tx_hash.clone()).unwrap_or_default(),
+            l1_tx_hash: twine_record
+                .as_ref()
+                .map(|r| r.tx_hash.clone())
+                .unwrap_or_default(),
             l2_tx_hash: withdraw.tx_hash.clone(),
             slot_number: withdraw.slot_number,
             l2_slot_number: twine_record

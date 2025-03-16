@@ -1,4 +1,7 @@
-use alloy::{providers::Provider, rpc::types::{Filter, Log}};
+use alloy::{
+    providers::Provider,
+    rpc::types::{Filter, Log},
+};
 use eyre::Result;
 use futures_util::Stream;
 use tracing::info;
@@ -11,10 +14,7 @@ pub async fn subscribe_stream(
     Ok(subscription.into_stream())
 }
 
-pub async fn poll_missing_logs(
-    provider: &dyn Provider,
-    last_synced: u64,
-) -> Result<Vec<Log>> {
+pub async fn poll_missing_logs(provider: &dyn Provider, last_synced: u64) -> Result<Vec<Log>> {
     let current_block = provider.get_block_number().await?;
     info!("Current block is: {current_block}");
     info!("Last synced block is: {last_synced}");

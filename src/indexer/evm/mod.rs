@@ -1,10 +1,13 @@
 mod chain;
+mod chain;
 mod db;
 mod parser;
 
 use super::ChainIndexer;
+use super::ChainIndexer;
 use crate::entities::last_synced;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::rpc::types::Log;
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use eyre::{Report, Result};
@@ -40,7 +43,16 @@ impl ChainIndexer for EVMIndexer {
 
         // Live indexing in a separate task
         let live_indexer = self.clone();
-        tokio::spawn(async move {
+
+        let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            info!("Starting historical sync up to block {}", current_block);
+            let logs =
+                chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64).await?;
+
+            historical_indexer.catchup_missing_blocks(logs).await
+        });
+
+        let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
             if let Ok(mut stream) = chain::subscribe_stream(&*live_indexer.provider).await {
                 while let Some(log) = stream.next().await {

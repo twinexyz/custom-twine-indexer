@@ -1,20 +1,20 @@
+mod chain;
 mod db;
 mod parser;
-mod chain;
 
-use crate::entities::last_synced;
 use super::ChainIndexer;
+use crate::entities::last_synced;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Filter;
-use async_trait::async_trait;
 use alloy::rpc::types::Log;
+use async_trait::async_trait;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
+use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tracing::info;
 use tokio::task::JoinHandle;
-use sea_orm::ActiveValue::Set;
+use tracing::info;
 
 pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
@@ -42,8 +42,8 @@ impl ChainIndexer for TwineIndexer {
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting historical sync up to block {}", current_block);
-            let logs = chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64)
-                .await?;
+            let logs =
+                chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64).await?;
 
             historical_indexer.catchup_missing_blocks(logs).await
         });
@@ -55,7 +55,7 @@ impl ChainIndexer for TwineIndexer {
             while let Some(log) = stream.next().await {
                 match parser::parse_log(log) {
                     Ok(parsed) => {
-                        let last_synced = last_synced::ActiveModel{
+                        let last_synced = last_synced::ActiveModel {
                             chain_id: Set(id as i64),
                             block_number: Set(parsed.block_number as i64),
                         };
