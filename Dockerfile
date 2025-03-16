@@ -40,7 +40,8 @@ RUN cargo build --release --bin api --bin indexer
 RUN rm -f ~/.git-credentials && \
     apk del .build-deps
 
-FROM gcr.io/distroless/cc-debian12
+#FROM gcr.io/distroless/cc-debian12
+FROM rust:1.81-alpine
 
 COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=app /app/target/release/api /usr/local/bin/api
