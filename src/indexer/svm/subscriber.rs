@@ -166,7 +166,7 @@ pub async fn poll_missing_slots(
                         event_type = Some("spl_withdrawal");
                     }
                 } else if program_id == tokens_gateway_id {
-                    if log == "Program log: Instruction: NativeWithdrawalSuccessful" {
+                    if log == "Program log: Instruction: FinalizeNativeWithdrawal" {
                         event_type = Some("native_withdrawal_successful");
                     } else if log == "Program log: Instruction: SplWithdrawalSuccessful" {
                         event_type = Some("spl_withdrawal_successful");
@@ -270,10 +270,10 @@ async fn subscribe_to_single_program(
                                                 event_type = Some("spl_withdrawal");
                                             }
                                         } else if program_id == tokens_gateway_id {
-                                            if log_str == "Program log: Instruction: NativeWithdrawalSuccessful" {
-                                                event_type = Some("native_withdrawal_successful");
-                                            } else if log_str == "Program log: Instruction: SplWithdrawalSuccessful" {
-                                                event_type = Some("spl_withdrawal_successful");
+                                            if log_str == "Program log: Instruction: FinalizeNativeWithdrawal" {
+                                                event_type = Some("finalize_native_withdrawal");
+                                            } else if log_str == "Program log: Instruction: FinalizeSplWithdrawal" {
+                                                event_type = Some("finalize_spl_withdrawal");
                                             }
                                         }
 
