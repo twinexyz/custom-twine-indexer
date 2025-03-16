@@ -2,10 +2,7 @@ name: Container Scan
 
 on:
   workflow_run:
-    workflows: 
-      - Build and Deploy
-    branches: 
-      - "**"
+    workflows: [Build and Deploy]
     types:
       - completed
 
