@@ -167,9 +167,9 @@ pub async fn poll_missing_slots(
                     }
                 } else if program_id == tokens_gateway_id {
                     if log == "Program log: Instruction: FinalizeNativeWithdrawal" {
-                        event_type = Some("native_withdrawal_successful");
-                    } else if log == "Program log: Instruction: SplWithdrawalSuccessful" {
-                        event_type = Some("spl_withdrawal_successful");
+                        event_type = Some("finalize_native_withdrawal");
+                    } else if log == "Program log: Instruction: FinalizeSplWithdrawal" {
+                        event_type = Some("finalize_spl_withdrawal");
                     }
                 }
 
