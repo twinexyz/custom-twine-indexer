@@ -28,6 +28,10 @@ impl ChainIndexer for SVMIndexer {
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ID")?;
         let chain_id = 900;
 
+        // Use SOLANA_RPC_URL if set, otherwise fall back to the provided rpc_url
+        let rpc_url = std::env::var("SOLANA_RPC_URL").unwrap_or(rpc_url);
+
+        // Use SOLANA_WS_URL if set, otherwise derive it from rpc_url or use a default
         let ws_url = std::env::var("SOLANA_WS_URL").unwrap_or_else(|_| {
             if rpc_url.starts_with("http://") {
                 rpc_url

@@ -20,7 +20,8 @@ Export the required environment variables:
 
 ```sh
 export EVM_RPC_URL="ws://localhost:8546"
-export SVM_RPC_URL="ws://localhost:8900"
+export SOLANA_RPC_URL="http://127.0.0.1:8899"
+export SOLANA_WS_URL="ws://127.0.0.1:8900"
 export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
 export TOKENS_GATEWAY_PROGRAM_ID="tokens gateway program id"
 export HTTP_PORT=7777
