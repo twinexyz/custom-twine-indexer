@@ -1,11 +1,11 @@
 FROM rust:1.81-alpine AS base
 
-#ARG GITHUB_TOKEN
-#ARG GITHUB_USERNAME
+ARG GITHUB_TOKEN
+ARG GITHUB_USERNAME
 
-RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
-    --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
-    apk add --virtual .build-deps \
+#RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+#    --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
+RUN apk add --virtual .build-deps \
     pkgconf \
     openssl-dev \
     postgresql-dev \
@@ -46,4 +46,6 @@ FROM rust:1.81-alpine
 COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=app /app/target/release/api /usr/local/bin/api
 COPY --from=app /app/target/release/indexer /usr/local/bin/indexer
-COPY --from=app /app/migration /app/migration
+
+WORKDIR /app
+COPY --from=app /app/migration migration
