@@ -44,5 +44,6 @@ COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-c
 COPY --from=app /app/target/release/api /usr/local/bin/api
 COPY --from=app /app/target/release/indexer /usr/local/bin/indexer
 
+RUN apk add musl-dev
 WORKDIR /app
 COPY --from=app /app/migration migration
