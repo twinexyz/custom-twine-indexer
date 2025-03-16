@@ -57,13 +57,10 @@ impl ChainIndexer for SVMIndexer {
     }
 
     async fn run(&mut self) -> Result<()> {
-        info!("Using RPC URL: {}", self.rpc_url);
-        info!("Using WebSocket URL: {}", self.ws_url);
-
-        // Initialization
         let chain_id = self.chain_id as i64;
         let last_synced = db::get_last_synced_slot(&self.db, chain_id).await?;
         let current_slot = self.get_current_slot().await?;
+
         info!("Last synced slot: {}", last_synced);
         info!("Current slot: {}", current_slot);
 
@@ -104,7 +101,6 @@ impl ChainIndexer for SVMIndexer {
                                     chain_id: Set(indexer.chain_id as i64),
                                     block_number: Set(parsed.slot_number),
                                 };
-                                // Skip if already processed (by slot or tx_hash)
                                 if parsed.slot_number <= current_slot as i64 {
                                     info!(
                                         "Skipping live event at slot {} (already processed)",
@@ -152,24 +148,29 @@ impl SVMIndexer {
     async fn get_current_slot(&self) -> Result<u64> {
         let rpc_url = self.rpc_url.clone();
         let twine_chain_id = self.twine_chain_id.clone();
-        tokio::task::spawn_blocking(move || {
-            let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
-                Cluster::Custom(rpc_url, "".to_string()),
-                Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
-            );
-            let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(
-                &twine_chain_id,
-            )?)?;
-            program
-                .rpc()
-                .get_slot_with_commitment(
-                    anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
-                )
-                .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
-        })
-        .await?
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            tokio::task::spawn_blocking(move || {
+                let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
+                    Client::new(
+                        Cluster::Custom(rpc_url, "".to_string()),
+                        Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+                    );
+                let program = client.program(
+                    anchor_client::solana_sdk::pubkey::Pubkey::from_str(&twine_chain_id)?,
+                )?;
+                program
+                    .rpc()
+                    .get_slot_with_commitment(
+                        anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
+                    )
+                    .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
+            }),
+        )
+        .await
+        .map_err(|_| eyre::eyre!("Timeout while fetching current slot"))?
+        .map_err(|e| eyre::eyre!("Failed to fetch current slot: {}", e))?
     }
-
     fn parse_log(
         encoded_data: &str,
         signature: Option<String>,

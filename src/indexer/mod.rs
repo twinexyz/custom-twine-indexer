@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::config::Config;
 
@@ -18,7 +18,6 @@ pub trait ChainIndexer: Send + Sync {
     async fn run(&mut self) -> Result<()>;
     async fn chain_id(&self) -> Result<u64>;
 }
-
 pub async fn start_indexer(
     config: Config,
     db_conn: DatabaseConnection,
@@ -33,7 +32,7 @@ pub async fn start_indexer(
 
     let svm_handle = tokio::spawn(async move {
         info!("Starting SVM indexer");
-        svm_indexer.run().await
+        svm_indexer.run().await // Await directly in the async context
     });
 
     Ok((evm_handle, svm_handle))

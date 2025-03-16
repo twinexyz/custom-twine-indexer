@@ -12,8 +12,8 @@ use futures_util::{future, StreamExt};
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tracing::{error, info};
 use tokio::task::JoinHandle;
+use tracing::{error, info};
 
 pub struct EVMIndexer {
     provider: Arc<dyn Provider + Send + Sync>,

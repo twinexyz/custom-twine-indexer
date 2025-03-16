@@ -69,9 +69,6 @@ pub async fn poll_missing_slots(
     })
     .await??;
 
-    info!("Current slot is: {}", current_slot);
-    info!("Last synced slot is: {}", last_synced);
-
     if last_synced >= current_slot {
         return Ok(Vec::new());
     }
@@ -146,10 +143,6 @@ pub async fn poll_missing_slots(
                 .log_messages
                 .as_ref()
                 .unwrap_or(&empty_logs);
-            debug!(
-                "Transaction logs for signature {}: {:?}",
-                sig_info.signature, logs
-            );
 
             let mut event_type = None;
             let mut encoded_data = None;
@@ -204,12 +197,10 @@ async fn subscribe_to_single_program(
     twine_chain_id: String,
     tokens_gateway_id: String,
 ) -> Result<()> {
-    info!("Attempting to connect to WebSocket: {}", ws_url);
     let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| {
         error!("Failed to connect to WebSocket {}: {:?}", ws_url, e);
         eyre::eyre!("WebSocket connection error: {}", e)
     })?;
-    info!("WebSocket connected to: {}", ws_url);
     let (mut write, mut read) = ws_stream.split();
 
     let subscription = json!({
@@ -227,7 +218,6 @@ async fn subscribe_to_single_program(
     });
 
     write.send(Message::Text(subscription.to_string())).await?;
-    info!("Subscribed to logs for program: {}", program_id);
 
     if let Some(first_message) = read.next().await {
         match first_message {
@@ -290,10 +280,6 @@ async fn subscribe_to_single_program(
                                 if let (Some(event_type), Some(encoded_data)) =
                                     (event_type, encoded_data)
                                 {
-                                    info!(
-                                        "Found encoded {} data for {}: {}",
-                                        event_type, program_id, encoded_data
-                                    );
                                     if data_sender
                                         .send((
                                             encoded_data,
@@ -323,6 +309,5 @@ async fn subscribe_to_single_program(
         }
     }
 
-    info!("WebSocket stream for {} ended", program_id);
     Ok(())
 }
