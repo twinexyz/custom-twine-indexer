@@ -1,8 +1,11 @@
-use crate::entities::{twine_l1_deposit, twine_l1_withdraw, twine_transaction_batch, twine_l2_withdraw};
+use crate::entities::{
+    twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw, twine_transaction_batch,
+};
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
 use chrono::{DateTime, Utc};
 use eyre::Report;
+use sea_orm::ActiveValue;
 use sea_orm::ActiveValue::Set;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain;
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};

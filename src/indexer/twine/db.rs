@@ -3,7 +3,6 @@ use crate::entities::{last_synced, twine_l1_deposit, twine_l1_withdraw, twine_tr
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 
-pub async fn insert_model(model: DbModel, db: &DatabaseConnection) {
 pub async fn insert_model(
     model: DbModel,
     last_synced: last_synced::ActiveModel,
@@ -23,6 +22,14 @@ pub async fn insert_model(
         DbModel::TwineL2Withdraw(model) => {
             if let Err(e) = twine_l2_withdraw::Entity::insert(model).exec(db).await {
                 error!("Failed to insert TwineL2Withdraw: {e:?}");
+            }
+        }
+        DbModel::TwineTransactionBatch(model) => {
+            if let Err(e) = twine_transaction_batch::Entity::insert(model)
+                .exec(db)
+                .await
+            {
+                error!("Failed to insert TwineTransactionBatch: {e:?}");
             }
         }
     }

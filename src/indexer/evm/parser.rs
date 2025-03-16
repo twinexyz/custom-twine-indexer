@@ -4,6 +4,7 @@ use alloy::sol;
 use alloy::sol_types::SolEvent;
 use chrono::Utc;
 use eyre::Report;
+use sea_orm::ActiveValue;
 use sea_orm::ActiveValue::Set;
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 
