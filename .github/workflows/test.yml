@@ -32,6 +32,9 @@ jobs:
           echo "https://${{github.actor}}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials
           chmod 600 ~/.git-credentials
           cargo test --all-features
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
 
   # Check formatting with rustfmt
   formatting:
@@ -48,3 +51,6 @@ jobs:
           components: rustfmt
       - name: Rustfmt Check
         uses: actions-rust-lang/rustfmt@v1
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."

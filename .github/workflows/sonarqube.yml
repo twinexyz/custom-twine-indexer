@@ -21,4 +21,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
 

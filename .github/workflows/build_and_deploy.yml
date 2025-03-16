@@ -102,3 +102,6 @@ jobs:
             git add .
             git commit --allow-empty -m "updated image tag to ${GITHUB_SHA} for ${{ env.REPO }}"
             git push origin main
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
