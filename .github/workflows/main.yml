@@ -39,5 +39,5 @@ jobs:
   #  secrets: inherit
   zap-scan:
     needs: ["test", "file-scan", "build-and-deploy"]
-    uses: ./.github/workflows/zap-scan.yml
+    uses: ./.github/workflows/zap.yml
     secrets: inherit
