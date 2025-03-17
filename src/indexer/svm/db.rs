@@ -96,8 +96,8 @@ pub async fn insert_spl_withdrawal(
     Ok(())
 }
 
-pub async fn insert_native_withdrawal_successful(
-    withdrawal: &parser::NativeWithdrawalSuccessful,
+pub async fn insert_finalize_native_withdrawal(
+    withdrawal: &parser::FinalizeNativeWithdrawal,
     db: &DatabaseConnection,
 ) -> Result<()> {
     let withdrawal_model = l1_withdraw::ActiveModel {
@@ -118,8 +118,8 @@ pub async fn insert_native_withdrawal_successful(
     Ok(())
 }
 
-pub async fn insert_spl_withdrawal_successful(
-    withdrawal: &parser::SplWithdrawalSuccessful,
+pub async fn insert_finalize_spl_withdrawal(
+    withdrawal: &parser::FinalizeSplWithdrawal,
     db: &DatabaseConnection,
 ) -> Result<()> {
     let withdrawal_model = l1_withdraw::ActiveModel {

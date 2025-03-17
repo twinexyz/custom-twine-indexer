@@ -1,3 +1,4 @@
+// mod.rs
 mod db;
 mod parser;
 mod subscriber;
@@ -82,7 +83,7 @@ impl ChainIndexer for SVMIndexer {
             );
 
             let mut processed_count = 0;
-            for (encoded_data, signature, event_type) in historical_events {
+            for (logs, signature) in historical_events {
                 if let Some(tx_hash) = &signature {
                     if db::is_tx_hash_processed(&self.db, tx_hash).await? {
                         info!("Skipping already processed tx: {}", tx_hash);
@@ -90,7 +91,7 @@ impl ChainIndexer for SVMIndexer {
                     }
                 }
 
-                match Self::parse_log(&encoded_data, signature.clone(), &event_type) {
+                match parser::parse_log(&logs, signature.clone()) {
                     Ok(parsed) => {
                         if parsed.slot_number <= last_synced {
                             info!(
@@ -115,7 +116,7 @@ impl ChainIndexer for SVMIndexer {
                             .await?;
                         processed_count += 1;
                     }
-                    Err(e) => error!("Failed to parse historical log: {:?}", e),
+                    Err(e) => error!("Failed to parse historical logs: {:?}", e),
                 }
             }
 
@@ -139,8 +140,8 @@ impl ChainIndexer for SVMIndexer {
                 )
                 .await?;
 
-                while let Some((encoded_data, signature, event_type)) = stream.next().await {
-                    match SVMIndexer::parse_log(&encoded_data, signature.clone(), &event_type) {
+                while let Some((logs, signature)) = stream.next().await {
+                    match parser::parse_log(&logs, signature.clone()) {
                         Ok(parsed) => {
                             if parsed.slot_number <= current_slot as i64 {
                                 info!(
@@ -178,7 +179,7 @@ impl ChainIndexer for SVMIndexer {
                                 }
                             }
                         }
-                        Err(e) => error!("Failed to parse live log: {:?}", e),
+                        Err(e) => error!("Failed to parse live logs: {:?}", e),
                     }
                 }
                 Ok::<(), eyre::Error>(())
@@ -199,7 +200,6 @@ impl ChainIndexer for SVMIndexer {
     }
 }
 
-// Rest of the implementation remains the same...
 impl SVMIndexer {
     async fn get_current_slot(&self) -> Result<u64> {
         let rpc_url = self.rpc_url.clone();
@@ -226,14 +226,6 @@ impl SVMIndexer {
         .await
         .map_err(|_| eyre::eyre!("Timeout while fetching current slot"))?
         .map_err(|e| eyre::eyre!("Failed to fetch current slot: {}", e))?
-    }
-    fn parse_log(
-        encoded_data: &str,
-        signature: Option<String>,
-        event_type: &str,
-    ) -> Result<parser::ParsedEvent> {
-        parser::parse_log(encoded_data, signature, event_type)
-            .map_err(|e| eyre::eyre!("Failed to parse log: {}", e))
     }
 
     async fn process_event_static(
@@ -276,21 +268,21 @@ impl SVMIndexer {
                 db::insert_spl_withdrawal(&withdrawal, db).await?;
             }
         } else if let Ok(native_success) =
-            serde_json::from_value::<parser::NativeWithdrawalSuccessful>(event_clone.clone())
+            serde_json::from_value::<parser::FinalizeNativeWithdrawal>(event_clone.clone())
         {
             info!(
                 "Inserting native withdrawal successful with nonce: {}, slot: {}, tx_hash: {}",
                 native_success.nonce, native_success.slot_number, native_success.signature
             );
-            db::insert_native_withdrawal_successful(&native_success, db).await?;
+            db::insert_finalize_native_withdrawal(&native_success, db).await?;
         } else if let Ok(spl_success) =
-            serde_json::from_value::<parser::SplWithdrawalSuccessful>(event_clone)
+            serde_json::from_value::<parser::FinalizeSplWithdrawal>(event_clone)
         {
             info!(
                 "Inserting SPL withdrawal successful with nonce: {}, slot: {}, tx_hash: {}",
                 spl_success.nonce, spl_success.slot_number, spl_success.signature
             );
-            db::insert_spl_withdrawal_successful(&spl_success, db).await?;
+            db::insert_finalize_spl_withdrawal(&spl_success, db).await?;
         } else {
             error!("Failed to deserialize event: {:?}", event);
             return Err(eyre::eyre!("Unknown event type"));

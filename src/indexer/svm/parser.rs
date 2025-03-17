@@ -1,9 +1,11 @@
+use alloy::hex;
 use base64::{engine::general_purpose, Engine as _};
+use borsh::{BorshDeserialize, BorshSerialize};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{debug, error};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct DepositSuccessful {
     pub nonce: u64,
     pub from_l1_pubkey: String,
@@ -13,10 +15,11 @@ pub struct DepositSuccessful {
     pub chain_id: u64,
     pub amount: String,
     pub slot_number: u64,
-    pub signature: String,
+    #[borsh(skip)]
+    pub signature: String, // Excluded from Borsh serialization/deserialization
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ForcedWithdrawSuccessful {
     pub nonce: u64,
     pub from_twine_address: String,
@@ -26,11 +29,12 @@ pub struct ForcedWithdrawSuccessful {
     pub chain_id: u64,
     pub amount: String,
     pub slot_number: u64,
+    #[borsh(skip)]
     pub signature: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NativeWithdrawalSuccessful {
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct FinalizeNativeWithdrawal {
     pub nonce: u64,
     pub receiver_l1_pubkey: String,
     pub l1_token: String,
@@ -38,11 +42,12 @@ pub struct NativeWithdrawalSuccessful {
     pub chain_id: u64,
     pub amount: u64,
     pub slot_number: u64,
+    #[borsh(skip)]
     pub signature: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SplWithdrawalSuccessful {
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct FinalizeSplWithdrawal {
     pub nonce: u64,
     pub receiver_l1_pubkey: String,
     pub l1_token: String,
@@ -50,337 +55,177 @@ pub struct SplWithdrawalSuccessful {
     pub chain_id: u64,
     pub amount: u64,
     pub slot_number: u64,
+    #[borsh(skip)]
     pub signature: String,
 }
 
+#[derive(Debug)]
 pub struct ParsedEvent {
     pub event: serde_json::Value,
     pub slot_number: i64,
 }
 
-pub fn parse_deposit_data(
+pub trait HasSignature {
+    fn set_signature(&mut self, signature: String);
+}
+
+impl HasSignature for DepositSuccessful {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for ForcedWithdrawSuccessful {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for FinalizeNativeWithdrawal {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for FinalizeSplWithdrawal {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+pub fn parse_borsh<T: BorshDeserialize + HasSignature>(
     encoded_data: &str,
     signature: Option<String>,
-) -> Result<DepositSuccessful> {
+) -> Result<T> {
+    debug!("Parsing Borsh data: encoded_data = {}", encoded_data);
+
     let decoded_data = general_purpose::STANDARD
         .decode(encoded_data)
         .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
 
-    let pos = 8; // Skip the 8-byte discriminator
+    debug!(
+        "Decoded data (hex): {:?}, length: {}",
+        hex::encode(&decoded_data),
+        decoded_data.len()
+    );
 
-    let parse_u64 = |data: &[u8], start: usize| -> Result<(u64, usize)> {
-        if start + 8 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse u64 at position {}",
-                start
-            ));
-        }
-        let mut value_bytes = [0u8; 8];
-        value_bytes.copy_from_slice(&data[start..start + 8]);
-        Ok((u64::from_le_bytes(value_bytes), start + 8))
+    let data_with_discriminator = if decoded_data.len() >= 8 {
+        &decoded_data[8..]
+    } else {
+        &decoded_data[..]
     };
 
-    let parse_string = |data: &[u8], start: usize| -> Result<(String, usize)> {
-        if start + 4 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string length at position {}",
-                start
-            ));
+    debug!(
+        "Attempting deserialization with discriminator skipped: data (hex) = {:?}, length = {}",
+        hex::encode(data_with_discriminator),
+        data_with_discriminator.len()
+    );
+
+    let mut event = match T::try_from_slice(data_with_discriminator) {
+        Ok(event) => event,
+        Err(e) => {
+            debug!(
+                "Failed with discriminator: error = {}, data (hex) = {:?}, length = {}",
+                e,
+                hex::encode(data_with_discriminator),
+                data_with_discriminator.len()
+            );
+            if e.to_string().contains("Unexpected length") {
+                error!(
+                    "Length mismatch after skipping discriminator: data (hex) = {:?}, length = {}",
+                    hex::encode(data_with_discriminator),
+                    data_with_discriminator.len()
+                );
+                return Err(eyre::eyre!("Failed to deserialize Borsh data: {}", e));
+            }
+            debug!("Retrying without skipping discriminator");
+            T::try_from_slice(&decoded_data).map_err(|e| {
+                error!(
+                    "Deserialization failed: error = {}, data (hex) = {:?}, length = {}",
+                    e,
+                    hex::encode(&decoded_data),
+                    decoded_data.len()
+                );
+                eyre::eyre!("Failed to deserialize Borsh data: {}", e)
+            })?
         }
-        let len_bytes = [
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        ];
-        let len = u32::from_le_bytes(len_bytes) as usize;
-        if start + 4 + len > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string of length {} at position {}",
-                len,
-                start
-            ));
-        }
-        let string_bytes = &data[start + 4..start + 4 + len];
-        let string = String::from_utf8_lossy(string_bytes).to_string();
-        Ok((string, start + 4 + len))
     };
 
-    let (nonce, pos) = parse_u64(&decoded_data, pos)?;
-    let (from_l1_pubkey, pos) = parse_string(&decoded_data, pos)?;
-    let (to_twine_address, pos) = parse_string(&decoded_data, pos)?;
-    let (l1_token, pos) = parse_string(&decoded_data, pos)?;
-    let (l2_token, pos) = parse_string(&decoded_data, pos)?;
-    let (chain_id, pos) = parse_u64(&decoded_data, pos)?;
-    let (amount, pos) = parse_string(&decoded_data, pos)?;
-    let (slot_number, _) = parse_u64(&decoded_data, pos)?;
+    if let Some(sig) = signature {
+        event.set_signature(sig);
+    } else {
+        event.set_signature(String::new()); // Ensure signature is initialized
+    }
 
-    Ok(DepositSuccessful {
-        nonce,
-        from_l1_pubkey,
-        to_twine_address,
-        l1_token,
-        l2_token,
-        chain_id,
-        amount,
-        slot_number,
-        signature: signature.unwrap_or_default(),
-    })
+    Ok(event)
 }
 
-pub fn parse_forced_withdraw_data(
-    encoded_data: &str,
-    signature: Option<String>,
-) -> Result<ForcedWithdrawSuccessful> {
-    let decoded_data = general_purpose::STANDARD
-        .decode(encoded_data)
-        .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
+pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEvent> {
+    debug!("Parsing logs: {:?}", logs);
 
-    let pos = 8;
+    let mut event_type = None;
+    let mut encoded_data = None;
 
-    let parse_u64 = |data: &[u8], start: usize| -> Result<(u64, usize)> {
-        if start + 8 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse u64 at position {}",
-                start
-            ));
+    for log in logs {
+        if log == "Program log: Instruction: NativeTokenDeposit" {
+            event_type = Some("native_deposit");
+        } else if log == "Program log: Instruction: SplTokensDeposit" {
+            event_type = Some("spl_deposit");
+        } else if log == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
+            event_type = Some("native_withdrawal");
+        } else if log == "Program log: Instruction: ForcedSplTokenWithdrawal" {
+            event_type = Some("spl_withdrawal");
+        } else if log == "Program log: Instruction: FinalizeNativeWithdrawal" {
+            event_type = Some("finalize_native_withdrawal");
+        } else if log == "Program log: Instruction: FinalizeSplWithdrawal" {
+            event_type = Some("finalize_spl_withdrawal");
         }
-        let mut value_bytes = [0u8; 8];
-        value_bytes.copy_from_slice(&data[start..start + 8]);
-        Ok((u64::from_le_bytes(value_bytes), start + 8))
+
+        if log.starts_with("Program data: ") {
+            encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+        }
+    }
+
+    let Some(event_type) = event_type else {
+        error!("No recognizable event type found in logs: {:?}", logs);
+        return Err(eyre::eyre!(
+            "No recognizable event type found in logs: {:?}",
+            logs
+        ));
+    };
+    let Some(encoded_data) = encoded_data else {
+        error!("No encoded data found in logs: {:?}", logs);
+        return Err(eyre::eyre!("No encoded data found in logs: {:?}", logs));
     };
 
-    let parse_string = |data: &[u8], start: usize| -> Result<(String, usize)> {
-        if start + 4 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string length at position {}",
-                start
-            ));
-        }
-        let len_bytes = [
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        ];
-        let len = u32::from_le_bytes(len_bytes) as usize;
-        if start + 4 + len > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string of length {} at position {}",
-                len,
-                start
-            ));
-        }
-        let string_bytes = &data[start + 4..start + 4 + len];
-        let string = String::from_utf8_lossy(string_bytes).to_string();
-        Ok((string, start + 4 + len))
-    };
+    debug!(
+        "Identified event_type: {}, encoded_data: {}",
+        event_type, encoded_data
+    );
 
-    let (nonce, pos) = parse_u64(&decoded_data, pos)?;
-    let (from_twine_address, pos) = parse_string(&decoded_data, pos)?;
-    let (to_l1_pub_key, pos) = parse_string(&decoded_data, pos)?;
-    let (l1_token, pos) = parse_string(&decoded_data, pos)?;
-    let (l2_token, pos) = parse_string(&decoded_data, pos)?;
-    let (chain_id, pos) = parse_u64(&decoded_data, pos)?;
-    let (amount, pos) = parse_string(&decoded_data, pos)?;
-    let (slot_number, _) = parse_u64(&decoded_data, pos)?;
-
-    Ok(ForcedWithdrawSuccessful {
-        nonce,
-        from_twine_address,
-        to_l1_pub_key,
-        l1_token,
-        l2_token,
-        chain_id,
-        amount,
-        slot_number,
-        signature: signature.unwrap_or_default(),
-    })
-}
-
-pub fn parse_native_withdrawal_successful(
-    encoded_data: &str,
-    signature: Option<String>,
-) -> Result<NativeWithdrawalSuccessful> {
-    let decoded_data = general_purpose::STANDARD
-        .decode(encoded_data)
-        .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
-
-    let pos = 8;
-
-    let parse_u64 = |data: &[u8], start: usize| -> Result<(u64, usize)> {
-        if start + 8 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse u64 at position {}",
-                start
-            ));
-        }
-        let mut value_bytes = [0u8; 8];
-        value_bytes.copy_from_slice(&data[start..start + 8]);
-        Ok((u64::from_le_bytes(value_bytes), start + 8))
-    };
-
-    let parse_string = |data: &[u8], start: usize| -> Result<(String, usize)> {
-        if start + 4 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string length at position {}",
-                start
-            ));
-        }
-        let len_bytes = [
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        ];
-        let len = u32::from_le_bytes(len_bytes) as usize;
-        if start + 4 + len > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string of length {} at position {}",
-                len,
-                start
-            ));
-        }
-        let string_bytes = &data[start + 4..start + 4 + len];
-        let string = String::from_utf8_lossy(string_bytes).to_string();
-        Ok((string, start + 4 + len))
-    };
-
-    let (nonce, pos) = parse_u64(&decoded_data, pos)?;
-    let (receiver_l1_pubkey, pos) = parse_string(&decoded_data, pos)?;
-    let (l1_token, pos) = parse_string(&decoded_data, pos)?;
-    let (l2_token, pos) = parse_string(&decoded_data, pos)?;
-    let (chain_id, pos) = parse_u64(&decoded_data, pos)?;
-    let (amount, pos) = parse_u64(&decoded_data, pos)?;
-    let (slot_number, _) = parse_u64(&decoded_data, pos)?;
-
-    Ok(NativeWithdrawalSuccessful {
-        nonce,
-        receiver_l1_pubkey,
-        l1_token,
-        l2_token,
-        chain_id,
-        amount,
-        slot_number,
-        signature: signature.unwrap_or_default(),
-    })
-}
-
-pub fn parse_spl_withdrawal_successful(
-    encoded_data: &str,
-    signature: Option<String>,
-) -> Result<SplWithdrawalSuccessful> {
-    let decoded_data = general_purpose::STANDARD
-        .decode(encoded_data)
-        .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
-
-    let pos = 8;
-
-    let parse_u64 = |data: &[u8], start: usize| -> Result<(u64, usize)> {
-        if start + 8 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse u64 at position {}",
-                start
-            ));
-        }
-        let mut value_bytes = [0u8; 8];
-        value_bytes.copy_from_slice(&data[start..start + 8]);
-        Ok((u64::from_le_bytes(value_bytes), start + 8))
-    };
-
-    let parse_string = |data: &[u8], start: usize| -> Result<(String, usize)> {
-        if start + 4 > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string length at position {}",
-                start
-            ));
-        }
-        let len_bytes = [
-            data[start],
-            data[start + 1],
-            data[start + 2],
-            data[start + 3],
-        ];
-        let len = u32::from_le_bytes(len_bytes) as usize;
-        if start + 4 + len > data.len() {
-            return Err(eyre::eyre!(
-                "Not enough data to parse string of length {} at position {}",
-                len,
-                start
-            ));
-        }
-        let string_bytes = &data[start + 4..start + 4 + len];
-        let string = String::from_utf8_lossy(string_bytes).to_string();
-        Ok((string, start + 4 + len))
-    };
-
-    let (nonce, pos) = parse_u64(&decoded_data, pos)?;
-    let (receiver_l1_pubkey, pos) = parse_string(&decoded_data, pos)?;
-    let (l1_token, pos) = parse_string(&decoded_data, pos)?;
-    let (l2_token, pos) = parse_string(&decoded_data, pos)?;
-    let (chain_id, pos) = parse_u64(&decoded_data, pos)?;
-    let (amount, pos) = parse_u64(&decoded_data, pos)?;
-    let (slot_number, _) = parse_u64(&decoded_data, pos)?;
-
-    Ok(SplWithdrawalSuccessful {
-        nonce,
-        receiver_l1_pubkey,
-        l1_token,
-        l2_token,
-        chain_id,
-        amount,
-        slot_number,
-        signature: signature.unwrap_or_default(),
-    })
-}
-
-pub fn parse_log(
-    encoded_data: &str,
-    signature: Option<String>,
-    event_type: &str,
-) -> Result<ParsedEvent> {
-    let event = match event_type {
+    let (event, slot_number) = match event_type {
         "native_deposit" | "spl_deposit" => {
-            let deposit = parse_deposit_data(encoded_data, signature.clone())?;
-            serde_json::to_value(deposit)?
+            let deposit = parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone())?;
+            (serde_json::to_value(&deposit)?, deposit.slot_number as i64)
         }
         "native_withdrawal" | "spl_withdrawal" => {
-            let withdrawal = parse_forced_withdraw_data(encoded_data, signature.clone())?;
-            serde_json::to_value(withdrawal)?
+            let withdrawal =
+                parse_borsh::<ForcedWithdrawSuccessful>(&encoded_data, signature.clone())?;
+            (
+                serde_json::to_value(&withdrawal)?,
+                withdrawal.slot_number as i64,
+            )
         }
-        "native_withdrawal_successful" => {
-            let native_success =
-                parse_native_withdrawal_successful(encoded_data, signature.clone())?;
-            serde_json::to_value(native_success)?
+        "finalize_native_withdrawal" => {
+            let native = parse_borsh::<FinalizeNativeWithdrawal>(&encoded_data, signature.clone())?;
+            (serde_json::to_value(&native)?, native.slot_number as i64)
         }
-        "spl_withdrawal_successful" => {
-            let spl_success = parse_spl_withdrawal_successful(encoded_data, signature.clone())?;
-            serde_json::to_value(spl_success)?
+        "finalize_spl_withdrawal" => {
+            let spl = parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone())?;
+            (serde_json::to_value(&spl)?, spl.slot_number as i64)
         }
-        _ => {
-            error!("Unknown event type: {}", event_type);
-            return Err(eyre::eyre!("Unknown event type: {}", event_type));
-        }
+        _ => unreachable!("All event types should be handled above"),
     };
 
-    let slot_number = match event_type {
-        "native_deposit" | "spl_deposit" => {
-            parse_deposit_data(encoded_data, signature.clone())?.slot_number
-        }
-        "native_withdrawal" | "spl_withdrawal" => {
-            parse_forced_withdraw_data(encoded_data, signature.clone())?.slot_number
-        }
-        "native_withdrawal_successful" => {
-            parse_native_withdrawal_successful(encoded_data, signature.clone())?.slot_number
-        }
-        "spl_withdrawal_successful" => {
-            parse_spl_withdrawal_successful(encoded_data, signature)?.slot_number
-        }
-        _ => unreachable!(), // Covered by error above
-    };
-
-    Ok(ParsedEvent {
-        event,
-        slot_number: slot_number as i64,
-    })
+    Ok(ParsedEvent { event, slot_number })
 }

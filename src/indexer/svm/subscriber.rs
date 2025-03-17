@@ -1,4 +1,4 @@
-// indexer/svm/subscriber.rs
+// subscriber.rs
 use anchor_client::{
     solana_client::rpc_response::RpcConfirmedTransactionStatusWithSignature, Client, Cluster,
 };
@@ -15,10 +15,10 @@ use tracing::{debug, error, info};
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
 pub async fn subscribe_stream(
-    ws_url: &str, // Explicitly WebSocket URL
+    ws_url: &str,
     twine_chain_id: &str,
     tokens_gateway_id: &str,
-) -> Result<impl Stream<Item = (String, Option<String>, String)>> {
+) -> Result<impl Stream<Item = (Vec<String>, Option<String>)>> {
     let (data_sender, data_receiver) = tokio::sync::mpsc::channel(100);
 
     let ws_url_owned = ws_url.to_string();
@@ -29,26 +29,23 @@ pub async fn subscribe_stream(
         ws_url_owned.clone(),
         twine_chain_id_owned.clone(),
         data_sender.clone(),
-        twine_chain_id_owned.clone(),
-        tokens_gateway_id_owned.clone(),
     ));
+
     tokio::spawn(subscribe_to_single_program(
         ws_url_owned,
         tokens_gateway_id_owned.clone(),
         data_sender,
-        twine_chain_id_owned,
-        tokens_gateway_id_owned,
     ));
 
     Ok(ReceiverStream::new(data_receiver))
 }
 
 pub async fn poll_missing_slots(
-    rpc_url: &str, // Explicitly HTTP RPC URL
+    rpc_url: &str,
     twine_chain_id: &str,
     tokens_gateway_id: &str,
     last_synced: u64,
-) -> Result<Vec<(String, Option<String>, String)>> {
+) -> Result<Vec<(Vec<String>, Option<String>)>> {
     let rpc_url_clone = rpc_url.to_string();
     let twine_chain_id_clone = twine_chain_id.to_string();
 
@@ -93,7 +90,7 @@ pub async fn poll_missing_slots(
                     anchor_client::solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
                         before: None,
                         until: None,
-                        limit: None,
+                        limit: Some(1000),
                         commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
                     },
                 )
@@ -142,47 +139,15 @@ pub async fn poll_missing_slots(
                 .unwrap()
                 .log_messages
                 .as_ref()
-                .unwrap_or(&empty_logs);
+                .unwrap_or(&empty_logs)
+                .to_vec();
 
-            let mut event_type = None;
-            let mut encoded_data = None;
-
-            for log in logs {
-                if program_id == twine_chain_id {
-                    if log == "Program log: Instruction: NativeTokenDeposit" {
-                        event_type = Some("native_deposit");
-                    } else if log == "Program log: Instruction: SplTokensDeposit" {
-                        event_type = Some("spl_deposit");
-                    } else if log == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
-                        event_type = Some("native_withdrawal");
-                    } else if log == "Program log: Instruction: ForcedSplTokenWithdrawal" {
-                        event_type = Some("spl_withdrawal");
-                    }
-                } else if program_id == tokens_gateway_id {
-                    if log == "Program log: Instruction: FinalizeNativeWithdrawal" {
-                        event_type = Some("finalize_native_withdrawal");
-                    } else if log == "Program log: Instruction: FinalizeSplWithdrawal" {
-                        event_type = Some("finalize_spl_withdrawal");
-                    }
-                }
-
-                if log.starts_with("Program data: ") {
-                    encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
-                }
-            }
-
-            if let (Some(event_type), Some(encoded_data)) = (event_type, encoded_data) {
-                if tx.slot > last_synced && tx.slot <= current_slot {
-                    info!(
-                        "Found event: type={}, slot={}, signature={}",
-                        event_type, tx.slot, sig_info.signature
-                    );
-                    events.push((
-                        encoded_data,
-                        Some(sig_info.signature),
-                        event_type.to_string(),
-                    ));
-                }
+            if tx.slot > last_synced && tx.slot <= current_slot {
+                info!(
+                    "Found logs at slot={}, signature={}",
+                    tx.slot, sig_info.signature
+                );
+                events.push((logs, Some(sig_info.signature.clone())));
             }
         }
     }
@@ -193,9 +158,7 @@ pub async fn poll_missing_slots(
 async fn subscribe_to_single_program(
     ws_url: String,
     program_id: String,
-    data_sender: Sender<(String, Option<String>, String)>,
-    twine_chain_id: String,
-    tokens_gateway_id: String,
+    data_sender: Sender<(Vec<String>, Option<String>)>,
 ) -> Result<()> {
     let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| {
         error!("Failed to connect to WebSocket {}: {:?}", ws_url, e);
@@ -223,6 +186,17 @@ async fn subscribe_to_single_program(
         match first_message {
             Ok(Message::Text(text)) => {
                 debug!("First WebSocket response for {}: {}", program_id, text);
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if value.get("result").is_some() {
+                        info!(
+                            "Successfully subscribed to logs for program: {}",
+                            program_id
+                        );
+                    } else if let Some(error) = value.get("error") {
+                        error!("Subscription error for {}: {:?}", program_id, error);
+                        return Err(eyre::eyre!("Subscription failed: {:?}", error));
+                    }
+                }
             }
             Ok(_) => debug!("Received non-text first message for {}", program_id),
             Err(e) => error!("First WebSocket message error for {}: {:?}", program_id, e),
@@ -244,60 +218,26 @@ async fn subscribe_to_single_program(
 
                         if let Some(logs) = result.get("value").and_then(|v| v.get("logs")) {
                             if let Some(logs_array) = logs.as_array() {
-                                let mut event_type = None;
-                                let mut encoded_data = None;
+                                let logs_vec = logs_array
+                                    .iter()
+                                    .filter_map(|log| log.as_str().map(String::from))
+                                    .collect::<Vec<String>>();
 
-                                for log in logs_array {
-                                    if let Some(log_str) = log.as_str() {
-                                        if program_id == twine_chain_id {
-                                            if log_str == "Program log: Instruction: NativeTokenDeposit" {
-                                                event_type = Some("native_deposit");
-                                            } else if log_str == "Program log: Instruction: SplTokensDeposit" {
-                                                event_type = Some("spl_deposit");
-                                            } else if log_str == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
-                                                event_type = Some("native_withdrawal");
-                                            } else if log_str == "Program log: Instruction: ForcedSplTokenWithdrawal" {
-                                                event_type = Some("spl_withdrawal");
-                                            }
-                                        } else if program_id == tokens_gateway_id {
-                                            if log_str == "Program log: Instruction: FinalizeNativeWithdrawal" {
-                                                event_type = Some("finalize_native_withdrawal");
-                                            } else if log_str == "Program log: Instruction: FinalizeSplWithdrawal" {
-                                                event_type = Some("finalize_spl_withdrawal");
-                                            }
-                                        }
-
-                                        if log_str.starts_with("Program data: ") {
-                                            encoded_data = Some(
-                                                log_str
-                                                    .trim_start_matches("Program data: ")
-                                                    .to_string(),
-                                            );
-                                        }
-                                    }
-                                }
-
-                                if let (Some(event_type), Some(encoded_data)) =
-                                    (event_type, encoded_data)
+                                if data_sender
+                                    .send((logs_vec, signature.clone()))
+                                    .await
+                                    .is_err()
                                 {
-                                    if data_sender
-                                        .send((
-                                            encoded_data,
-                                            signature.clone(),
-                                            event_type.to_string(),
-                                        ))
-                                        .await
-                                        .is_err()
-                                    {
-                                        error!(
-                                            "Failed to send {} data through channel for {}",
-                                            event_type, program_id
-                                        );
-                                        return Err(eyre::eyre!("Channel send error"));
-                                    }
+                                    error!(
+                                        "Failed to send logs through channel for {}",
+                                        program_id
+                                    );
+                                    return Err(eyre::eyre!("Channel send error"));
                                 }
                             }
                         }
+                    } else if let Some(error) = value.get("error") {
+                        error!("WebSocket error response for {}: {:?}", program_id, error);
                     }
                 }
             }
