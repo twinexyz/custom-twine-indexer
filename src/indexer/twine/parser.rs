@@ -3,11 +3,10 @@ use crate::entities::{
 };
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use eyre::Report;
-use sea_orm::ActiveValue;
+
 use sea_orm::ActiveValue::Set;
-use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain;
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
 
 #[derive(Debug)]
@@ -128,28 +127,6 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
             process_precompile_return(pr, tx_hash, block_number)
-        }
-        TwineChain::CommitBatch::SIGNATURE_HASH => {
-            let decoded = log.log_decode::<TwineChain::CommitBatch>()?;
-            let data = decoded.inner.data;
-
-            let model = DbModel::TwineTransactionBatch(twine_transaction_batch::ActiveModel {
-                number: ActiveValue::Set(
-                    data.blockNumber
-                        .try_into()
-                        .map_err(|e| eyre::eyre!("Failed to convert blockNumber to i64: {}", e))?,
-                ),
-                timestamp: ActiveValue::Set(timestamp.into()),
-                start_block: ActiveValue::Set(data.startBlock as i64),
-                end_block: ActiveValue::Set(data.endBlock as i64),
-                root_hash: ActiveValue::Set(data.batchHash.0.to_vec()),
-                created_at: ActiveValue::Set(timestamp.into()),
-                updated_at: ActiveValue::Set(timestamp.into()),
-            });
-            Ok(ParsedLog {
-                model,
-                block_number,
-            })
         }
         L2Messenger::SentMessage::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SentMessage>()?;

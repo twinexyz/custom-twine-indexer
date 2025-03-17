@@ -12,7 +12,6 @@ use futures_util::{future, StreamExt};
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 pub struct EVMIndexer {
@@ -45,7 +44,7 @@ impl ChainIndexer for EVMIndexer {
             info!("Starting live indexing from block {}", current_block + 1);
             if let Ok(mut stream) = chain::subscribe_stream(&*live_indexer.provider).await {
                 while let Some(log) = stream.next().await {
-                    match parser::parse_log(log) {
+                    match parser::parse_log(log, &live_indexer.db).await {
                         Ok(parsed) => {
                             let last_synced = last_synced::ActiveModel {
                                 chain_id: Set(id as i64),
@@ -89,7 +88,7 @@ impl EVMIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id().await?;
         for log in logs {
-            match parser::parse_log(log) {
+            match parser::parse_log(log, &self.db).await {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),

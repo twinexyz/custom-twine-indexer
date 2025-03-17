@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "twine_lifecycle_l1_transactions")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: i64,
+    #[sea_orm(primary_key)]
+    pub id: i32,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub hash: Vec<u8>,
     pub chain_id: i64,
-    pub timestamp: DateTimeWithTimeZone,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub timestamp: DateTime,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

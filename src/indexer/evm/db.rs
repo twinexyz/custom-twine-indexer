@@ -1,8 +1,10 @@
 use super::parser::DbModel;
-use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
+use crate::entities::{
+    l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_transaction_batch,
+    twine_transaction_batch_detail,
+};
 use eyre::Result;
 use sea_orm::{DatabaseConnection, EntityTrait};
-use tracing::error;
 
 pub async fn insert_model(
     model: DbModel,
@@ -15,7 +17,7 @@ pub async fn insert_model(
                 .exec(db)
                 .await
                 .map_err(|e| {
-                    error!("Failed to insert SentMessage: {:?}", e);
+                    tracing::error!("Failed to insert L2Withdraw: {:?}", e);
                     eyre::eyre!("Failed to insert L2Withdraw: {:?}", e)
                 })?;
         }
@@ -24,7 +26,7 @@ pub async fn insert_model(
                 .exec(db)
                 .await
                 .map_err(|e| {
-                    error!("Failed to insert L1Deposit: {:?}", e);
+                    tracing::error!("Failed to insert L1Deposit: {:?}", e);
                     eyre::eyre!("Failed to insert L1Deposit: {:?}", e)
                 })?;
         }
@@ -33,8 +35,35 @@ pub async fn insert_model(
                 .exec(db)
                 .await
                 .map_err(|e| {
-                    error!("Failed to insert L1Withdraw: {:?}", e);
+                    tracing::error!("Failed to insert L1Withdraw: {:?}", e);
                     eyre::eyre!("Failed to insert L1Withdraw: {:?}", e)
+                })?;
+        }
+        DbModel::TwineTransactionBatch(model) => {
+            // Skip insertion if all fields are unset (indicating a "dummy" model)
+            if model.start_block.is_not_set()
+                && model.end_block.is_not_set()
+                && model.root_hash.is_not_set()
+                && model.timestamp.is_not_set()
+            {
+                tracing::info!("Skipping insertion of duplicate TwineTransactionBatch");
+            } else {
+                twine_transaction_batch::Entity::insert(model)
+                    .exec(db)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to insert TwineTransactionBatch: {:?}", e);
+                        eyre::eyre!("Failed to insert TwineTransactionBatch: {:?}", e)
+                    })?;
+            }
+        }
+        DbModel::TwineTransactionBatchDetail(model) => {
+            twine_transaction_batch_detail::Entity::insert(model)
+                .exec(db)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to insert TwineTransactionBatchDetail: {:?}", e);
+                    eyre::eyre!("Failed to insert TwineTransactionBatchDetail: {:?}", e)
                 })?;
         }
     }
@@ -48,7 +77,7 @@ pub async fn insert_model(
         .exec(db)
         .await
         .map_err(|e| {
-            error!("Failed to upsert last synced event: {:?}", e);
+            tracing::error!("Failed to upsert last synced event: {:?}", e);
             eyre::eyre!("Failed to upsert last synced event: {:?}", e)
         })?;
 
