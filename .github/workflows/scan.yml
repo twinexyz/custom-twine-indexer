@@ -13,9 +13,9 @@ name: Secrets and code scan
 on:
   workflow_call:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+#concurrency:
+#  group: ${{ github.workflow }}-${{ github.ref }}
+#  cancel-in-progress: true
 
 env:
   # Disable incremental compilation for faster from-scratch builds
