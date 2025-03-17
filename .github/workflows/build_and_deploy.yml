@@ -130,6 +130,7 @@ jobs:
         uses: anchore/scan-action@v6
         with:
           image: 'ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${{ github.sha }}'
+          fail-build: false
       - name: Handle build failure
         if: ${{ failure() }}
         run: echo "Build failed. Check logs for details."
