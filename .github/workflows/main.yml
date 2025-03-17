@@ -1,4 +1,4 @@
-name: Secrets and code scan
+name: Pipelines
 
 on:
   push:
