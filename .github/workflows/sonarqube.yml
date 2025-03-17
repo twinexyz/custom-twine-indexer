@@ -1,11 +1,18 @@
 name: SonarQube Scan
+
+#on:
+#  push:
+#    branches:
+#      - '**'  # This will trigger on all branches
+#    tags:
+#      - '**'  # This will trigger on all tags
+#  pull_request:
+#  schedule:
+#    - cron: '0 0 * * *'
+
 on:
-  pull_request:
-  push:
-    branches:
-      - '**'
-    tags:
-      - '**'
+  workflow_call:
+
 jobs:
   sonarqube:
     name: SonarQube

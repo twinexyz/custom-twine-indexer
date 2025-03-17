@@ -1,12 +1,17 @@
 name: Secrets and code scan
 
+#on:
+#  push:
+#    branches:
+#      - '**'  # This will trigger on all branches
+#    tags:
+#      - '**'  # This will trigger on all tags
+#  pull_request:
+#  schedule:
+#    - cron: '0 0 * * *'
+
 on:
-  push:
-    branches:
-      - '**'  # This will trigger on all tags
-    tags:
-      - '**'  # This will trigger on all tags
-  pull_request:
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
