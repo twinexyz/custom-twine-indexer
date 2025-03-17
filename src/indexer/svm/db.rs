@@ -1,10 +1,9 @@
 use chrono::Utc;
 use eyre::Result;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
 };
-use tracing::{error, info};
+use tracing::info;
 
 use super::parser;
 use crate::entities::{l1_deposit, l1_withdraw, last_synced};
@@ -141,81 +140,6 @@ pub async fn insert_spl_withdrawal_successful(
     Ok(())
 }
 
-pub async fn get_latest_deposit_nonce(
-    db: &DatabaseConnection,
-    chain_id: i64,
-) -> Result<Option<i64>> {
-    info!("Fetching latest deposit nonce for chain_id: {}", chain_id);
-    let result = l1_deposit::Entity::find()
-        .filter(l1_deposit::Column::ChainId.eq(chain_id))
-        .select_only()
-        .column(l1_deposit::Column::Nonce)
-        .order_by_desc(l1_deposit::Column::Nonce)
-        .limit(1)
-        .one(db)
-        .await;
-
-    match result {
-        Ok(Some(model)) => {
-            info!(
-                "Found latest deposit nonce: {} for chain_id: {}",
-                model.nonce, chain_id
-            );
-            Ok(Some(model.nonce))
-        }
-        Ok(None) => {
-            info!("No deposits found for chain_id: {}", chain_id);
-            Ok(None)
-        }
-        Err(e) => {
-            error!(
-                "Error fetching latest deposit nonce for chain_id: {}: {:?}",
-                chain_id, e
-            );
-            Err(e.into())
-        }
-    }
-}
-
-pub async fn get_latest_withdrawal_nonce(
-    db: &DatabaseConnection,
-    chain_id: i64,
-) -> Result<Option<i64>> {
-    info!(
-        "Fetching latest withdrawal nonce for chain_id: {}",
-        chain_id
-    );
-    let result = l1_withdraw::Entity::find()
-        .filter(l1_withdraw::Column::ChainId.eq(chain_id))
-        .select_only()
-        .column(l1_withdraw::Column::Nonce)
-        .order_by_desc(l1_withdraw::Column::Nonce)
-        .limit(1)
-        .one(db)
-        .await;
-
-    match result {
-        Ok(Some(model)) => {
-            info!(
-                "Found latest withdrawal nonce: {} for chain_id: {}",
-                model.nonce, chain_id
-            );
-            Ok(Some(model.nonce))
-        }
-        Ok(None) => {
-            info!("No withdrawals found for chain_id: {}", chain_id);
-            Ok(None)
-        }
-        Err(e) => {
-            error!(
-                "Error fetching latest withdrawal nonce for chain_id: {}: {:?}",
-                chain_id, e
-            );
-            Err(e.into())
-        }
-    }
-}
-
 pub async fn get_last_synced_slot(db: &DatabaseConnection, chain_id: i64) -> Result<i64> {
     let result = last_synced::Entity::find()
         .filter(last_synced::Column::ChainId.eq(chain_id))
@@ -246,4 +170,12 @@ pub async fn get_last_synced_slot(db: &DatabaseConnection, chain_id: i64) -> Res
             e
         )),
     }
+}
+
+pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {
+    let exists = l1_deposit::Entity::find()
+        .filter(l1_deposit::Column::TxHash.eq(tx_hash))
+        .one(db)
+        .await?;
+    Ok(exists.is_some())
 }
