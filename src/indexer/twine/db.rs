@@ -10,21 +10,40 @@ pub async fn insert_model(
 ) {
     match model {
         DbModel::TwineL1Deposit(model) => {
-            if let Err(e) = twine_l1_deposit::Entity::insert(model).exec(db).await {
+            if let Err(e) = twine_l1_deposit::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([twine_l1_deposit::Column::ChainId, twine_l1_deposit::Column::L1Nonce])
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec(db).await {
                 error!("Failed to insert TwineL1Withdraw: {e:?}");
             }
         }
         DbModel::TwineL1Withdraw(model) => {
-            if let Err(e) = twine_l1_withdraw::Entity::insert(model).exec(db).await {
+            if let Err(e) = twine_l1_withdraw::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([twine_l1_withdraw::Column::ChainId, twine_l1_withdraw::Column::L1Nonce])
+                        .do_nothing()
+                        .to_owned()
+                )
+                .exec(db).await {
                 error!("Failed to insert TwineL1Deposit: {e:?}");
             }
         }
         DbModel::TwineL2Withdraw(model) => {
-            if let Err(e) = twine_l2_withdraw::Entity::insert(model).exec(db).await {
+            if let Err(e) = twine_l2_withdraw::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([twine_l2_withdraw::Column::ChainId, twine_l2_withdraw::Column::Nonce])
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec(db).await {
                 error!("Failed to insert TwineL2Withdraw: {e:?}");
             }
         }
         DbModel::TwineTransactionBatch(model) => {
+            //TODO: does this require duplicated checking?
             if let Err(e) = twine_transaction_batch::Entity::insert(model)
                 .exec(db)
                 .await

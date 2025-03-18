@@ -34,7 +34,7 @@ impl ChainIndexer for TwineIndexer {
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id().await?;
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
-        println!("last synced in twine is: {last_synced}");
+        info!("last synced in twine is: {last_synced}");
         let current_block = self.provider.get_block_number().await?;
 
         let historical_indexer = self.clone();
@@ -103,7 +103,7 @@ impl TwineIndexer {
 
     fn handle_error(&self, e: Report) -> Result<()> {
         match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()), // Skip unknown events
+            Some(parser::ParserError::UnknownEvent { .. }) | Some(parser::ParserError::SkipLog)=> Ok(()), // Skip unknown events
             _ => {
                 tracing::error!("Error processing log: {:?}", e);
                 Err(e)

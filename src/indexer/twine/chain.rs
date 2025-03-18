@@ -21,7 +21,7 @@ pub async fn poll_missing_logs(provider: &dyn Provider, last_synced: u64) -> Res
     if last_synced == current_block {
         return Ok(Vec::new());
     }
-    let filter = Filter::new().select(last_synced..);
+    let filter = Filter::new().select((last_synced+1)..);
     let logs = provider.get_logs(&filter).await?;
     Ok(logs)
 }

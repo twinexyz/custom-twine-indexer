@@ -64,19 +64,23 @@ pub async fn get_l1_deposits(
             .await
             .map_err(AppError::Database)?;
 
+        // Skip this deposit if the record does not exist in l2 table as well.
+        let Some(twine_record) = twine_record else {
+            tracing::warn!(
+                "Skipping deposit: No corresponding Twine record found for nonce {} on chain {}",
+                deposit.nonce,
+                deposit.chain_id
+            );
+            continue;
+        };
+
         let response_item = L1DepositResponse {
             l1_tx_hash: deposit.tx_hash.clone(),
-            l2_tx_hash: twine_record
-                .as_ref()
-                .map(|r| r.tx_hash.clone())
-                .unwrap_or_default(),
+            l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: deposit.slot_number,
-            l2_slot_number: twine_record
-                .as_ref()
-                .map(|r| r.slot_number.clone())
-                .unwrap_or_default(),
+            l2_slot_number: twine_record.slot_number.clone(),
             block_number: deposit.block_number,
-            status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
+            status: twine_record.status,
             nonce: deposit.nonce,
             chain_id: deposit.chain_id,
             l1_token: deposit.l1_token.clone(),
@@ -134,19 +138,24 @@ pub async fn get_l1_withdraws(
             .one(&state.db)
             .await
             .map_err(AppError::Database)?;
+
+        // Skip this withdraw if the record does not exist
+        let Some(twine_record) = twine_record else {
+            tracing::warn!(
+                "Skipping forcedWithdraw: No corresponding Twine record found for nonce {} on chain {}",
+                withdraw.nonce,
+                withdraw.chain_id
+            );
+            continue;
+        };
+
         let response_item = L1WithdrawResponse {
             l1_tx_hash: withdraw.tx_hash.clone(),
-            l2_tx_hash: twine_record
-                .as_ref()
-                .map(|r| r.tx_hash.clone())
-                .unwrap_or_default(),
+            l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: withdraw.slot_number,
-            l2_slot_number: twine_record
-                .as_ref()
-                .map(|r| r.slot_number.clone())
-                .unwrap_or_default(),
+            l2_slot_number: twine_record.slot_number.clone(),
             block_number: withdraw.block_number,
-            status: twine_record.as_ref().map(|r| r.status).unwrap_or(0),
+            status: twine_record.status,
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
             l1_token: withdraw.l1_token.clone(),
@@ -156,8 +165,10 @@ pub async fn get_l1_withdraws(
             amount: withdraw.amount.clone(),
             created_at: withdraw.created_at,
         };
+
         response_items.push(response_item);
     }
+
 
     let next_page_params = withdraws.last().map(|w| L1WithdrawalPagination {
         items_count: Some(items_count),
@@ -203,19 +214,23 @@ pub async fn get_l2_withdraws(
             .await
             .map_err(AppError::Database)?;
 
+        // Skip this withdraw if the record does not exist
+        let Some(twine_record) = twine_record else {
+            tracing::warn!(
+                "Skipping withdraw: No corresponding Twine L2 record found for nonce {} on chain {}",
+                withdraw.nonce,
+                withdraw.chain_id
+            );
+            continue;
+        };
+
         let response_item = L2WithdrawResponse {
-            l1_tx_hash: twine_record
-                .as_ref()
-                .map(|r| r.tx_hash.clone())
-                .unwrap_or_default(),
+            l1_tx_hash: twine_record.tx_hash.clone(),
             l2_tx_hash: withdraw.tx_hash.clone(),
             slot_number: withdraw.slot_number,
-            l2_slot_number: twine_record
-                .as_ref()
-                .and_then(|r| r.block_number.parse::<i64>().ok())
-                .unwrap_or_default(),
+            l2_slot_number: twine_record.block_number.parse::<i64>().unwrap_or_default(),
             block_number: withdraw.block_number,
-            status: 0, //TODO: Ask for change in smart contract
+            status: 1, // TODO: Ask for change in smart contract?
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
             l1_token: withdraw.l1_token.clone(),
@@ -228,6 +243,7 @@ pub async fn get_l2_withdraws(
 
         response_items.push(response_item);
     }
+
 
     let next_page_params = withdraws.last().map(|w| L2WithdrawalPagination {
         items_count: Some(items_count),

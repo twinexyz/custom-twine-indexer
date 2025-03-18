@@ -4,7 +4,8 @@ use crate::entities::{
     twine_transaction_batch_detail,
 };
 use eyre::Result;
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait};
+use sea_query::OnConflict;
 
 pub async fn insert_model(
     model: DbModel,
@@ -14,6 +15,11 @@ pub async fn insert_model(
     match model {
         DbModel::L2Withdraw(model) => {
             l2_withdraw::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([l2_withdraw::Column::ChainId, l2_withdraw::Column::Nonce])
+                        .do_nothing()
+                        .to_owned(),
+                )
                 .exec(db)
                 .await
                 .map_err(|e| {
@@ -23,6 +29,11 @@ pub async fn insert_model(
         }
         DbModel::L1Deposit(model) => {
             l1_deposit::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([l1_deposit::Column::ChainId, l1_deposit::Column::Nonce])
+                        .do_nothing()
+                        .to_owned(),
+                )
                 .exec(db)
                 .await
                 .map_err(|e| {
@@ -32,6 +43,11 @@ pub async fn insert_model(
         }
         DbModel::L1Withdraw(model) => {
             l1_withdraw::Entity::insert(model)
+                .on_conflict(
+                    sea_query::OnConflict::columns([l1_withdraw::Column::ChainId, l1_withdraw::Column::Nonce])
+                        .do_nothing()
+                        .to_owned(),
+                )
                 .exec(db)
                 .await
                 .map_err(|e| {
@@ -84,7 +100,7 @@ pub async fn insert_model(
     Ok(())
 }
 
-pub async fn get_last_synced_block(db: &DatabaseConnection, chain_id: i64) -> eyre::Result<i64> {
+pub async fn get_last_synced_block(db: &DatabaseConnection, chain_id: i64) -> Result<i64> {
     let result = last_synced::Entity::find_by_id(chain_id).one(db).await?;
     Ok(result.map(|record| record.block_number).unwrap_or(0))
 }

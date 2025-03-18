@@ -24,16 +24,21 @@ pub async fn start_indexer(
 ) -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
     let mut evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, &db_conn).await?;
     let mut svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
+    let mut twine_indexer = twine::TwineIndexer::new(config.twine_rpc_url, &db_conn).await?;
 
     let evm_handle = tokio::spawn(async move {
         info!("Starting EVM indexer");
         evm_indexer.run().await
     });
 
-    let svm_handle = tokio::spawn(async move {
-        info!("Starting SVM indexer");
-        svm_indexer.run().await // Await directly in the async context
-    });
+    // let svm_handle = tokio::spawn(async move {
+    //     info!("Starting SVM indexer");
+    //     svm_indexer.run().await // Await directly in the async context
+    // });
 
-    Ok((evm_handle, svm_handle))
+    let twine_handle = tokio::spawn(async move {
+        info!("Starting SVM indexer");
+        twine_indexer.run().await // Await directly in the async context
+    });
+    Ok((evm_handle, twine_handle))
 }

@@ -75,7 +75,8 @@ impl ChainIndexer for EVMIndexer {
     }
 
     async fn chain_id(&self) -> Result<u64> {
-        Ok(self.provider.get_chain_id().await?)
+        // self.provider.get_chain_id().await?;
+        Ok(17000)
     }
 }
 
