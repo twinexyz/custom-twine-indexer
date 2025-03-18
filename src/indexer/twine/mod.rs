@@ -103,7 +103,9 @@ impl TwineIndexer {
 
     fn handle_error(&self, e: Report) -> Result<()> {
         match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) | Some(parser::ParserError::SkipLog)=> Ok(()), // Skip unknown events
+            Some(parser::ParserError::UnknownEvent { .. }) | Some(parser::ParserError::SkipLog) => {
+                Ok(())
+            } // Skip unknown events
             _ => {
                 tracing::error!("Error processing log: {:?}", e);
                 Err(e)

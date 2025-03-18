@@ -2,13 +2,12 @@ mod evm;
 mod svm;
 mod twine;
 
+use crate::config::Config;
 use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
-
-use crate::config::Config;
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
@@ -18,27 +17,25 @@ pub trait ChainIndexer: Send + Sync {
     async fn run(&mut self) -> Result<()>;
     async fn chain_id(&self) -> Result<u64>;
 }
+
+macro_rules! create_and_spawn_indexer {
+    ($type:ty, $rpc_url:expr, $db_conn:expr, $name:expr) => {{
+        let mut indexer = <$type>::new($rpc_url, &$db_conn).await?;
+        tokio::spawn(async move {
+            info!("Starting {} indexer", $name);
+            indexer.run().await
+        })
+    }};
+}
+
 pub async fn start_indexer(
     config: Config,
     db_conn: DatabaseConnection,
 ) -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
-    let mut evm_indexer = evm::EVMIndexer::new(config.evm_rpc_url, &db_conn).await?;
-    let mut svm_indexer = svm::SVMIndexer::new(config.svm_rpc_url, &db_conn).await?;
-    let mut twine_indexer = twine::TwineIndexer::new(config.twine_rpc_url, &db_conn).await?;
+    let evm_handle = create_and_spawn_indexer!(evm::EVMIndexer, config.evm_rpc_url, db_conn, "EVM");
+    let twine_handle =
+        create_and_spawn_indexer!(twine::TwineIndexer, config.twine_rpc_url, db_conn, "Twine");
+    // let svm_handle = create_and_spawn_indexer!(svm::SVMIndexer, config.svm_rpc_url, db_conn, "SVM");
 
-    let evm_handle = tokio::spawn(async move {
-        info!("Starting EVM indexer");
-        evm_indexer.run().await
-    });
-
-    // let svm_handle = tokio::spawn(async move {
-    //     info!("Starting SVM indexer");
-    //     svm_indexer.run().await // Await directly in the async context
-    // });
-
-    let twine_handle = tokio::spawn(async move {
-        info!("Starting SVM indexer");
-        twine_indexer.run().await // Await directly in the async context
-    });
     Ok((evm_handle, twine_handle))
 }

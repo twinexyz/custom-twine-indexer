@@ -169,7 +169,6 @@ pub async fn get_l1_withdraws(
         response_items.push(response_item);
     }
 
-
     let next_page_params = withdraws.last().map(|w| L1WithdrawalPagination {
         items_count: Some(items_count),
         nonce: Some(w.nonce as u64),
@@ -243,7 +242,6 @@ pub async fn get_l2_withdraws(
 
         response_items.push(response_item);
     }
-
 
     let next_page_params = withdraws.last().map(|w| L2WithdrawalPagination {
         items_count: Some(items_count),

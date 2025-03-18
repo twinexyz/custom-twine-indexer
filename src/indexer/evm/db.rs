@@ -6,6 +6,7 @@ use crate::entities::{
 use eyre::Result;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait};
 use sea_query::OnConflict;
+use tracing::error;
 
 pub async fn insert_model(
     model: DbModel,
@@ -16,9 +17,12 @@ pub async fn insert_model(
         DbModel::L2Withdraw(model) => {
             l2_withdraw::Entity::insert(model)
                 .on_conflict(
-                    sea_query::OnConflict::columns([l2_withdraw::Column::ChainId, l2_withdraw::Column::Nonce])
-                        .do_nothing()
-                        .to_owned(),
+                    sea_query::OnConflict::columns([
+                        l2_withdraw::Column::ChainId,
+                        l2_withdraw::Column::Nonce,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
                 )
                 .exec(db)
                 .await
@@ -30,9 +34,12 @@ pub async fn insert_model(
         DbModel::L1Deposit(model) => {
             l1_deposit::Entity::insert(model)
                 .on_conflict(
-                    sea_query::OnConflict::columns([l1_deposit::Column::ChainId, l1_deposit::Column::Nonce])
-                        .do_nothing()
-                        .to_owned(),
+                    sea_query::OnConflict::columns([
+                        l1_deposit::Column::ChainId,
+                        l1_deposit::Column::Nonce,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
                 )
                 .exec(db)
                 .await
@@ -44,9 +51,12 @@ pub async fn insert_model(
         DbModel::L1Withdraw(model) => {
             l1_withdraw::Entity::insert(model)
                 .on_conflict(
-                    sea_query::OnConflict::columns([l1_withdraw::Column::ChainId, l1_withdraw::Column::Nonce])
-                        .do_nothing()
-                        .to_owned(),
+                    sea_query::OnConflict::columns([
+                        l1_withdraw::Column::ChainId,
+                        l1_withdraw::Column::Nonce,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
                 )
                 .exec(db)
                 .await
