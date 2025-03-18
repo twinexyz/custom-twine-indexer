@@ -55,7 +55,62 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // 2. Create twine_transaction_batch_detail table
+        // 2. Create twine_lifecycle_l1_transactions table
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineLifecycleL1Transactions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Id)
+                            .integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Hash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::ChainId)
+                            .big_unsigned()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::L1TransactionCount)
+                            .big_unsigned()
+                            .not_null()
+                            .default(0), // Default to 0, updated by app later
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::L1GasPrice)
+                            .decimal()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(TwineLifecycleL1Transactions::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 3. Create twine_transaction_batch_detail table
         manager
             .create_table(
                 Table::create()
@@ -73,18 +128,8 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
-                            .big_unsigned()
-                            .not_null(),
-                    )
-                    .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2TransactionCount)
                             .big_unsigned()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
-                            .decimal()
                             .not_null(),
                     )
                     .col(
@@ -123,6 +168,34 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_batch_detail_commit_id")
+                            .from(
+                                TwineTransactionBatchDetail::Table,
+                                TwineTransactionBatchDetail::CommitId,
+                            )
+                            .to(
+                                TwineLifecycleL1Transactions::Table,
+                                TwineLifecycleL1Transactions::Id,
+                            )
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_batch_detail_execute_id")
+                            .from(
+                                TwineTransactionBatchDetail::Table,
+                                TwineTransactionBatchDetail::ExecuteId,
+                            )
+                            .to(
+                                TwineLifecycleL1Transactions::Table,
+                                TwineLifecycleL1Transactions::Id,
+                            )
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .index(
                         Index::create()
                             .name("idx_batch_number_chain_id_unique")
@@ -143,6 +216,13 @@ impl MigrationTrait for Migration {
             .drop_table(
                 Table::drop()
                     .table(TwineTransactionBatchDetail::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineLifecycleL1Transactions::Table)
                     .to_owned(),
             )
             .await?;
@@ -171,13 +251,24 @@ enum TwineTransactionBatchDetail {
     Table,
     Id,
     BatchNumber,
-    L1TransactionCount,
     L2TransactionCount,
-    L1GasPrice,
     L2FairGasPrice,
     ChainId,
     CommitId,
     ExecuteId,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineLifecycleL1Transactions {
+    Table,
+    Id,
+    Hash,
+    ChainId,
+    L1TransactionCount,
+    L1GasPrice,
+    Timestamp,
     CreatedAt,
     UpdatedAt,
 }

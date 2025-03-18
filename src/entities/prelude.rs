@@ -7,5 +7,6 @@ pub use super::last_synced::Entity as LastSynced;
 pub use super::twine_l1_deposit::Entity as TwineL1Deposit;
 pub use super::twine_l1_withdraw::Entity as TwineL1Withdraw;
 pub use super::twine_l2_withdraw::Entity as TwineL2Withdraw;
+pub use super::twine_lifecycle_l1_transactions::Entity as TwineLifecycleL1Transactions;
 pub use super::twine_transaction_batch::Entity as TwineTransactionBatch;
 pub use super::twine_transaction_batch_detail::Entity as TwineTransactionBatchDetail;
