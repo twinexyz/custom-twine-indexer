@@ -71,7 +71,7 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 
 ### 1. Set Environment Variables
 
-  * [ ] Before running the application, create a .env file with environment variables as:
+Before running the application, create a `.env` file with environment variables as:
 
 ```sh
 EVM_RPC_URL="ws://host.docker.internal:8546"
