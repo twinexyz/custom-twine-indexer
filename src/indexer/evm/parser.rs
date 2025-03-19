@@ -108,9 +108,7 @@ pub struct ParsedLog {
 // FIXME: currently we use the time at which the log was parsed.
 // this is buggy as we also reuse this function while syncing missed block later.
 // So better approach would be to use the block_timestamp associated with each block
-pub async fn parse_log(
-    log: Log,
-) -> Result<ParsedLog, Report> {
+pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
     let tx_hash = log
         .transaction_hash
         .ok_or(ParserError::MissingTransactionHash)?;

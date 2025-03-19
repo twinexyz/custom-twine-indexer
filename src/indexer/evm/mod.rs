@@ -18,16 +18,23 @@ pub struct EVMIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
     chain_id: u64,
+    contract_addrs: Vec<String>,
 }
 
 #[async_trait]
 impl ChainIndexer for EVMIndexer {
-    async fn new(rpc_url: String, chain_id: u64, db: &DatabaseConnection) -> Result<Self> {
+    async fn new(
+        rpc_url: String,
+        chain_id: u64,
+        db: &DatabaseConnection,
+        contract_addrs: Vec<String>,
+    ) -> Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
-            chain_id
+            chain_id,
+            contract_addrs,
         })
     }
 
@@ -36,38 +43,49 @@ impl ChainIndexer for EVMIndexer {
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         let current_block = self.provider.get_block_number().await?;
 
+        info!(
+            "Starting EVM indexer for chain {} from block {}",
+            id, last_synced
+        );
+
         // Process historical logs
-        let logs = chain::poll_missing_logs(&*self.provider, last_synced as u64).await?;
+        let logs =
+            chain::poll_missing_logs(&*self.provider, last_synced as u64, &self.contract_addrs)
+                .await?;
         self.catchup_missing_blocks(logs).await?;
 
         // Live indexing in a separate task
         let live_indexer = self.clone();
         tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
-            if let Ok(mut stream) = chain::subscribe_stream(&*live_indexer.provider).await {
-                while let Some(log) = stream.next().await {
-                    match parser::parse_log(log).await {
-                        Ok(parsed) => {
-                            let last_synced = last_synced::ActiveModel {
-                                chain_id: Set(id as i64),
-                                block_number: Set(parsed.block_number),
-                            };
-                            if let Err(e) =
-                                db::insert_model(parsed.model, last_synced, &live_indexer.db).await
-                            {
-                                error!("Failed to insert model: {:?}", e);
+            match chain::subscribe_stream(&*live_indexer.provider, &*&live_indexer.contract_addrs)
+                .await
+            {
+                Ok(mut stream) => {
+                    while let Some(log) = stream.next().await {
+                        match parser::parse_log(log).await {
+                            Ok(parsed) => {
+                                let last_synced = last_synced::ActiveModel {
+                                    chain_id: Set(id as i64),
+                                    block_number: Set(parsed.block_number),
+                                };
+                                if let Err(e) =
+                                    db::insert_model(parsed.model, last_synced, &live_indexer.db)
+                                        .await
+                                {
+                                    error!("Failed to insert model: {:?}", e);
+                                }
                             }
-                        }
-                        Err(e) => {
-                            if let Err(e) = live_indexer.handle_error(e) {
-                                error!("Error processing log: {:?}", e);
+                            Err(e) => {
+                                if let Err(e) = live_indexer.handle_error(e) {
+                                    error!("Error processing log: {:?}", e);
+                                }
                             }
                         }
                     }
+                    info!("Live indexing stream ended");
                 }
-                info!("Live indexing stream ended");
-            } else {
-                error!("Failed to start live stream");
+                Err(e) => error!("Failed to start live stream: {:?}", e),
             }
         });
 
@@ -77,7 +95,6 @@ impl ChainIndexer for EVMIndexer {
     }
 
     fn chain_id(&self) -> u64 {
-        // self.provider.get_chain_id().await?;
         self.chain_id
     }
 }
@@ -109,7 +126,7 @@ impl EVMIndexer {
         match e.downcast_ref::<parser::ParserError>() {
             Some(parser::ParserError::UnknownEvent { .. }) => Ok(()), // Skip unknown events
             _ => {
-                tracing::error!("Error processing log: {:?}", e);
+                error!("Error processing log: {:?}", e);
                 Err(e)
             }
         }
@@ -122,6 +139,7 @@ impl Clone for EVMIndexer {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
             chain_id: self.chain_id,
+            contract_addrs: self.contract_addrs.clone(),
         }
     }
 }

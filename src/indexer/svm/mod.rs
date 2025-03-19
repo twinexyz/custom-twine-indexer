@@ -24,7 +24,12 @@ pub struct SVMIndexer {
 
 #[async_trait]
 impl ChainIndexer for SVMIndexer {
-    async fn new(rpc_url: String, chain_id: u64, db: &DatabaseConnection) -> Result<Self> {
+    async fn new(
+        rpc_url: String,
+        chain_id: u64,
+        db: &DatabaseConnection,
+        contract_addrs: Vec<String>,
+    ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ID")?;
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ID")?;
 
@@ -194,7 +199,7 @@ impl ChainIndexer for SVMIndexer {
         Ok(())
     }
 
-    fn chain_id(&self) -> u64{
+    fn chain_id(&self) -> u64 {
         self.chain_id
     }
 }

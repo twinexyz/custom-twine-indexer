@@ -20,16 +20,23 @@ pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
     chain_id: u64,
+    contract_addrs: Vec<String>,
 }
 
 #[async_trait]
 impl ChainIndexer for TwineIndexer {
-    async fn new(rpc_url: String, chain_id: u64, db: &DatabaseConnection) -> eyre::Result<Self> {
+    async fn new(
+        rpc_url: String,
+        chain_id: u64,
+        db: &DatabaseConnection,
+        contract_addrs: Vec<String>,
+    ) -> Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
             chain_id,
+            contract_addrs,
         })
     }
 
@@ -44,15 +51,21 @@ impl ChainIndexer for TwineIndexer {
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting historical sync up to block {}", current_block);
-            let logs =
-                chain::poll_missing_logs(&*historical_indexer.provider, last_synced as u64).await?;
+            let logs = chain::poll_missing_logs(
+                &*historical_indexer.provider,
+                last_synced as u64,
+                &*&historical_indexer.contract_addrs,
+            )
+            .await?;
 
             historical_indexer.catchup_missing_blocks(logs).await
         });
 
         let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
-            let mut stream = chain::subscribe_stream(&*live_indexer.provider).await?;
+            let mut stream =
+                chain::subscribe_stream(&*live_indexer.provider, &*live_indexer.contract_addrs)
+                    .await?;
 
             while let Some(log) = stream.next().await {
                 match parser::parse_log(log) {
@@ -123,6 +136,7 @@ impl Clone for TwineIndexer {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
             chain_id: self.chain_id,
+            contract_addrs: self.contract_addrs.clone(),
         }
     }
 }
