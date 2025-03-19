@@ -58,7 +58,7 @@ impl ChainIndexer for EVMIndexer {
         let live_indexer = self.clone();
         tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
-            match chain::subscribe_stream(&*live_indexer.provider, &*&live_indexer.contract_addrs)
+            match chain::subscribe_stream(&*live_indexer.provider, &live_indexer.contract_addrs)
                 .await
             {
                 Ok(mut stream) => {

@@ -54,7 +54,7 @@ impl ChainIndexer for TwineIndexer {
             let logs = chain::poll_missing_logs(
                 &*historical_indexer.provider,
                 last_synced as u64,
-                &*&historical_indexer.contract_addrs,
+                &historical_indexer.contract_addrs,
             )
             .await?;
 
@@ -64,7 +64,7 @@ impl ChainIndexer for TwineIndexer {
         let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
             let mut stream =
-                chain::subscribe_stream(&*live_indexer.provider, &*live_indexer.contract_addrs)
+                chain::subscribe_stream(&*live_indexer.provider, &live_indexer.contract_addrs)
                     .await?;
 
             while let Some(log) = stream.next().await {
