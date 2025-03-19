@@ -37,7 +37,11 @@ macro_rules! create_and_spawn_indexer {
 pub async fn start_indexer(
     config: AppConfig,
     db_conn: DatabaseConnection,
-) -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
+) -> Result<(
+    JoinHandle<Result<()>>,
+    JoinHandle<Result<()>>,
+    JoinHandle<Result<()>>,
+)> {
     let evm_contracts = vec![
         config.l1_message_queue_addr.address.clone(),
         config.l1_erc20_gateway_addr.address.clone(),
@@ -46,6 +50,11 @@ pub async fn start_indexer(
     let twine_contracts = vec![
         config.l1_twine_messenger_addr.address.clone(),
         config.l2_twine_messenger_addr.address.clone(),
+    ];
+
+    let svm_contracts = vec![
+        config.tokens_gatway_program_addr.address.clone(),
+        config.twine_chain_program_addr.address.clone(),
     ];
 
     let evm_handle = create_and_spawn_indexer!(
@@ -66,7 +75,14 @@ pub async fn start_indexer(
         twine_contracts
     );
 
-    // let svm_handle = create_and_spawn_indexer!(svm::SVMIndexer, config.svm.rpc_url, db_conn, "SVM", vec![]);
+    let svm_handle = create_and_spawn_indexer!(
+        svm::SVMIndexer,
+        config.solana.rpc_url,
+        config.twine.chain_id,
+        db_conn,
+        "SVM",
+        svm_contracts
+    );
 
-    Ok((evm_handle, twine_handle))
+    Ok((evm_handle, twine_handle, svm_handle))
 }

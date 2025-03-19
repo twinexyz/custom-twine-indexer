@@ -141,35 +141,8 @@ pub async fn insert_finalize_spl_withdrawal(
 }
 
 pub async fn get_last_synced_slot(db: &DatabaseConnection, chain_id: i64) -> Result<i64> {
-    let result = last_synced::Entity::find()
-        .filter(last_synced::Column::ChainId.eq(chain_id))
-        .select_only()
-        .column(last_synced::Column::BlockNumber)
-        .into_tuple::<(i64,)>()
-        .one(db)
-        .await;
-
-    match result {
-        Ok(Some((block_number,))) => {
-            info!(
-                "Found block_number: {} for chain_id: {}",
-                block_number, chain_id
-            );
-            Ok(block_number)
-        }
-        Ok(None) => {
-            info!(
-                "No last_synced record found for chain_id: {}, defaulting to 0",
-                chain_id
-            );
-            Ok(0)
-        }
-        Err(e) => Err(eyre::eyre!(
-            "Failed to fetch last synced slot for chain_id {}: {}",
-            chain_id,
-            e
-        )),
-    }
+    let result = last_synced::Entity::find_by_id(chain_id).one(db).await?;
+    Ok(result.map(|record| record.block_number).unwrap_or(0))
 }
 
 pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {

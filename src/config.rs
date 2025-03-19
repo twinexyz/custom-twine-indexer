@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub l2_twine_messenger_addr: ContractConfig,
     pub l1_twine_messenger_addr: ContractConfig,
     pub l1_erc20_gateway_addr: ContractConfig,
+    pub tokens_gatway_program_addr: ContractConfig,
+    pub twine_chain_program_addr: ContractConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -80,6 +82,16 @@ impl AppConfig {
                 .context("Missing L1_ERC20_GATEWAY_ADDRESS environment variable")?,
         };
 
+        let tokens_gatway_program_addr = ContractConfig {
+            address: env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")
+                .context("Missing TOKENS_GATEWAY_PROGRAM_ADDRESSS environment variable")?,
+        };
+
+        let twine_chain_program_addr = ContractConfig {
+            address: env::var("TWINE_CHAIN_PROGRAM_ADDRESS")
+                .context("Missing TWINE_CHAIN_PROGRAM_ADDRESS environment variable")?,
+        };
+
         Ok(Self {
             database_url,
             api_port,
@@ -90,6 +102,8 @@ impl AppConfig {
             l2_twine_messenger_addr,
             l1_twine_messenger_addr,
             l1_erc20_gateway_addr,
+            tokens_gatway_program_addr,
+            twine_chain_program_addr,
         })
     }
 }

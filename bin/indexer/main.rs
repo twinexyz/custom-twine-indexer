@@ -10,12 +10,13 @@ async fn main() -> Result<()> {
     let db_conn = db::connect(&cfg.database_url).await?;
     info!("Connected to Database");
 
-    let (evm_handle, svm_handle) = indexer::start_indexer(cfg, db_conn).await?;
+    let (evm_handle, twine_handle, svm_handle) = indexer::start_indexer(cfg, db_conn).await?;
 
     // Join the tasks and handle any panics
-    match tokio::try_join!(evm_handle, svm_handle) {
-        Ok((evm_result, svm_result)) => {
+    match tokio::try_join!(evm_handle, twine_handle, svm_handle) {
+        Ok((evm_result, twine_result, svm_result)) => {
             evm_result?;
+            twine_result?;
             svm_result?;
             Ok(())
         }
