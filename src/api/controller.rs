@@ -57,7 +57,7 @@ pub async fn get_l1_deposits(
         let twine_record = twine_l1_deposit::Entity::find()
             .filter(
                 Condition::all()
-                    .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id.clone()))
+                    .add(twine_l1_deposit::Column::ChainId.eq(deposit.chain_id))
                     .add(twine_l1_deposit::Column::L1Nonce.eq(deposit.nonce)),
             )
             .one(&state.db)
@@ -78,7 +78,7 @@ pub async fn get_l1_deposits(
             l1_tx_hash: deposit.tx_hash.clone(),
             l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: deposit.slot_number,
-            l2_slot_number: twine_record.slot_number.clone(),
+            l2_slot_number: twine_record.slot_number,
             block_number: deposit.block_number,
             status: twine_record.status,
             nonce: deposit.nonce,
@@ -132,7 +132,7 @@ pub async fn get_l1_withdraws(
         let twine_record = twine_l1_withdraw::Entity::find()
             .filter(
                 Condition::all()
-                    .add(twine_l1_withdraw::Column::ChainId.eq(withdraw.chain_id.clone()))
+                    .add(twine_l1_withdraw::Column::ChainId.eq(withdraw.chain_id))
                     .add(twine_l1_withdraw::Column::L1Nonce.eq(withdraw.nonce)),
             )
             .one(&state.db)
@@ -153,7 +153,7 @@ pub async fn get_l1_withdraws(
             l1_tx_hash: withdraw.tx_hash.clone(),
             l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: withdraw.slot_number,
-            l2_slot_number: twine_record.slot_number.clone(),
+            l2_slot_number: twine_record.slot_number,
             block_number: withdraw.block_number,
             status: twine_record.status,
             nonce: withdraw.nonce,

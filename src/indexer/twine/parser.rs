@@ -60,8 +60,9 @@ fn process_precompile_return(
     tx_hash: alloy::primitives::B256,
     block_number: i64,
 ) -> Option<ParsedLog> {
-    if let Some(deposit_txn) = pr.deposit.first() {
-        Some(ParsedLog {
+    pr.deposit
+        .first()
+        .map(|deposit_txn| ParsedLog {
             model: DbModel::TwineL1Deposit(twine_l1_deposit::ActiveModel {
                 l1_nonce: Set(deposit_txn.l1_nonce as i64),
                 chain_id: Set(deposit_txn.detail.chain_id as i64),
@@ -76,30 +77,26 @@ fn process_precompile_return(
             }),
             block_number,
         })
-    } else if let Some(withdraw_txn) = pr.withdraws.first() {
-        Some(ParsedLog {
-            model: DbModel::TwineL1Withdraw(twine_l1_withdraw::ActiveModel {
-                l1_nonce: Set(withdraw_txn.l1_nonce as i64),
-                chain_id: Set(withdraw_txn.detail.chain_id as i64),
-                status: Set(withdraw_txn.detail.status as i16),
-                slot_number: Set(withdraw_txn.detail.slot_number as i64),
-                from_address: Set(withdraw_txn.detail.from_address.clone()),
-                to_twine_address: Set(withdraw_txn.detail.to_twine_address.clone()),
-                l1_token: Set(withdraw_txn.detail.l1_token.clone()),
-                l2_token: Set(withdraw_txn.detail.l2_token.clone()),
-                amount: Set(withdraw_txn.detail.amount.clone()),
-                tx_hash: Set(tx_hash.to_string()),
-            }),
-            block_number,
+        .or_else(|| {
+            pr.withdraws.first().map(|withdraw_txn| ParsedLog {
+                model: DbModel::TwineL1Withdraw(twine_l1_withdraw::ActiveModel {
+                    l1_nonce: Set(withdraw_txn.l1_nonce as i64),
+                    chain_id: Set(withdraw_txn.detail.chain_id as i64),
+                    status: Set(withdraw_txn.detail.status as i16),
+                    slot_number: Set(withdraw_txn.detail.slot_number as i64),
+                    from_address: Set(withdraw_txn.detail.from_address.clone()),
+                    to_twine_address: Set(withdraw_txn.detail.to_twine_address.clone()),
+                    l1_token: Set(withdraw_txn.detail.l1_token.clone()),
+                    l2_token: Set(withdraw_txn.detail.l2_token.clone()),
+                    amount: Set(withdraw_txn.detail.amount.clone()),
+                    tx_hash: Set(tx_hash.to_string()),
+                }),
+                block_number,
+            })
         })
-    } else {
-        None
-        // Err(eyre::eyre!("No deposit or withdraw events found"))
-    }
 }
 
 pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
-    // Unwrap the transaction hash and block number.
     let tx_hash = log
         .transaction_hash
         .ok_or_else(|| eyre::eyre!("Missing tx_hash in log"))?;
@@ -107,20 +104,12 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
         .block_number
         .ok_or_else(|| eyre::eyre!("Missing block number in log"))? as i64;
 
-    // Get the block timestamp from the log
-    // let timestamp = log
-    //     .block_timestamp
-    //     .map(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
-    //     .ok_or_else(|| eyre::eyre!("Missing block timestamp in log"))?
-    //     .ok_or_else(|| eyre::eyre!("Invalid block timestamp"))?;
-
-    // Get the block timestamp from the log, default to current time if missing
     let timestamp = log
         .block_timestamp
         .and_then(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
         .unwrap_or_else(|| {
             tracing::warn!("Missing or invalid block timestamp in log. Using default timestamp.");
-            Utc::now() // Default to the current time
+            Utc::now()
         });
 
     let topic = log
@@ -133,20 +122,14 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
             let event = decoded.inner.data.transactionOutput;
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            match process_precompile_return(pr, tx_hash, block_number) {
-                Some(res) => Ok(res),
-                None => Err(ParserError::SkipLog.into()),
-            }
+            process_precompile_return(pr, tx_hash, block_number).ok_or(ParserError::SkipLog.into())
         }
         L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SolanaTransactionsHandled>()?;
             let event = decoded.inner.data.transactionOutput;
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            match process_precompile_return(pr, tx_hash, block_number) {
-                Some(res) => Ok(res),
-                None => Err(ParserError::SkipLog.into()),
-            }
+            process_precompile_return(pr, tx_hash, block_number).ok_or(ParserError::SkipLog.into())
         }
         L2Messenger::SentMessage::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SentMessage>()?;

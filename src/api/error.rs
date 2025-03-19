@@ -22,7 +22,7 @@ impl IntoResponse for AppError {
             ),
             AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal Server Error"),
+                "Internal Server Error".to_owned(),
             ),
         };
 

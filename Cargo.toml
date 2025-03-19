@@ -41,3 +41,6 @@ hex = "0.4.3"
 
 [dev-dependencies]
 sea-orm-cli = "1.1.7"
+
+[lints.rust]
+unused = "allow"

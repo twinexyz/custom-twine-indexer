@@ -57,7 +57,7 @@ impl ChainIndexer for TwineIndexer {
                     Ok(parsed) => {
                         let last_synced = last_synced::ActiveModel {
                             chain_id: Set(id as i64),
-                            block_number: Set(parsed.block_number as i64),
+                            block_number: Set(parsed.block_number),
                         };
                         db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
                     }
@@ -91,7 +91,7 @@ impl TwineIndexer {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
-                        block_number: Set(parsed.block_number as i64),
+                        block_number: Set(parsed.block_number),
                     };
                     db::insert_model(parsed.model, last_synced, &self.db).await;
                 }
