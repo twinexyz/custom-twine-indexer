@@ -34,6 +34,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       HTTP_PORT: ${HTTP_PORT}
+      EVM_RPC_URL: ${EVM_RPC_URL}
+      TWINE_RPC_URL: ${TWINE_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL}
     depends_on:
       twine-db:
         condition: service_healthy
@@ -47,7 +50,10 @@ services:
     command: /usr/local/bin/indexer
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      HTTP_PORT: ${HTTP_PORT}
       EVM_RPC_URL: ${EVM_RPC_URL}
+      TWINE_RPC_URL: ${TWINE_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

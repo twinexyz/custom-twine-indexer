@@ -66,12 +66,16 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 Before running the application, set the required environment variables:
 
 ```sh
-export RPC_URL="ws://host.docker.internal:8546"
+export EVM_RPC_URL="ws://host.docker.internal:8546"
+export SOLANA_RPC_URL="ws://host.docker.internal:8546"
+export TWINE_RPC_URL="ws://host.docker.internal:8546"
 export HTTP_PORT=7777
 export POSTGRES_USER=user
 export POSTGRES_PASSWORD=password
 export POSTGRES_DB=indexer
 export DATABASE_URL="postgres://user:password@twine-db:5432/indexer"
+export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
+export TOKENS_GATEWAY_PROGRAM_ID="tokens gateway program id"
 ```
 
 **Note:** When using Docker, `host.docker.internal` allows the container to communicate with services running on the host machine.

@@ -1,4 +1,4 @@
-FROM rust:1.81-alpine AS base
+FROM rust:1.85-alpine AS base
 
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
@@ -38,7 +38,7 @@ RUN rm -f ~/.git-credentials && \
     apk del .build-deps
 
 #FROM gcr.io/distroless/cc-debian12
-FROM rust:1.81-alpine
+FROM rust:1.85-alpine
 
 COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=app /app/target/release/api /usr/local/bin/api
