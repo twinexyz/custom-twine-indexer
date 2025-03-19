@@ -1,7 +1,6 @@
 target/
 .env
 test-ledger/
-Cargo.lock
 Dockerfile.**
 ingress.yaml
 env.json
