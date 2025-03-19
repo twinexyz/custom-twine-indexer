@@ -74,9 +74,10 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 Before running the application, create a `.env` file with environment variables as:
 
 ```sh
-EVM_RPC_URL="ws://host.docker.internal:8546"
-SOLANA_RPC_URL="ws://host.docker.internal:8546"
+EVM_RPC_URL="ws://host.docker.internal:8571"
 TWINE_RPC_URL="ws://host.docker.internal:8546"
+SOLANA_RPC_URL="http://host.docker.internal:8899"|
+SOLANA_WS_URL="ws://127.0.0.1:8900"
 HTTP_PORT=7777
 POSTGRES_USER=user
 POSTGRES_PASSWORD=password
