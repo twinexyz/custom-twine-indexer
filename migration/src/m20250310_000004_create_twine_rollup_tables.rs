@@ -55,6 +55,19 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Add unique index on (StartBlock, EndBlock)
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_start_end_unique")
+                    .table(TwineTransactionBatch::Table)
+                    .col(TwineTransactionBatch::StartBlock)
+                    .col(TwineTransactionBatch::EndBlock)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
         // 2. Create twine_lifecycle_l1_transactions table
         manager
             .create_table(
@@ -87,7 +100,8 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::L1GasPrice)
                             .decimal()
-                            .not_null(),
+                            .not_null()
+                            .default(Expr::value(0.0)),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
@@ -135,7 +149,8 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2FairGasPrice)
                             .decimal()
-                            .not_null(),
+                            .not_null()
+                            .default(Expr::value(0.0)),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::ChainId)

@@ -316,11 +316,9 @@ pub async fn parse_log(
                 let model = DbModel::TwineTransactionBatchDetail(
                     twine_transaction_batch_detail::ActiveModel {
                         batch_number: Set(batch_number.into()),
-                        l1_transaction_count: Set((data.depositCount + data.withdrawCount)
-                            .try_into()
-                            .unwrap()),
+
                         l2_transaction_count: Set(data.depositCount.try_into().unwrap()), //just a placeholder
-                        l1_gas_price: Set((0.0).try_into().unwrap()), // Placeholder
+
                         l2_fair_gas_price: Set((0.0).try_into().unwrap()), // Placeholder
                         chain_id: Set(data.chainId.try_into().unwrap()),
                         ..Default::default() // commit_id, execute_id, created_at, updated_at set by DB

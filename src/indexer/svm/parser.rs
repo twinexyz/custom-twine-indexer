@@ -166,26 +166,31 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
     let mut event_type = None;
     let mut encoded_data = None;
 
+    // Identify event type and encoded data from logs
     for log in logs {
-        if log == "Program log: Instruction: NativeTokenDeposit" {
-            event_type = Some("native_deposit");
-        } else if log == "Program log: Instruction: SplTokensDeposit" {
-            event_type = Some("spl_deposit");
-        } else if log == "Program log: Instruction: ForcedNativeTokenWithdrawal" {
-            event_type = Some("native_withdrawal");
-        } else if log == "Program log: Instruction: ForcedSplTokenWithdrawal" {
-            event_type = Some("spl_withdrawal");
-        } else if log == "Program log: Instruction: FinalizeNativeWithdrawal" {
-            event_type = Some("finalize_native_withdrawal");
-        } else if log == "Program log: Instruction: FinalizeSplWithdrawal" {
-            event_type = Some("finalize_spl_withdrawal");
-        }
-
-        if log.starts_with("Program data: ") {
-            encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+        match log.as_str() {
+            "Program log: Instruction: NativeTokenDeposit" => event_type = Some("native_deposit"),
+            "Program log: Instruction: SplTokensDeposit" => event_type = Some("spl_deposit"),
+            "Program log: Instruction: ForcedNativeTokenWithdrawal" => {
+                event_type = Some("native_withdrawal")
+            }
+            "Program log: Instruction: ForcedSplTokenWithdrawal" => {
+                event_type = Some("spl_withdrawal")
+            }
+            "Program log: Instruction: FinalizeNativeWithdrawal" => {
+                event_type = Some("finalize_native_withdrawal")
+            }
+            "Program log: Instruction: FinalizeSplWithdrawal" => {
+                event_type = Some("finalize_spl_withdrawal")
+            }
+            log if log.starts_with("Program data: ") => {
+                encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+            }
+            _ => continue, // Ignore unrecognized log entries
         }
     }
 
+    // Check if an event type was found
     let Some(event_type) = event_type else {
         error!("No recognizable event type found in logs: {:?}", logs);
         return Err(eyre::eyre!(
@@ -193,6 +198,8 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
             logs
         ));
     };
+
+    // Check if encoded data was found
     let Some(encoded_data) = encoded_data else {
         error!("No encoded data found in logs: {:?}", logs);
         return Err(eyre::eyre!("No encoded data found in logs: {:?}", logs));
@@ -203,6 +210,7 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
         event_type, encoded_data
     );
 
+    // Parse only the specified event types
     let (event, slot_number) = match event_type {
         "native_deposit" | "spl_deposit" => {
             let deposit = parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone())?;
@@ -224,7 +232,10 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
             let spl = parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone())?;
             (serde_json::to_value(&spl)?, spl.slot_number as i64)
         }
-        _ => unreachable!("All event types should be handled above"),
+        _ => {
+            error!("Unrecognized event type: {}", event_type);
+            return Err(eyre::eyre!("Unrecognized event type: {}", event_type));
+        }
     };
 
     Ok(ParsedEvent { event, slot_number })
