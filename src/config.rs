@@ -2,35 +2,59 @@ use eyre::{Context, Result};
 use std::env;
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct AppConfig {
     pub database_url: String,
-    pub evm_rpc_url: String,
-    pub svm_rpc_url: String,
-    pub twine_rpc_url: String,
     pub api_port: u16,
+    pub evm: ChainConfig,
+    pub solana: ChainConfig,
+    pub twine: ChainConfig,
 }
 
-impl Config {
+#[derive(Clone, Debug)]
+pub struct ChainConfig {
+    pub rpc_url: String,
+    pub chain_id: u64,
+}
+
+impl AppConfig {
     pub fn from_env() -> Result<Self> {
         let database_url =
             env::var("DATABASE_URL").context("Missing DATABASE_URL environment variable")?;
-        let evm_rpc_url =
-            env::var("EVM_RPC_URL").context("Missing EVM_RPC_URL environment variable")?;
-        let svm_rpc_url =
-            env::var("SOLANA_RPC_URL").context("Missing SOLANA_RPC_URL environment variable")?;
-        let twine_rpc_url =
-            env::var("TWINE_RPC_URL").context("Missing TWINE_RPC_URL environment variable")?;
         let api_port = env::var("HTTP_PORT")
             .context("Missing HTTP_PORT environment variable")?
             .parse()
             .context("Invalid HTTP_PORT format")?;
 
+        let evm = ChainConfig {
+            rpc_url: env::var("EVM_RPC_URL").context("Missing EVM_RPC_URL environment variable")?,
+            chain_id: env::var("EVM_CHAIN_ID")
+                .context("Missing EVM_CHAIN_ID environment variable")?
+                .parse()
+                .context("Invalid EVM_CHAIN_ID format")?,
+        };
+
+        let solana = ChainConfig {
+            rpc_url: env::var("SOLANA_RPC_URL").context("Missing SOLANA_RPC_URL environment variable")?,
+            chain_id: env::var("SOLANA_CHAIN_ID")
+                .context("Missing SOLANA_CHAIN_ID environment variable")?
+                .parse()
+                .context("Invalid SOLANA_CHAIN_ID format")?,
+        };
+
+        let twine = ChainConfig {
+            rpc_url: env::var("TWINE_RPC_URL").context("Missing TWINE_RPC_URL environment variable")?,
+            chain_id: env::var("TWINE_CHAIN_ID")
+                .context("Missing TWINE_CHAIN_ID environment variable")?
+                .parse()
+                .context("Invalid TWINE_CHAIN_ID format")?,
+        };
+
         Ok(Self {
             database_url,
-            evm_rpc_url,
-            svm_rpc_url,
-            twine_rpc_url,
             api_port,
+            evm,
+            solana,
+            twine,
         })
     }
 }

@@ -46,7 +46,7 @@ pub enum DbModel {
     TwineL1Deposit(twine_l1_deposit::ActiveModel),
     TwineL1Withdraw(twine_l1_withdraw::ActiveModel),
     TwineL2Withdraw(twine_l2_withdraw::ActiveModel),
-    TwineTransactionBatch(twine_transaction_batch::ActiveModel),
+    // TwineTransactionBatch(twine_transaction_batch::ActiveModel),
 }
 
 #[derive(Debug)]

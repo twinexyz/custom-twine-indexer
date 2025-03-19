@@ -19,20 +19,22 @@ use tracing::info;
 pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
+    chain_id: u64,
 }
 
 #[async_trait]
 impl ChainIndexer for TwineIndexer {
-    async fn new(rpc_url: String, db: &DatabaseConnection) -> eyre::Result<Self> {
+    async fn new(rpc_url: String, chain_id: u64, db: &DatabaseConnection) -> eyre::Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
+            chain_id,
         })
     }
 
     async fn run(&mut self) -> Result<()> {
-        let id = self.chain_id().await?;
+        let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         info!("last synced in twine is: {last_synced}");
         let current_block = self.provider.get_block_number().await?;
@@ -73,8 +75,9 @@ impl ChainIndexer for TwineIndexer {
         Ok(())
     }
 
-    async fn chain_id(&self) -> Result<u64> {
-        self.provider.get_chain_id().await.map_err(Report::from)
+    fn chain_id(&self) -> u64 {
+        // self.provider.get_chain_id().await.map_err(Report::from)
+        self.chain_id
     }
 }
 
@@ -85,7 +88,7 @@ impl TwineIndexer {
     }
 
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
-        let id = self.chain_id().await?;
+        let id = self.chain_id();
         for log in logs {
             match parser::parse_log(log) {
                 Ok(parsed) => {
@@ -119,6 +122,7 @@ impl Clone for TwineIndexer {
         Self {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
+            chain_id: self.chain_id,
         }
     }
 }

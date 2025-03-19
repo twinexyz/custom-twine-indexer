@@ -17,20 +17,22 @@ use tracing::{error, info};
 pub struct EVMIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
+    chain_id: u64,
 }
 
 #[async_trait]
 impl ChainIndexer for EVMIndexer {
-    async fn new(rpc_url: String, db: &DatabaseConnection) -> Result<Self> {
+    async fn new(rpc_url: String, chain_id: u64, db: &DatabaseConnection) -> Result<Self> {
         let provider = Self::create_provider(rpc_url).await?;
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
+            chain_id
         })
     }
 
     async fn run(&mut self) -> Result<()> {
-        let id = self.chain_id().await?;
+        let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
         let current_block = self.provider.get_block_number().await?;
 
@@ -44,7 +46,7 @@ impl ChainIndexer for EVMIndexer {
             info!("Starting live indexing from block {}", current_block + 1);
             if let Ok(mut stream) = chain::subscribe_stream(&*live_indexer.provider).await {
                 while let Some(log) = stream.next().await {
-                    match parser::parse_log(log, &live_indexer.db).await {
+                    match parser::parse_log(log).await {
                         Ok(parsed) => {
                             let last_synced = last_synced::ActiveModel {
                                 chain_id: Set(id as i64),
@@ -74,9 +76,9 @@ impl ChainIndexer for EVMIndexer {
         Ok(())
     }
 
-    async fn chain_id(&self) -> Result<u64> {
+    fn chain_id(&self) -> u64 {
         // self.provider.get_chain_id().await?;
-        Ok(17000)
+        self.chain_id
     }
 }
 
@@ -87,9 +89,9 @@ impl EVMIndexer {
     }
 
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
-        let id = self.chain_id().await?;
+        let id = self.chain_id();
         for log in logs {
-            match parser::parse_log(log, &self.db).await {
+            match parser::parse_log(log).await {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
@@ -119,6 +121,7 @@ impl Clone for EVMIndexer {
         Self {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
+            chain_id: self.chain_id,
         }
     }
 }

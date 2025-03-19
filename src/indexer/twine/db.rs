@@ -59,15 +59,15 @@ pub async fn insert_model(
                 error!("Failed to insert TwineL2Withdraw: {e:?}");
             }
         }
-        DbModel::TwineTransactionBatch(model) => {
-            //TODO: does this require duplicated checking?
-            if let Err(e) = twine_transaction_batch::Entity::insert(model)
-                .exec(db)
-                .await
-            {
-                error!("Failed to insert TwineTransactionBatch: {e:?}");
-            }
-        }
+        // DbModel::TwineTransactionBatch(model) => {
+        //     //TODO: does this require duplicated checking?
+        //     if let Err(e) = twine_transaction_batch::Entity::insert(model)
+        //         .exec(db)
+        //         .await
+        //     {
+        //         error!("Failed to insert TwineTransactionBatch: {e:?}");
+        //     }
+        // }
     }
 
     // if the row does not exist, it will be inserted;
