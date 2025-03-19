@@ -27,17 +27,25 @@ Before running the indexer, ensure you have:
 Export the required environment variables:
 
 ```sh
-export EVM_RPC_URL="ws://localhost:8546"
-export SOLANA_RPC_URL="http://127.0.0.1:8899"
-export SOLANA_WS_URL="ws://127.0.0.1:8900"
-export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
-export TOKENS_GATEWAY_PROGRAM_ID="tokens gateway program id"
+export EVM_RPC_URL="ws://0.0.0.0:8571"
+export TWINE_RPC_URL="ws://0.0.0.0:8546"
 export HTTP_PORT=7777
-export POSTGRES_USER=user
+export POSTGRES_USER=nobel
 export POSTGRES_PASSWORD=password
 export POSTGRES_DB=indexer
-export DATABASE_URL="postgres://user:password@localhost:5432/indexer"
-```
+export DATABASE_URL="postgresql://nobel_db:nobel@localhost:5432/twine_l2"
+export SOLANA_RPC_URL="http://127.0.0.1:8899"
+export SOLANA_WS_URL="ws://127.0.0.1:8900"
+export TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
+export TOKENS_GATEWAY_PROGRAM_ID="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
+export EVM_CHAIN_ID=17000
+export SOLANA_CHAIN_ID=900
+export TWINE_CHAIN_ID=1337
+export L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
+export L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
+export L1_TWINE_MESSENGER_ADDRESS="0xabcdef1234567890abcdef1234567890abcdef12"
+export L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
+``` 
 
 **Note:** Ensure that `RPC_URL` is a WebSocket (`ws://`) URL, as the indexer requires WebSocket communication.
 
@@ -63,19 +71,26 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 
 ### 1. Set Environment Variables
 
-Before running the application, set the required environment variables:
+  * [ ] Before running the application, create a .env file with environment variables as:
 
 ```sh
-export EVM_RPC_URL="ws://host.docker.internal:8546"
-export SOLANA_RPC_URL="ws://host.docker.internal:8546"
-export TWINE_RPC_URL="ws://host.docker.internal:8546"
-export HTTP_PORT=7777
-export POSTGRES_USER=user
-export POSTGRES_PASSWORD=password
-export POSTGRES_DB=indexer
-export DATABASE_URL="postgres://user:password@twine-db:5432/indexer"
-export TWINE_CHAIN_PROGRAM_ID="twine chain program id"
-export TOKENS_GATEWAY_PROGRAM_ID="tokens gateway program id"
+EVM_RPC_URL="ws://host.docker.internal:8546"
+SOLANA_RPC_URL="ws://host.docker.internal:8546"
+TWINE_RPC_URL="ws://host.docker.internal:8546"
+HTTP_PORT=7777
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+POSTGRES_DB=indexer
+DATABASE_URL="postgres://user:password@twine-db:5432/indexer"
+TWINE_CHAIN_PROGRAM_ID="0x1234567890abcdef1234567890abcdef12345678"
+TOKENS_GATEWAY_PROGRAM_ID="0x1234567890abcdef1234567890abcdef12345678"
+EVM_CHAIN_ID=17000
+SOLANA_CHAIN_ID=900
+TWINE_CHAIN_ID=1337
+L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
+L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
+L1_TWINE_MESSENGER_ADDRESS="0xabcdef1234567890abcdef1234567890abcdef12"
+L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
 ```
 
 **Note:** When using Docker, `host.docker.internal` allows the container to communicate with services running on the host machine.
