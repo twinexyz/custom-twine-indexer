@@ -9,6 +9,7 @@ use sea_orm::DbErr;
 #[derive(Debug)]
 pub enum AppError {
     Database(DbErr),
+    #[allow(dead_code)]
     Internal,
 }
 

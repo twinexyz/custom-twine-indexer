@@ -1,4 +1,4 @@
-// bin/indexer/main.rs
+//- Only a comment
 use eyre::Result;
 use tracing::{error, info};
 use twine_indexer::{config, db, indexer};
