@@ -195,11 +195,6 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
-                    from: Set(String::new()),
-                    to_twine_address: Set(format!("{:?}", data.to.to_string())),
-                    amount: Set(data.amount.to_string()),
                     created_at: Set(Utc::now().into()),
                 });
                 Ok(ParsedLog {
@@ -221,11 +216,6 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    l1_token: Set(format!("{:?}", data.l1Token)),
-                    l2_token: Set(format!("{:?}", data.l2Token)),
-                    from: Set(String::new()),
-                    to_twine_address: Set(format!("{:?}", data.to.to_string())),
-                    amount: Set(data.amount.to_string()),
                     created_at: Set(Utc::now().into()),
                 });
                 Ok(ParsedLog {

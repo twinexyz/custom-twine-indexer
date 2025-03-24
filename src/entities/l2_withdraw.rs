@@ -12,12 +12,7 @@ pub struct Model {
     pub nonce: i64,
     pub block_number: Option<i64>,
     pub slot_number: Option<i64>,
-    pub from: String,
-    pub to_twine_address: String,
-    pub l1_token: String,
-    pub l2_token: String,
     pub tx_hash: String,
-    pub amount: String,
     pub created_at: DateTimeWithTimeZone,
 }
 

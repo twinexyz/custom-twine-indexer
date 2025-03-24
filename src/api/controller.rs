@@ -232,11 +232,11 @@ pub async fn get_l2_withdraws(
             status: 1, // TODO: Ask for change in smart contract?
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
-            l1_token: withdraw.l1_token.clone(),
-            l2_token: withdraw.l2_token.clone(),
-            from: withdraw.from.clone(),
-            to_twine_address: withdraw.to_twine_address.clone(),
-            amount: withdraw.amount.clone(),
+            l1_token: twine_record.l1_token.clone(),
+            l2_token: twine_record.l2_token.clone(),
+            from: twine_record.from.clone(),
+            to_twine_address: twine_record.to.clone(),
+            amount: twine_record.amount.clone(),
             created_at: withdraw.created_at,
         };
 

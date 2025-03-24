@@ -63,7 +63,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(L1Withdraw::TxHash).string().not_null())
                     .col(ColumnDef::new(L1Withdraw::Amount).string().not_null())
                     .col(
-                        ColumnDef::new(L1Deposit::CreatedAt)
+                        ColumnDef::new(L1Withdraw::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
@@ -89,18 +89,9 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(L2Withdraw::Nonce).big_unsigned().not_null())
                     .col(ColumnDef::new(L2Withdraw::BlockNumber).big_unsigned())
                     .col(ColumnDef::new(L2Withdraw::SlotNumber).big_unsigned())
-                    .col(ColumnDef::new(L2Withdraw::From).string().not_null())
-                    .col(
-                        ColumnDef::new(L2Withdraw::ToTwineAddress)
-                            .string()
-                            .not_null(),
-                    )
-                    .col(ColumnDef::new(L2Withdraw::L1Token).string().not_null())
-                    .col(ColumnDef::new(L2Withdraw::L2Token).string().not_null())
                     .col(ColumnDef::new(L2Withdraw::TxHash).string().not_null())
-                    .col(ColumnDef::new(L2Withdraw::Amount).string().not_null())
                     .col(
-                        ColumnDef::new(L1Deposit::CreatedAt)
+                        ColumnDef::new(L2Withdraw::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
@@ -165,15 +156,10 @@ enum L1Withdraw {
 #[derive(DeriveIden)]
 enum L2Withdraw {
     Table,
-    ChainId,
     Nonce,
+    ChainId,
     BlockNumber,
     SlotNumber,
-    From,
-    ToTwineAddress,
-    L1Token,
-    L2Token,
     TxHash,
-    Amount,
     CreatedAt,
 }

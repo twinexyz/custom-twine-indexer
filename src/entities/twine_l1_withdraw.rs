@@ -12,11 +12,6 @@ pub struct Model {
     pub chain_id: i64,
     pub status: i16,
     pub slot_number: i64,
-    pub from_address: String,
-    pub to_twine_address: String,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub amount: String,
     pub tx_hash: String,
 }
 

@@ -15,11 +15,6 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TwineL1Deposit::ChainId).big_integer().not_null())
                     .col(ColumnDef::new(TwineL1Deposit::Status).tiny_integer().not_null())
                     .col(ColumnDef::new(TwineL1Deposit::SlotNumber).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::FromAddress).string().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::ToTwineAddress).string().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::L1Token).string().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::L2Token).string().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::Amount).string().not_null())
                     .col(ColumnDef::new(TwineL1Deposit::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
@@ -39,11 +34,6 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TwineL1Withdraw::ChainId).big_integer().not_null())
                     .col(ColumnDef::new(TwineL1Withdraw::Status).tiny_integer().not_null())
                     .col(ColumnDef::new(TwineL1Withdraw::SlotNumber).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::FromAddress).string().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::ToTwineAddress).string().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::L1Token).string().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::L2Token).string().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::Amount).string().not_null())
                     .col(ColumnDef::new(TwineL1Withdraw::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
@@ -69,7 +59,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TwineL2Withdraw::ChainId).string().not_null())
                     .col(ColumnDef::new(TwineL2Withdraw::BlockNumber).string().not_null())
                     .col(ColumnDef::new(TwineL2Withdraw::GasLimit).string().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::TxHash).string().not_null())
+                    .col(ColumnDef::new(TwineL2Withdraw::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
                             .col(TwineL2Withdraw::Nonce)
@@ -103,11 +93,6 @@ enum TwineL1Deposit {
     ChainId,
     Status,
     SlotNumber,
-    FromAddress,
-    ToTwineAddress,
-    L1Token,
-    L2Token,
-    Amount,
     TxHash,
 }
 
@@ -118,26 +103,21 @@ enum TwineL1Withdraw {
     ChainId,
     Status,
     SlotNumber,
-    FromAddress,
-    ToTwineAddress,
-    L1Token,
-    L2Token,
-    Amount,
     TxHash,
 }
 
 #[derive(DeriveIden)]
 enum TwineL2Withdraw {
     Table,
-    From,
-    L2Token,
-    To,
-    L1Token,
-    Amount,
-    Value,
     Nonce,
     ChainId,
     BlockNumber,
+    From,
+    To,
+    L1Token,
+    L2Token,
+    Amount,
+    Value,
     GasLimit,
     TxHash,
 }
