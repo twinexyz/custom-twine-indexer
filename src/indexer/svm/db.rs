@@ -140,9 +140,15 @@ pub async fn insert_finalize_spl_withdrawal(
     Ok(())
 }
 
-pub async fn get_last_synced_slot(db: &DatabaseConnection, chain_id: i64) -> Result<i64> {
+pub async fn get_last_synced_slot(
+    db: &DatabaseConnection,
+    chain_id: i64,
+    start_block: u64,
+) -> Result<i64> {
     let result = last_synced::Entity::find_by_id(chain_id).one(db).await?;
-    Ok(result.map(|record| record.block_number).unwrap_or(0))
+    Ok(result
+        .map(|record| record.block_number)
+        .unwrap_or(start_block as i64))
 }
 
 pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {

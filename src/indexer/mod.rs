@@ -14,6 +14,7 @@ pub trait ChainIndexer: Send + Sync {
     async fn new(
         rpc_url: String,
         chain_id: u64,
+        starting_block: u64,
         db: &DatabaseConnection,
         contract_addrs: Vec<String>,
     ) -> Result<Self>
@@ -25,8 +26,9 @@ pub trait ChainIndexer: Send + Sync {
 }
 
 macro_rules! create_and_spawn_indexer {
-    ($type:ty, $rpc_url:expr, $chain_id:expr, $db_conn:expr, $name:expr, $contracts:expr) => {{
-        let mut indexer = <$type>::new($rpc_url, $chain_id, &$db_conn, $contracts).await?;
+    ($type:ty, $rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $name:expr, $contracts:expr) => {{
+        let mut indexer =
+            <$type>::new($rpc_url, $chain_id, $starting_block, &$db_conn, $contracts).await?;
         tokio::spawn(async move {
             info!("Starting {} indexer", $name);
             indexer.run().await
@@ -60,6 +62,7 @@ pub async fn start_indexer(
     let evm_handle = create_and_spawn_indexer!(
         evm::EVMIndexer,
         config.evm.rpc_url,
+        config.evm.start_block,
         config.evm.chain_id,
         db_conn,
         "EVM",
@@ -69,6 +72,7 @@ pub async fn start_indexer(
     let twine_handle = create_and_spawn_indexer!(
         twine::TwineIndexer,
         config.twine.rpc_url,
+        config.twine.start_block,
         config.twine.chain_id,
         db_conn,
         "Twine",
@@ -78,6 +82,7 @@ pub async fn start_indexer(
     let svm_handle = create_and_spawn_indexer!(
         svm::SVMIndexer,
         config.solana.rpc_url,
+        config.solana.start_block,
         config.twine.chain_id,
         db_conn,
         "SVM",

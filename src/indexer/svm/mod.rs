@@ -20,6 +20,7 @@ pub struct SVMIndexer {
     twine_chain_id: String,
     tokens_gateway_id: String,
     chain_id: u64,
+    start_block: u64,
 }
 
 #[async_trait]
@@ -27,6 +28,7 @@ impl ChainIndexer for SVMIndexer {
     async fn new(
         rpc_url: String,
         chain_id: u64,
+        start_block: u64,
         db: &DatabaseConnection,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
@@ -51,6 +53,7 @@ impl ChainIndexer for SVMIndexer {
             db: db.clone(),
             rpc_url,
             ws_url,
+            start_block,
             twine_chain_id,
             tokens_gateway_id,
             chain_id,
@@ -60,7 +63,7 @@ impl ChainIndexer for SVMIndexer {
     async fn run(&mut self) -> Result<()> {
         let chain_id = self.chain_id as i64;
 
-        let last_synced = db::get_last_synced_slot(&self.db, chain_id).await?;
+        let last_synced = db::get_last_synced_slot(&self.db, chain_id, self.start_block).await?;
         let current_slot = self.get_current_slot().await?;
 
         info!("Last synced slot: {}", last_synced);
@@ -326,6 +329,7 @@ impl Clone for SVMIndexer {
             twine_chain_id: self.twine_chain_id.clone(),
             tokens_gateway_id: self.tokens_gateway_id.clone(),
             chain_id: self.chain_id,
+            start_block: self.start_block,
         }
     }
 }

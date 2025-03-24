@@ -20,6 +20,7 @@ pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
     chain_id: u64,
+    start_block: u64,
     contract_addrs: Vec<String>,
 }
 
@@ -28,6 +29,7 @@ impl ChainIndexer for TwineIndexer {
     async fn new(
         rpc_url: String,
         chain_id: u64,
+        start_block: u64,
         db: &DatabaseConnection,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
@@ -35,6 +37,7 @@ impl ChainIndexer for TwineIndexer {
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
+            start_block,
             chain_id,
             contract_addrs,
         })
@@ -42,7 +45,7 @@ impl ChainIndexer for TwineIndexer {
 
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
-        let last_synced = db::get_last_synced_block(&self.db, id as i64).await?;
+        let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
         info!("last synced in twine is: {last_synced}");
         let current_block = self.provider.get_block_number().await?;
 
@@ -135,6 +138,7 @@ impl Clone for TwineIndexer {
         Self {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
+            start_block: self.start_block,
             chain_id: self.chain_id,
             contract_addrs: self.contract_addrs.clone(),
         }

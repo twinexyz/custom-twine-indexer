@@ -45,6 +45,9 @@ export L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
 export L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
 export L1_TWINE_MESSENGER_ADDRESS="0xabcdef1234567890abcdef1234567890abcdef12"
 export L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
+export EVM_START_BLOCK=10
+export TWINE_START_BLOCK=10
+export SOLANA_START_BLOCK=10
 ``` 
 
 **Note:** Ensure that `RPC_URL` is a WebSocket (`ws://`) URL, as the indexer requires WebSocket communication.
@@ -92,6 +95,9 @@ L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
 L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
 L1_TWINE_MESSENGER_ADDRESS="0xabcdef1234567890abcdef1234567890abcdef12"
 L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
+EVM_START_BLOCK=1000000
+TWINE_START_BLOCK=0
+SOLANA_START_BLOCK=99999
 ```
 
 **Note:** When using Docker, `host.docker.internal` allows the container to communicate with services running on the host machine.

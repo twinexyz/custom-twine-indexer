@@ -84,7 +84,13 @@ pub async fn insert_model(
     }
 }
 
-pub async fn get_last_synced_block(db: &DatabaseConnection, chain_id: i64) -> eyre::Result<i64> {
+pub async fn get_last_synced_block(
+    db: &DatabaseConnection,
+    chain_id: i64,
+    start_block: u64,
+) -> eyre::Result<i64> {
     let result = last_synced::Entity::find_by_id(chain_id).one(db).await?;
-    Ok(result.map(|record| record.block_number).unwrap_or(0))
+    Ok(result
+        .map(|record| record.block_number)
+        .unwrap_or(start_block as i64))
 }

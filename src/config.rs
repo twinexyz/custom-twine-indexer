@@ -20,6 +20,7 @@ pub struct AppConfig {
 pub struct ChainConfig {
     pub rpc_url: String,
     pub chain_id: u64,
+    pub start_block: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +43,10 @@ impl AppConfig {
                 .context("Missing EVM_CHAIN_ID environment variable")?
                 .parse()
                 .context("Invalid EVM_CHAIN_ID format")?,
+            start_block: env::var("EVM_START_BLOCK")
+                .context("Missing EVM_START_BLOCK environment variable")?
+                .parse()
+                .context("Invalid EVM_START_BLOCK format")?,
         };
 
         let solana = ChainConfig {
@@ -51,6 +56,10 @@ impl AppConfig {
                 .context("Missing SOLANA_CHAIN_ID environment variable")?
                 .parse()
                 .context("Invalid SOLANA_CHAIN_ID format")?,
+            start_block: env::var("SOLANA_START_BLOCK")
+                .context("Missing SOLANA_START_BLOCK environment variable")?
+                .parse()
+                .context("Invalid SOLANA_START_BLOCK format")?,
         };
 
         let twine = ChainConfig {
@@ -60,6 +69,10 @@ impl AppConfig {
                 .context("Missing TWINE_CHAIN_ID environment variable")?
                 .parse()
                 .context("Invalid TWINE_CHAIN_ID format")?,
+            start_block: env::var("TWINE_START_BLOCK")
+                .context("Missing TWINE_START_BLOCK environment variable")?
+                .parse()
+                .context("Invalid TWINE_START_BLOCK format")?,
         };
 
         let l1_message_queue_addr = ContractConfig {
@@ -84,7 +97,7 @@ impl AppConfig {
 
         let tokens_gatway_program_addr = ContractConfig {
             address: env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")
-                .context("Missing TOKENS_GATEWAY_PROGRAM_ADDRESSS environment variable")?,
+                .context("Missing TOKENS_GATEWAY_PROGRAM_ADDRESS environment variable")?,
         };
 
         let twine_chain_program_addr = ContractConfig {
