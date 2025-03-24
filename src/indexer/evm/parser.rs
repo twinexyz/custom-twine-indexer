@@ -133,8 +133,6 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
             Utc::now()
         });
 
-
-
     match log.topic0() {
         Some(sig) => match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
@@ -157,7 +155,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     l2_token: Set(format!("{:?}", data.l2Token)),
                     tx_hash: Set(tx_hash_str),
                     amount: Set(data.amount.to_string()),
-                    created_at: Set(timestamp.into())
+                    created_at: Set(timestamp.into()),
                 });
                 Ok(ParsedLog {
                     model,
@@ -184,7 +182,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     from: Set(format!("{:?}", data.from)),
                     to_twine_address: Set(format!("{:?}", data.toTwineAddress)),
                     amount: Set(data.amount.to_string()),
-                    created_at: Set(timestamp.into())
+                    created_at: Set(timestamp.into()),
                 });
                 Ok(ParsedLog {
                     model,
@@ -205,7 +203,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    created_at: Set(timestamp.into())
+                    created_at: Set(timestamp.into()),
                 });
                 Ok(ParsedLog {
                     model,
@@ -226,7 +224,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    created_at: Set(timestamp.into())
+                    created_at: Set(timestamp.into()),
                 });
                 Ok(ParsedLog {
                     model,
