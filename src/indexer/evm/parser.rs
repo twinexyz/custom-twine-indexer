@@ -119,11 +119,21 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
         .block_number
         .ok_or_else(|| eyre::eyre!("Missing block number in log"))? as i64;
 
+    // let timestamp = log
+    //     .block_timestamp
+    //     .map(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
+    //     .ok_or_else(|| eyre::eyre!("Missing block timestamp in log"))?
+    //     .ok_or_else(|| eyre::eyre!("Invalid block timestamp"))?;
+
     let timestamp = log
         .block_timestamp
-        .map(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
-        .ok_or_else(|| eyre::eyre!("Missing block timestamp in log"))?
-        .ok_or_else(|| eyre::eyre!("Invalid block timestamp"))?;
+        .and_then(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
+        .unwrap_or_else(|| {
+            tracing::warn!("Missing or invalid block timestamp in log. Using default timestamp.");
+            Utc::now()
+        });
+
+
 
     match log.topic0() {
         Some(sig) => match *sig {
@@ -147,7 +157,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     l2_token: Set(format!("{:?}", data.l2Token)),
                     tx_hash: Set(tx_hash_str),
                     amount: Set(data.amount.to_string()),
-                    created_at: Set(Utc::now().into()),
+                    created_at: Set(timestamp.into())
                 });
                 Ok(ParsedLog {
                     model,
@@ -174,7 +184,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     from: Set(format!("{:?}", data.from)),
                     to_twine_address: Set(format!("{:?}", data.toTwineAddress)),
                     amount: Set(data.amount.to_string()),
-                    created_at: Set(Utc::now().into()),
+                    created_at: Set(timestamp.into())
                 });
                 Ok(ParsedLog {
                     model,
@@ -195,7 +205,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    created_at: Set(Utc::now().into()),
+                    created_at: Set(timestamp.into())
                 });
                 Ok(ParsedLog {
                     model,
@@ -216,7 +226,7 @@ pub async fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                     block_number: Set(Some(data.blockNumber.try_into().unwrap())),
                     slot_number: Set(None),
                     tx_hash: Set(tx_hash_str),
-                    created_at: Set(Utc::now().into()),
+                    created_at: Set(timestamp.into())
                 });
                 Ok(ParsedLog {
                     model,
