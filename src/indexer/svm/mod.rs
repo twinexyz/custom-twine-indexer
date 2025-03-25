@@ -40,10 +40,10 @@ impl ChainIndexer for SVMIndexer {
             db: db.clone(),
             rpc_url,
             ws_url,
-            start_block,
             twine_chain_id,
             tokens_gateway_id,
             chain_id,
+            start_block,
         })
     }
 

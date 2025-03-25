@@ -25,6 +25,7 @@ pub struct IndexerConfig {
     pub l1_erc20_gateway_address: String,
     pub tokens_gateway_program_address: String,
     pub twine_chain_program_address: String,
+    pub solana_ws_url: String,
 }
 
 impl ApiConfig {

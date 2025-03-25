@@ -38,12 +38,12 @@ export API_PORT=7777
 
 # deployed contracts 
 export L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
-export L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 export L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+
+export L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+
 export TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
 export TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
-export TOKENS_GATEWAY_PROGRAM_ID="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
-export TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
 
 # chain specifics (notice the `__` here)
 export EVM__RPC_URL="ws://0.0.0.0:8571"
@@ -58,10 +58,11 @@ export EVM__START_BLOCK=10
 export TWINE__START_BLOCK=10
 export SOLANA__START_BLOCK=10
 
+# solana specific
 export SOLANA_WS_URL="ws://127.0.0.1:8900"
 ``` 
 
-**Note:** Ensure that `RPC_URL` is a WebSocket (`ws://`) URL, as the indexer requires WebSocket communication.
+**Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 
 ### 2. Run the Indexer and API
 
@@ -77,7 +78,7 @@ In a separate terminal, start the indexer:
 cargo run --bin indexer --release
 ```
 
-The indexer listens to an execution client instance (e.g., Reth). Ensure that the execution client is running before starting the indexer.
+The indexer listens to an execution client instance (e.g., Reth). While running locally ensure that the execution client is running before starting the indexer.
 
 ---
 
@@ -85,7 +86,7 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 
 ### 1. Set Environment Variables
 
-Before running the application, create a `.env` file with environment variables as (please note the '__' used in some variables below):
+Before running the application, create a `.env` file with environment variables as (*please note the '__' used in some variables below*):
 
 ```sh
 DATABASE_URL="postgresql://user:password@twine-db:5432/indexer"
@@ -118,6 +119,8 @@ SOLANA__START_BLOCK=1999223
 SOLANA_WS_URL="wss://rpc.solana.co"
 ```
 
+**Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
+
 ### 2. Start Services with Docker Compose
 
 Ensure you have Docker and Docker Compose installed. Also, make sure the execution client (e.g., Reth) is running. Then, start the indexer services:
@@ -126,5 +129,3 @@ Ensure you have Docker and Docker Compose installed. Also, make sure the executi
 docker compose up -d
 ```
 ---
-
-
