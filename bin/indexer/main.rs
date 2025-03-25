@@ -1,4 +1,3 @@
-//- Only a comment
 use eyre::Result;
 use tracing::{error, info};
 use twine_indexer::{config, db, indexer};
@@ -6,7 +5,7 @@ use twine_indexer::{config, db, indexer};
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::AppConfig::from_env()?;
+    let cfg = config::IndexerConfig::from_env()?;
     let db_conn = db::connect(&cfg.database_url).await?;
     info!("Connected to Database");
 

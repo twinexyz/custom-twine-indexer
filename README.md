@@ -27,26 +27,38 @@ Before running the indexer, ensure you have:
 Export the required environment variables:
 
 ```sh
-export EVM_RPC_URL="ws://0.0.0.0:8571"
-export TWINE_RPC_URL="ws://0.0.0.0:8546"
-export HTTP_PORT=7777
-export POSTGRES_USER=nobel
+# shared db config
+export DATABASE_URL="postgresql://dbuser:password@localhost:5432/indexer"
+export POSTGRES_USER=dbuser
 export POSTGRES_PASSWORD=password
 export POSTGRES_DB=indexer
-export DATABASE_URL="postgresql://nobel_db:nobel@localhost:5432/twine_l2"
-export SOLANA_RPC_URL="http://127.0.0.1:8899"
-export SOLANA_WS_URL="ws://127.0.0.1:8900"
-export TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
+
+# api specific
+export API_PORT=7777
+
+# deployed contracts 
+export L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+export L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+export L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+export TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
+export TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
 export TOKENS_GATEWAY_PROGRAM_ID="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
-export EVM_CHAIN_ID=17000
-export SOLANA_CHAIN_ID=900
-export TWINE_CHAIN_ID=1337
-export L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
-export L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
-export L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
-export EVM_START_BLOCK=10
-export TWINE_START_BLOCK=10
-export SOLANA_START_BLOCK=10
+export TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
+
+# chain specifics (notice the `__` here)
+export EVM__RPC_URL="ws://0.0.0.0:8571"
+export TWINE__RPC_URL="ws://0.0.0.0:8546"
+export SOLANA__RPC_URL="http://127.0.0.1:8899"
+
+export EVM__CHAIN_ID=17000
+export SOLANA__CHAIN_ID=900
+export TWINE__CHAIN_ID=1337
+
+export EVM__START_BLOCK=10
+export TWINE__START_BLOCK=10
+export SOLANA__START_BLOCK=10
+
+export SOLANA_WS_URL="ws://127.0.0.1:8900"
 ``` 
 
 **Note:** Ensure that `RPC_URL` is a WebSocket (`ws://`) URL, as the indexer requires WebSocket communication.
@@ -73,32 +85,38 @@ The indexer listens to an execution client instance (e.g., Reth). Ensure that th
 
 ### 1. Set Environment Variables
 
-Before running the application, create a `.env` file with environment variables as:
+Before running the application, create a `.env` file with environment variables as (please note the '__' used in some variables below):
 
 ```sh
-EVM_RPC_URL="ws://host.docker.internal:8571"
-TWINE_RPC_URL="ws://host.docker.internal:8546"
-SOLANA_RPC_URL="http://host.docker.internal:8899"
-SOLANA_WS_URL="ws://host.docker.internal:8900"
-HTTP_PORT=7777
+DATABASE_URL="postgresql://user:password@twine-db:5432/indexer"
 POSTGRES_USER=user
 POSTGRES_PASSWORD=password
 POSTGRES_DB=indexer
-DATABASE_URL="postgres://user:password@twine-db:5432/indexer"
-TWINE_CHAIN_PROGRAM_ID="0x1234567890abcdef1234567890abcdef12345678"
-TOKENS_GATEWAY_PROGRAM_ID="0x1234567890abcdef1234567890abcdef12345678"
-EVM_CHAIN_ID=17000
-SOLANA_CHAIN_ID=900
-TWINE_CHAIN_ID=1337
-L1_MESSAGE_QUEUE_ADDRESS="0x1234567890abcdef1234567890abcdef12345678"
-L1_ERC20_GATEWAY_ADDRESS="0x7890abcdef1234567890abcdef1234567890abcd"
-L2_TWINE_MESSENGER_ADDRESS="0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
-EVM_START_BLOCK=1000000
-TWINE_START_BLOCK=0
-SOLANA_START_BLOCK=99999
-```
 
-**Note:** When using Docker, `host.docker.internal` allows the container to communicate with services running on the host machine.
+API_PORT=7777
+
+L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
+TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
+TOKENS_GATEWAY_PROGRAM_ID="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
+TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
+
+EVM__RPC_URL="wss://rpc.ethereum.co"
+TWINE__RPC_URL="wss://rpc.twine.co"
+SOLANA__RPC_URL="http://rpc.solana.co"
+
+EVM__CHAIN_ID=17000
+SOLANA__CHAIN_ID=900
+TWINE__CHAIN_ID=1337
+
+EVM__START_BLOCK=1000000
+TWINE__START_BLOCK=0
+SOLANA__START_BLOCK=1999223
+
+SOLANA_WS_URL="wss://rpc.solana.co"
+```
 
 ### 2. Start Services with Docker Compose
 

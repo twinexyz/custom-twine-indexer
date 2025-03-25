@@ -2,7 +2,7 @@ mod evm;
 mod svm;
 mod twine;
 
-use crate::config::AppConfig;
+use crate::config::IndexerConfig;
 use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
@@ -41,7 +41,7 @@ macro_rules! create_and_spawn_indexer {
 }
 
 pub async fn start_indexer(
-    config: AppConfig,
+    config: IndexerConfig,
     db_conn: DatabaseConnection,
 ) -> Result<(
     JoinHandle<Result<()>>,
@@ -49,15 +49,15 @@ pub async fn start_indexer(
     JoinHandle<Result<()>>,
 )> {
     let evm_contracts = vec![
-        config.l1_erc20_gateway_addr.address.clone(),
-        config.l1_message_queue_addr.address.clone(),
+        config.l1_erc20_gateway_address.clone(),
+        config.l1_message_queue_address.clone(),
     ];
 
-    let twine_contracts = vec![config.l2_twine_messenger_addr.address.clone()];
+    let twine_contracts = vec![config.l2_twine_messenger_address.clone()];
 
     let svm_contracts = vec![
-        config.tokens_gatway_program_addr.address.clone(),
-        config.twine_chain_program_addr.address.clone(),
+        config.tokens_gateway_program_address.clone(),
+        config.twine_chain_program_address.clone(),
     ];
 
     let evm_handle = create_and_spawn_indexer!(
