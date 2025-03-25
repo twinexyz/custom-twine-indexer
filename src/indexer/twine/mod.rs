@@ -2,11 +2,10 @@ mod chain;
 mod db;
 mod parser;
 
-use super::ChainIndexer;
+use super::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use crate::entities::last_synced;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
-use alloy::rpc::types::Filter;
-use alloy::rpc::types::Log;
+use alloy::rpc::types::{Filter, Log};
 use async_trait::async_trait;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
@@ -14,7 +13,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 pub struct TwineIndexer {
     provider: Arc<dyn Provider + Send + Sync>,
@@ -37,8 +36,8 @@ impl ChainIndexer for TwineIndexer {
         Ok(Self {
             provider: Arc::new(provider),
             db: db.clone(),
-            start_block,
             chain_id,
+            start_block,
             contract_addrs,
         })
     }
@@ -46,7 +45,7 @@ impl ChainIndexer for TwineIndexer {
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
-        info!("last synced in twine is: {last_synced}");
+        info!("last synced block is: {last_synced}");
         let current_block = self.provider.get_block_number().await?;
 
         let historical_indexer = self.clone();
@@ -99,8 +98,26 @@ impl ChainIndexer for TwineIndexer {
 
 impl TwineIndexer {
     async fn create_provider(rpc_url: String) -> Result<impl Provider> {
-        let ws = WsConnect::new(&rpc_url);
-        ProviderBuilder::new().on_ws(ws).await.map_err(Report::from)
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            match ProviderBuilder::new().on_ws(WsConnect::new(&rpc_url)).await {
+                Ok(provider) => {
+                    info!("Connected to provider on attempt {}", attempt);
+                    return Ok(provider);
+                }
+                Err(e) => {
+                    error!("Attempt {} failed to connect: {}.", attempt, e);
+                    if attempt >= MAX_RETRIES {
+                        error!("Exceeded maximum connection attempts.");
+                        return Err(Report::from(e));
+                    }
+
+                    // Wait before retrying
+                    std::thread::sleep(RETRY_DELAY);
+                }
+            }
+        }
     }
 
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {

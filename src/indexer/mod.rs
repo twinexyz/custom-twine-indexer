@@ -6,8 +6,12 @@ use crate::config::AppConfig;
 use async_trait::async_trait;
 use eyre::Result;
 use sea_orm::DatabaseConnection;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
+
+pub const MAX_RETRIES: i32 = 20;
+pub const RETRY_DELAY: Duration = Duration::from_millis(5000);
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
@@ -45,8 +49,8 @@ pub async fn start_indexer(
     JoinHandle<Result<()>>,
 )> {
     let evm_contracts = vec![
-        config.l1_message_queue_addr.address.clone(),
         config.l1_erc20_gateway_addr.address.clone(),
+        config.l1_message_queue_addr.address.clone(),
     ];
 
     let twine_contracts = vec![
@@ -62,8 +66,8 @@ pub async fn start_indexer(
     let evm_handle = create_and_spawn_indexer!(
         evm::EVMIndexer,
         config.evm.rpc_url,
-        config.evm.start_block,
         config.evm.chain_id,
+        config.evm.start_block,
         db_conn,
         "EVM",
         evm_contracts
@@ -72,8 +76,8 @@ pub async fn start_indexer(
     let twine_handle = create_and_spawn_indexer!(
         twine::TwineIndexer,
         config.twine.rpc_url,
-        config.twine.start_block,
         config.twine.chain_id,
+        config.twine.start_block,
         db_conn,
         "Twine",
         twine_contracts
@@ -82,8 +86,8 @@ pub async fn start_indexer(
     let svm_handle = create_and_spawn_indexer!(
         svm::SVMIndexer,
         config.solana.rpc_url,
+        config.solana.chain_id,
         config.solana.start_block,
-        config.twine.chain_id,
         db_conn,
         "SVM",
         svm_contracts
