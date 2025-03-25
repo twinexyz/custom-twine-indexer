@@ -29,9 +29,6 @@ Export the required environment variables:
 ```sh
 # shared db config
 export DATABASE_URL="postgresql://dbuser:password@localhost:5432/indexer"
-export POSTGRES_USER=dbuser
-export POSTGRES_PASSWORD=password
-export POSTGRES_DB=indexer
 
 # api specific
 export API_PORT=7777
@@ -89,20 +86,17 @@ The indexer listens to an execution client instance (e.g., Reth). While running 
 Before running the application, create a `.env` file with environment variables as (*please note the '__' used in some variables below*):
 
 ```sh
-DATABASE_URL="postgresql://user:password@twine-db:5432/indexer"
-POSTGRES_USER=user
-POSTGRES_PASSWORD=password
-POSTGRES_DB=indexer
+DATABASE_URL="postgresql://db_admin:dJXgaAqMM7PtrIJ@twine-db:5432/indexer_db"
 
 API_PORT=7777
 
 L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
-L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+
+L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+
 TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
 TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
-TOKENS_GATEWAY_PROGRAM_ID="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
-TWINE_CHAIN_PROGRAM_ID="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
 
 EVM__RPC_URL="wss://rpc.ethereum.co"
 TWINE__RPC_URL="wss://rpc.twine.co"
@@ -118,7 +112,6 @@ SOLANA__START_BLOCK=1999223
 
 SOLANA_WS_URL="wss://rpc.solana.co"
 ```
-
 **Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 
 ### 2. Start Services with Docker Compose

@@ -3,13 +3,16 @@ version: '3.8'
 services:
   twine-db:
     image: postgres:13
-    env_file: .env
+    environment:
+      POSTGRES_USER: db_admin
+      POSTGRES_PASSWORD: dJXgaAqMM7PtrIJ
+      POSTGRES_DB: indexer_db
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      test: ["CMD", "pg_isready", "-U", "db_admin", "-d", "indexer_db"]
       interval: 10s
       timeout: 5s
       retries: 5
