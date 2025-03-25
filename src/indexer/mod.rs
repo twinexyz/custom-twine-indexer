@@ -54,7 +54,6 @@ pub async fn start_indexer(
     ];
 
     let twine_contracts = vec![
-        config.l1_twine_messenger_addr.address.clone(),
         config.l2_twine_messenger_addr.address.clone(),
     ];
 

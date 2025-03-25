@@ -10,7 +10,6 @@ pub struct AppConfig {
     pub twine: ChainConfig,
     pub l1_message_queue_addr: ContractConfig,
     pub l2_twine_messenger_addr: ContractConfig,
-    pub l1_twine_messenger_addr: ContractConfig,
     pub l1_erc20_gateway_addr: ContractConfig,
     pub tokens_gatway_program_addr: ContractConfig,
     pub twine_chain_program_addr: ContractConfig,
@@ -85,11 +84,6 @@ impl AppConfig {
                 .context("Missing L2_TWINE_MESSENGER_ADDRESS environment variable")?,
         };
 
-        let l1_twine_messenger_addr = ContractConfig {
-            address: env::var("L1_TWINE_MESSENGER_ADDRESS")
-                .context("Missing L1_TWINE_MESSENGER_ADDRESS environment variable")?,
-        };
-
         let l1_erc20_gateway_addr = ContractConfig {
             address: env::var("L1_ERC20_GATEWAY_ADDRESS")
                 .context("Missing L1_ERC20_GATEWAY_ADDRESS environment variable")?,
@@ -113,7 +107,6 @@ impl AppConfig {
             twine,
             l1_message_queue_addr,
             l2_twine_messenger_addr,
-            l1_twine_messenger_addr,
             l1_erc20_gateway_addr,
             tokens_gatway_program_addr,
             twine_chain_program_addr,
