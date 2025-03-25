@@ -53,9 +53,7 @@ pub async fn start_indexer(
         config.l1_message_queue_addr.address.clone(),
     ];
 
-    let twine_contracts = vec![
-        config.l2_twine_messenger_addr.address.clone(),
-    ];
+    let twine_contracts = vec![config.l2_twine_messenger_addr.address.clone()];
 
     let svm_contracts = vec![
         config.tokens_gatway_program_addr.address.clone(),

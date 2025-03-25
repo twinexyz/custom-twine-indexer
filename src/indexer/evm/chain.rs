@@ -11,10 +11,11 @@ pub async fn subscribe_stream(
     provider: &dyn Provider,
     contract_addresses: &[String],
 ) -> Result<impl Stream<Item = Log>> {
-    let mut filter = Filter::new();
-    for addr in contract_addresses {
-        filter = filter.address(addr.parse::<Address>().unwrap());
-    }
+    let addresses = contract_addresses
+        .into_iter()
+        .map(|addr| addr.parse::<Address>().unwrap())
+        .collect::<Vec<Address>>();
+    let filter = Filter::new().address(addresses);
     let subscription = provider.subscribe_logs(&filter).await?;
     Ok(subscription.into_stream())
 }
@@ -31,10 +32,13 @@ pub async fn poll_missing_logs(
         return Ok(Vec::new());
     }
 
-    let mut filter = Filter::new().select((last_synced + 1)..);
-    for addr in contract_addresses {
-        filter = filter.address(addr.parse::<Address>().unwrap());
-    }
+    let addresses = contract_addresses
+        .into_iter()
+        .map(|addr| addr.parse::<Address>().unwrap())
+        .collect::<Vec<Address>>();
+    let mut filter = Filter::new()
+        .select((last_synced + 1)..=(current_block))
+        .address(addresses);
     let logs = provider.get_logs(&filter).await?;
     Ok(logs)
 }
