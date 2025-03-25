@@ -1,4 +1,3 @@
-// subscriber.rs
 use anchor_client::{
     solana_client::rpc_response::RpcConfirmedTransactionStatusWithSignature, Client, Cluster,
 };
@@ -12,6 +11,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info};
 
+use super::{MAX_RETRIES, RETRY_DELAY};
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
 pub async fn subscribe_stream(
@@ -46,25 +46,57 @@ pub async fn poll_missing_slots(
     tokens_gateway_id: &str,
     last_synced: u64,
 ) -> Result<Vec<(Vec<String>, Option<String>)>> {
-    let rpc_url_clone = rpc_url.to_string();
-    let twine_chain_id_clone = twine_chain_id.to_string();
-
-    let current_slot = tokio::task::spawn_blocking(move || {
-        let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
-            Cluster::Custom(rpc_url_clone, "".to_string()),
-            Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
-        );
-        let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(
-            &twine_chain_id_clone,
-        )?)?;
-        program
-            .rpc()
-            .get_slot_with_commitment(
-                anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
-            )
-            .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
-    })
-    .await??;
+    let mut retries = 0;
+    let current_slot = loop {
+        match tokio::task::spawn_blocking({
+            let rpc_url_clone = rpc_url.to_string();
+            let twine_chain_id_clone = twine_chain_id.to_string();
+            move || {
+                let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
+                    Client::new(
+                        Cluster::Custom(rpc_url_clone, "".to_string()),
+                        Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+                    );
+                let program = client.program(
+                    anchor_client::solana_sdk::pubkey::Pubkey::from_str(&twine_chain_id_clone)?,
+                )?;
+                program
+                    .rpc()
+                    .get_slot_with_commitment(
+                        anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
+                    )
+                    .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
+            }
+        })
+        .await
+        {
+            Ok(Ok(slot)) => {
+                info!(
+                    "Successfully fetched current slot in poll_missing_slots after {} attempt(s)",
+                    retries + 1
+                );
+                break slot;
+            }
+            Ok(Err(e)) if retries < MAX_RETRIES => {
+                retries += 1;
+                error!(
+                    "Failed to get current slot in poll_missing_slots (attempt {}/{}): {:?}",
+                    retries, MAX_RETRIES, e
+                );
+                tokio::time::sleep(RETRY_DELAY).await;
+            }
+            Ok(Err(e)) => return Err(e),
+            Err(e) if retries < MAX_RETRIES => {
+                retries += 1;
+                error!(
+                    "Task join error in poll_missing_slots (attempt {}/{}): {:?}",
+                    retries, MAX_RETRIES, e
+                );
+                tokio::time::sleep(RETRY_DELAY).await;
+            }
+            Err(e) => return Err(eyre::eyre!("Failed after retries: {}", e)),
+        }
+    };
 
     if last_synced >= current_slot {
         return Ok(Vec::new());
@@ -74,62 +106,128 @@ pub async fn poll_missing_slots(
     let program_ids = vec![twine_chain_id, tokens_gateway_id];
 
     for program_id in program_ids {
-        let rpc_url_clone = rpc_url.to_string();
-        let program_id_clone = program_id.to_string();
-
-        let signatures = tokio::task::spawn_blocking(move || -> Result<Vec<RpcConfirmedTransactionStatusWithSignature>, eyre::Error> {
-            let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
-                Cluster::Custom(rpc_url_clone, "".to_string()),
-                Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
-            );
-            let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?)?;
-            let sigs = program
-                .rpc()
-                .get_signatures_for_address_with_config(
-                    &program.id(),
-                    anchor_client::solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
-                        before: None,
-                        until: None,
-                        limit: Some(1000),
-                        commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
-                    },
-                )
-                .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))?;
-            Ok(sigs)
-        })
-        .await??;
-
-        info!(
-            "Found {} signatures for program {}",
-            signatures.len(),
-            program_id
-        );
+        let mut retries = 0;
+        let signatures = loop {
+            match tokio::task::spawn_blocking({
+                let rpc_url_clone = rpc_url.to_string();
+                let program_id_clone = program_id.to_string();
+                move || -> Result<Vec<RpcConfirmedTransactionStatusWithSignature>, eyre::Error> {
+                    let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
+                        Client::new(
+                            Cluster::Custom(rpc_url_clone, "".to_string()),
+                            Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+                        );
+                    let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(
+                        &program_id_clone,
+                    )?)?;
+                    let sigs = program
+                        .rpc()
+                        .get_signatures_for_address_with_config(
+                            &program.id(),
+                            anchor_client::solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config {
+                                before: None,
+                                until: None,
+                                limit: Some(1000),
+                                commitment: Some(
+                                    anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
+                                ),
+                            },
+                        )
+                        .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))?;
+                    Ok(sigs)
+                }
+            })
+            .await
+            {
+                Ok(Ok(sigs)) => {
+                    info!(
+                        "Successfully fetched signatures for {} after {} attempt(s)",
+                        program_id, retries + 1
+                    );
+                    break sigs;
+                }
+                Ok(Err(e)) if retries < MAX_RETRIES => {
+                    retries += 1;
+                    error!(
+                        "Failed to get signatures for {} (attempt {}/{}): {:?}",
+                        program_id, retries, MAX_RETRIES, e
+                    );
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+                Ok(Err(e)) => return Err(e),
+                Err(e) if retries < MAX_RETRIES => {
+                    retries += 1;
+                    error!(
+                        "Task join error for signatures (attempt {}/{}): {:?}",
+                        retries, MAX_RETRIES, e
+                    );
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+                Err(e) => return Err(eyre::eyre!("Failed after retries: {}", e)),
+            }
+        };
 
         for sig_info in signatures {
             let signature =
                 anchor_client::solana_sdk::signature::Signature::from_str(&sig_info.signature)?;
-            let rpc_url_clone = rpc_url.to_string();
-            let program_id_clone = program_id.to_string();
-
-            let tx = tokio::task::spawn_blocking(move || {
-                let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> = Client::new(
-                    Cluster::Custom(rpc_url_clone, "".to_string()),
-                    Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
-                );
-                let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?)?;
-                program
-                    .rpc()
-                    .get_transaction_with_config(
-                        &signature,
-                        anchor_client::solana_client::rpc_config::RpcTransactionConfig {
-                            commitment: Some(anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized()),
-                            encoding: Some(UiTransactionEncoding::Json),
-                            max_supported_transaction_version: Some(0),
-                        },
-                    )
-                    .map_err(|e| eyre::eyre!("Failed to get transaction: {}", e))
-            })
-            .await??;
+            let mut retries = 0;
+            let tx = loop {
+                match tokio::task::spawn_blocking({
+                    let rpc_url_clone = rpc_url.to_string();
+                    let program_id_clone = program_id.to_string();
+                    move || {
+                        let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
+                            Client::new(
+                                Cluster::Custom(rpc_url_clone, "".to_string()),
+                                Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
+                            );
+                        let program = client.program(
+                            anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?,
+                        )?;
+                        program
+                            .rpc()
+                            .get_transaction_with_config(
+                                &signature,
+                                anchor_client::solana_client::rpc_config::RpcTransactionConfig {
+                                    commitment: Some(
+                                        anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
+                                    ),
+                                    encoding: Some(UiTransactionEncoding::Json),
+                                    max_supported_transaction_version: Some(0),
+                                },
+                            )
+                            .map_err(|e| eyre::eyre!("Failed to get transaction: {}", e))
+                    }
+                })
+                .await
+                {
+                    Ok(Ok(tx)) => {
+                        info!(
+                            "Successfully fetched transaction {} after {} attempt(s)",
+                            sig_info.signature, retries + 1
+                        );
+                        break tx;
+                    }
+                    Ok(Err(e)) if retries < MAX_RETRIES => {
+                        retries += 1;
+                        error!(
+                            "Failed to get transaction {} (attempt {}/{}): {:?}",
+                            sig_info.signature, retries, MAX_RETRIES, e
+                        );
+                        tokio::time::sleep(RETRY_DELAY).await;
+                    }
+                    Ok(Err(e)) => return Err(e),
+                    Err(e) if retries < MAX_RETRIES => {
+                        retries += 1;
+                        error!(
+                            "Task join error for transaction {} (attempt {}/{}): {:?}",
+                            sig_info.signature, retries, MAX_RETRIES, e
+                        );
+                        tokio::time::sleep(RETRY_DELAY).await;
+                    }
+                    Err(e) => return Err(eyre::eyre!("Failed after retries: {}", e)),
+                }
+            };
 
             let empty_logs = vec![];
             let logs = tx
@@ -160,11 +258,31 @@ async fn subscribe_to_single_program(
     program_id: String,
     data_sender: Sender<(Vec<String>, Option<String>)>,
 ) -> Result<()> {
-    let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| {
-        error!("Failed to connect to WebSocket {}: {:?}", ws_url, e);
-        eyre::eyre!("WebSocket connection error: {}", e)
-    })?;
-    let (mut write, mut read) = ws_stream.split();
+    let mut retries = 0;
+    let (mut write, mut read) = loop {
+        match connect_async(&ws_url).await {
+            Ok((ws_stream, _)) => {
+                info!(
+                    "Successfully connected to WebSocket {} after {} attempt(s)",
+                    ws_url,
+                    retries + 1
+                );
+                break ws_stream.split();
+            }
+            Err(e) if retries < MAX_RETRIES => {
+                retries += 1;
+                error!(
+                    "Failed to connect to WebSocket {} (attempt {}/{}): {:?}",
+                    ws_url, retries, MAX_RETRIES, e
+                );
+                tokio::time::sleep(RETRY_DELAY).await;
+            }
+            Err(e) => {
+                error!("WebSocket connection failed after retries: {:?}", e);
+                return Err(eyre::eyre!("WebSocket connection error: {}", e));
+            }
+        }
+    };
 
     let subscription = json!({
         "jsonrpc": "2.0",

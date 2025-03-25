@@ -1,9 +1,10 @@
+// parser.rs
 use alloy::hex;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, info};
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct DepositSuccessful {
@@ -16,7 +17,7 @@ pub struct DepositSuccessful {
     pub amount: String,
     pub slot_number: u64,
     #[borsh(skip)]
-    pub signature: String, // Excluded from Borsh serialization/deserialization
+    pub signature: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -130,37 +131,22 @@ pub fn parse_borsh<T: BorshDeserialize + HasSignature>(
                 hex::encode(data_with_discriminator),
                 data_with_discriminator.len()
             );
-            if e.to_string().contains("Unexpected length") {
-                error!(
-                    "Length mismatch after skipping discriminator: data (hex) = {:?}, length = {}",
-                    hex::encode(data_with_discriminator),
-                    data_with_discriminator.len()
-                );
-                return Err(eyre::eyre!("Failed to deserialize Borsh data: {}", e));
-            }
             debug!("Retrying without skipping discriminator");
-            T::try_from_slice(&decoded_data).map_err(|e| {
-                error!(
-                    "Deserialization failed: error = {}, data (hex) = {:?}, length = {}",
-                    e,
-                    hex::encode(&decoded_data),
-                    decoded_data.len()
-                );
-                eyre::eyre!("Failed to deserialize Borsh data: {}", e)
-            })?
+            T::try_from_slice(&decoded_data)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Borsh data: {}", e))?
         }
     };
 
     if let Some(sig) = signature {
         event.set_signature(sig);
     } else {
-        event.set_signature(String::new()); // Ensure signature is initialized
+        event.set_signature(String::new());
     }
 
     Ok(event)
 }
 
-pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEvent> {
+pub fn parse_log(logs: &[String], signature: Option<String>) -> Option<ParsedEvent> {
     debug!("Parsing logs: {:?}", logs);
 
     let mut event_type = None;
@@ -186,23 +172,23 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
-            _ => continue, // Ignore unrecognized log entries
+            _ => continue,
         }
     }
 
-    // Check if an event type was found
+    // If no recognized event type is found, skip processing
     let Some(event_type) = event_type else {
-        error!("No recognizable event type found in logs: {:?}", logs);
-        return Err(eyre::eyre!(
-            "No recognizable event type found in logs: {:?}",
-            logs
-        ));
+        info!("Skipping unrecognized event in logs: {:?}", logs);
+        return None;
     };
 
-    // Check if encoded data was found
+    // If no encoded data is found, skip processing
     let Some(encoded_data) = encoded_data else {
-        error!("No encoded data found in logs: {:?}", logs);
-        return Err(eyre::eyre!("No encoded data found in logs: {:?}", logs));
+        info!(
+            "No encoded data found for event {} in logs: {:?}",
+            event_type, logs
+        );
+        return None;
     };
 
     debug!(
@@ -211,32 +197,43 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Result<ParsedEve
     );
 
     // Parse only the specified event types
-    let (event, slot_number) = match event_type {
+    match event_type {
         "native_deposit" | "spl_deposit" => {
-            let deposit = parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone())?;
-            (serde_json::to_value(&deposit)?, deposit.slot_number as i64)
+            let deposit =
+                parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&deposit).ok()?;
+            Some(ParsedEvent {
+                event,
+                slot_number: deposit.slot_number as i64,
+            })
         }
         "native_withdrawal" | "spl_withdrawal" => {
             let withdrawal =
-                parse_borsh::<ForcedWithdrawSuccessful>(&encoded_data, signature.clone())?;
-            (
-                serde_json::to_value(&withdrawal)?,
-                withdrawal.slot_number as i64,
-            )
+                parse_borsh::<ForcedWithdrawSuccessful>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&withdrawal).ok()?;
+            Some(ParsedEvent {
+                event,
+                slot_number: withdrawal.slot_number as i64,
+            })
         }
         "finalize_native_withdrawal" => {
-            let native = parse_borsh::<FinalizeNativeWithdrawal>(&encoded_data, signature.clone())?;
-            (serde_json::to_value(&native)?, native.slot_number as i64)
+            let native =
+                parse_borsh::<FinalizeNativeWithdrawal>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&native).ok()?;
+            Some(ParsedEvent {
+                event,
+                slot_number: native.slot_number as i64,
+            })
         }
         "finalize_spl_withdrawal" => {
-            let spl = parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone())?;
-            (serde_json::to_value(&spl)?, spl.slot_number as i64)
+            let spl =
+                parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&spl).ok()?;
+            Some(ParsedEvent {
+                event,
+                slot_number: spl.slot_number as i64,
+            })
         }
-        _ => {
-            error!("Unrecognized event type: {}", event_type);
-            return Err(eyre::eyre!("Unrecognized event type: {}", event_type));
-        }
-    };
-
-    Ok(ParsedEvent { event, slot_number })
+        _ => None,
+    }
 }
