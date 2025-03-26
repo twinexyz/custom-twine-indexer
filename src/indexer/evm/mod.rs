@@ -66,7 +66,7 @@ impl ChainIndexer for EVMIndexer {
             {
                 Ok(mut stream) => {
                     while let Some(log) = stream.next().await {
-                        match parser::parse_log(log).await {
+                        match parser::parse_log(log, &live_indexer.db).await {
                             Ok(parsed) => {
                                 let last_synced = last_synced::ActiveModel {
                                     chain_id: Set(id as i64),
@@ -118,8 +118,6 @@ impl EVMIndexer {
                         error!("Exceeded maximum connection attempts.");
                         return Err(Report::from(e));
                     }
-
-                    // Wait before retrying
                     std::thread::sleep(RETRY_DELAY);
                 }
             }
@@ -129,7 +127,7 @@ impl EVMIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
         for log in logs {
-            match parser::parse_log(log).await {
+            match parser::parse_log(log, &self.db).await {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
@@ -159,8 +157,8 @@ impl Clone for EVMIndexer {
         Self {
             provider: Arc::clone(&self.provider),
             db: self.db.clone(),
-            start_block: self.start_block,
             chain_id: self.chain_id,
+            start_block: self.start_block,
             contract_addrs: self.contract_addrs.clone(),
         }
     }

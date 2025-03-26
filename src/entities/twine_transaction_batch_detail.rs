@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub batch_number: i64,
+    pub batch_number: i32,
     pub l2_transaction_count: i64,
     pub l2_fair_gas_price: Decimal,
     pub chain_id: i64,
