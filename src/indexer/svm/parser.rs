@@ -60,6 +60,36 @@ pub struct FinalizeSplWithdrawal {
     pub signature: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct CommitBatch {
+    pub start_block: u64,
+    pub end_block: u64,
+    pub chain_id: u64,
+    #[borsh(skip)]
+    pub signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct FinalizedBatch {
+    pub start_block: u64,
+    pub end_block: u64,
+    pub batch_hash: String,
+    pub chain_id: u64,
+    #[borsh(skip)]
+    pub signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct FinalizedTransaction {
+    pub start_block: u64,
+    pub end_block: u64,
+    pub deposit_count: u64,
+    pub withdraw_count: u64,
+    pub chain_id: u64,
+    #[borsh(skip)]
+    pub signature: String,
+}
+
 #[derive(Debug)]
 pub struct ParsedEvent {
     pub event: serde_json::Value,
@@ -89,6 +119,24 @@ impl HasSignature for FinalizeNativeWithdrawal {
 }
 
 impl HasSignature for FinalizeSplWithdrawal {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for CommitBatch {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for FinalizedBatch {
+    fn set_signature(&mut self, signature: String) {
+        self.signature = signature;
+    }
+}
+
+impl HasSignature for FinalizedTransaction {
     fn set_signature(&mut self, signature: String) {
         self.signature = signature;
     }
@@ -169,6 +217,17 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Option<ParsedEve
             "Program log: Instruction: FinalizeSplWithdrawal" => {
                 event_type = Some("finalize_spl_withdrawal")
             }
+            "Program log: Instruction: CommitBatch" => event_type = Some("commit_batch"),
+            log if log.starts_with("Program data: ") => {
+                encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+            }
+            "Program log: Instruction: FinalizedBatch" => event_type = Some("finalize_batch"),
+            log if log.starts_with("Program data: ") => {
+                encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+            }
+            "Program log: Instruction: CommitAndFinalizeTransaction" => {
+                event_type = Some("commit_and_finalize_transaction")
+            }
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
@@ -178,7 +237,6 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Option<ParsedEve
 
     // If no recognized event type is found, skip processing
     let Some(event_type) = event_type else {
-        info!("Skipping unrecognized event in logs: {:?}", logs);
         return None;
     };
 
@@ -196,8 +254,8 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Option<ParsedEve
         event_type, encoded_data
     );
 
-    // Parse only the specified event types
-    match event_type {
+    // Parse the specified event types
+    let parsed_event = match event_type {
         "native_deposit" | "spl_deposit" => {
             let deposit =
                 parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone()).ok()?;
@@ -234,6 +292,32 @@ pub fn parse_log(logs: &[String], signature: Option<String>) -> Option<ParsedEve
                 slot_number: spl.slot_number as i64,
             })
         }
+        "commit_batch" => {
+            let commit = parse_borsh::<CommitBatch>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&commit).ok()?;
+            let slot_number = 1;
+            Some(ParsedEvent { event, slot_number })
+        }
+        "finalize_batch" => {
+            let finalize = parse_borsh::<FinalizedBatch>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&finalize).ok()?;
+            let slot_number = 1;
+            Some(ParsedEvent { event, slot_number })
+        }
+        "commit_and_finalize_transaction" => {
+            let commit_finalize_transaction =
+                parse_borsh::<FinalizedTransaction>(&encoded_data, signature.clone()).ok()?;
+            let event = serde_json::to_value(&commit_finalize_transaction).ok()?;
+            let slot_number = 1;
+            Some(ParsedEvent { event, slot_number })
+        }
         _ => None,
+    };
+
+    // Print the parsed result if it exists
+    if let Some(ref event) = parsed_event {
+        println!("Parsed Event: {:#?}", event);
     }
+
+    parsed_event
 }

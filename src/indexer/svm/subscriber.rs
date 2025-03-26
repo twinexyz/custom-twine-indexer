@@ -71,10 +71,6 @@ pub async fn poll_missing_slots(
         .await
         {
             Ok(Ok(slot)) => {
-                info!(
-                    "Successfully fetched current slot in poll_missing_slots after {} attempt(s)",
-                    retries + 1
-                );
                 break slot;
             }
             Ok(Err(e)) if retries < MAX_RETRIES => {
@@ -140,10 +136,6 @@ pub async fn poll_missing_slots(
             .await
             {
                 Ok(Ok(sigs)) => {
-                    info!(
-                        "Successfully fetched signatures for {} after {} attempt(s)",
-                        program_id, retries + 1
-                    );
                     break sigs;
                 }
                 Ok(Err(e)) if retries < MAX_RETRIES => {
@@ -202,10 +194,6 @@ pub async fn poll_missing_slots(
                 .await
                 {
                     Ok(Ok(tx)) => {
-                        info!(
-                            "Successfully fetched transaction {} after {} attempt(s)",
-                            sig_info.signature, retries + 1
-                        );
                         break tx;
                     }
                     Ok(Err(e)) if retries < MAX_RETRIES => {
@@ -241,10 +229,6 @@ pub async fn poll_missing_slots(
                 .to_vec();
 
             if tx.slot > last_synced && tx.slot <= current_slot {
-                info!(
-                    "Found logs at slot={}, signature={}",
-                    tx.slot, sig_info.signature
-                );
                 events.push((logs, Some(sig_info.signature.clone())));
             }
         }

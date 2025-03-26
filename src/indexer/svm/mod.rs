@@ -71,10 +71,6 @@ impl ChainIndexer for SVMIndexer {
                 .await
                 {
                     Ok(events) => {
-                        info!(
-                            "Successfully polled missing slots after {} attempt(s)",
-                            retries + 1
-                        );
                         break events;
                     }
                     Err(e) if retries < MAX_RETRIES => {
@@ -100,24 +96,15 @@ impl ChainIndexer for SVMIndexer {
             for (logs, signature) in historical_events {
                 if let Some(tx_hash) = &signature {
                     if db::is_tx_hash_processed(&self.db, tx_hash).await? {
-                        info!("Skipping already processed tx: {}", tx_hash);
                         continue;
                     }
                 }
 
                 if let Some(parsed) = parser::parse_log(&logs, signature.clone()) {
                     if parsed.slot_number <= last_synced {
-                        info!(
-                            "Skipping historical event at slot {} (before last synced)",
-                            parsed.slot_number
-                        );
                         continue;
                     }
                     if parsed.slot_number > current_slot as i64 {
-                        info!(
-                            "Skipping historical event at slot {} (after current slot)",
-                            parsed.slot_number
-                        );
                         continue;
                     }
 
@@ -153,10 +140,6 @@ impl ChainIndexer for SVMIndexer {
                     .await
                     {
                         Ok(stream) => {
-                            info!(
-                                "Successfully subscribed to stream after {} attempt(s)",
-                                retries + 1
-                            );
                             break stream;
                         }
                         Err(e) if retries < MAX_RETRIES => {
@@ -174,16 +157,11 @@ impl ChainIndexer for SVMIndexer {
                 while let Some((logs, signature)) = stream.next().await {
                     if let Some(parsed) = parser::parse_log(&logs, signature.clone()) {
                         if parsed.slot_number <= current_slot as i64 {
-                            info!(
-                                "Skipping live event at slot {} (already processed)",
-                                parsed.slot_number
-                            );
                             continue;
                         }
 
                         if let Some(tx_hash) = &signature {
                             if db::is_tx_hash_processed(&indexer.db, tx_hash).await? {
-                                info!("Skipping already processed live tx: {}", tx_hash);
                                 continue;
                             }
                         }
@@ -199,10 +177,6 @@ impl ChainIndexer for SVMIndexer {
                             }
                             Err(e) => {
                                 if e.to_string().contains("duplicate key value") {
-                                    info!(
-                                        "Skipping duplicate live event at slot {}",
-                                        parsed.slot_number
-                                    );
                                 } else {
                                     error!("Failed to process live event: {:?}", e);
                                 }
@@ -262,10 +236,6 @@ impl SVMIndexer {
             .await
             {
                 Ok(Ok(slot)) => {
-                    info!(
-                        "Successfully fetched current slot after {} attempt(s)",
-                        retries + 1
-                    );
                     return Ok(slot?);
                 }
                 Ok(Err(e)) if retries < MAX_RETRIES => {
