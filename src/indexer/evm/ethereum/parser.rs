@@ -6,14 +6,20 @@ use alloy::rpc::types::Log;
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use blake3::hash;
+use blake3::hash;
 use chrono::Utc;
 use eyre::Report;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tracing::info;
+use tracing::info;
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
+use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
+    CommitBatch, FinalizedBatch, FinalizedTransaction,
+};
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
 };
@@ -48,12 +54,27 @@ pub enum ParserError {
     MissingBlockNumber,
     MissingBlockTimestamp,
     InvalidBlockTimestamp,
+    MissingBlockNumber,
+    MissingBlockTimestamp,
+    InvalidBlockTimestamp,
     DecodeError {
         event_type: &'static str,
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     UnknownEvent {
         signature: alloy::primitives::B256,
+    },
+    BatchNotFound {
+        start_block: u64,
+        end_block: u64,
+    },
+    FinalizedBeforeCommit {
+        start_block: u64,
+        end_block: u64,
+        batch_hash: String,
+    },
+    NumberOverflow {
+        value: u64,
     },
     BatchNotFound {
         start_block: u64,
@@ -78,12 +99,34 @@ impl std::fmt::Display for ParserError {
             ParserError::MissingBlockNumber => write!(f, "Missing block number in log"),
             ParserError::MissingBlockTimestamp => write!(f, "Missing block timestamp in log"),
             ParserError::InvalidBlockTimestamp => write!(f, "Invalid block timestamp"),
+            ParserError::MissingBlockNumber => write!(f, "Missing block number in log"),
+            ParserError::MissingBlockTimestamp => write!(f, "Missing block timestamp in log"),
+            ParserError::InvalidBlockTimestamp => write!(f, "Invalid block timestamp"),
             ParserError::DecodeError { event_type, source } => {
                 write!(f, "Failed to decode {} event: {}", event_type, source)
             }
             ParserError::UnknownEvent { signature } => {
                 write!(f, "Unknown event type: {}", signature)
             }
+            ParserError::BatchNotFound { start_block, end_block } => write!(
+                f,
+                "Batch not found for start_block: {}, end_block: {}",
+                start_block, end_block
+            ),
+            ParserError::FinalizedBeforeCommit {
+                start_block,
+                end_block,
+                batch_hash,
+            } => write!(
+                f,
+                "Finalized event indexed before commit for start_block: {}, end_block: {}, batch_hash: {}",
+                start_block, end_block, batch_hash
+            ),
+            ParserError::NumberOverflow { value } => write!(
+                f,
+                "Generated batch number {} exceeds i32 maximum value",
+                value
+            ),
             ParserError::BatchNotFound { start_block, end_block } => write!(
                 f,
                 "Batch not found for start_block: {}, end_block: {}",
@@ -172,6 +215,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
 
     let tx_hash_str = format!("{tx_hash:?}");
 
+    let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
     let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
 
     let timestamp = log
