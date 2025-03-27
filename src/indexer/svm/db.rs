@@ -1,88 +1,24 @@
 use chrono::Utc;
 use eyre::Result;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, NotSet,
+    QueryFilter, Set,
 };
 use sea_query::OnConflict;
 use tracing::{error, info};
 
-use super::parser::{
-    DepositSuccessful, FinalizeNativeWithdrawal, FinalizeSplWithdrawal, ForcedWithdrawSuccessful,
+use super::parser::{DbModel, ParsedEvent};
+use crate::entities::{
+    l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_lifecycle_l1_transactions,
+    twine_transaction_batch, twine_transaction_batch_detail,
 };
-use crate::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
-
-#[derive(Debug)]
-pub enum DbModel {
-    L1Deposit(l1_deposit::ActiveModel),
-    L1Withdraw(l1_withdraw::ActiveModel),
-    L2Withdraw(l2_withdraw::ActiveModel),
-}
-
-impl TryFrom<serde_json::Value> for DbModel {
-    type Error = eyre::Error;
-
-    fn try_from(value: serde_json::Value) -> Result<Self> {
-        if let Ok(deposit) = serde_json::from_value::<DepositSuccessful>(value.clone()) {
-            Ok(DbModel::L1Deposit(l1_deposit::ActiveModel {
-                nonce: Set(deposit.nonce as i64),
-                chain_id: Set(deposit.chain_id as i64),
-                block_number: Set(None),
-                slot_number: Set(Some(deposit.slot_number as i64)),
-                from: Set(deposit.from_l1_pubkey),
-                to_twine_address: Set(deposit.to_twine_address),
-                l1_token: Set(deposit.l1_token),
-                l2_token: Set(deposit.l2_token),
-                tx_hash: Set(deposit.signature),
-                amount: Set(deposit.amount),
-                created_at: Set(Utc::now().into()),
-            }))
-        } else if let Ok(withdrawal) =
-            serde_json::from_value::<ForcedWithdrawSuccessful>(value.clone())
-        {
-            Ok(DbModel::L1Withdraw(l1_withdraw::ActiveModel {
-                nonce: Set(withdrawal.nonce as i64),
-                chain_id: Set(withdrawal.chain_id as i64),
-                block_number: Set(None),
-                slot_number: Set(Some(withdrawal.slot_number as i64)),
-                from: Set(withdrawal.from_twine_address),
-                to_twine_address: Set(withdrawal.to_l1_pub_key),
-                l1_token: Set(withdrawal.l1_token),
-                l2_token: Set(withdrawal.l2_token),
-                tx_hash: Set(withdrawal.signature),
-                amount: Set(withdrawal.amount),
-                created_at: Set(Utc::now().into()),
-            }))
-        } else if let Ok(native) = serde_json::from_value::<FinalizeNativeWithdrawal>(value.clone())
-        {
-            Ok(DbModel::L2Withdraw(l2_withdraw::ActiveModel {
-                nonce: Set(native.nonce as i64),
-                chain_id: Set(native.chain_id as i64),
-                block_number: Set(None),
-                slot_number: Set(Some(native.slot_number as i64)),
-                tx_hash: Set(native.signature),
-                created_at: Set(Utc::now().into()),
-            }))
-        } else if let Ok(spl) = serde_json::from_value::<FinalizeSplWithdrawal>(value.clone()) {
-            Ok(DbModel::L2Withdraw(l2_withdraw::ActiveModel {
-                nonce: Set(spl.nonce as i64),
-                chain_id: Set(spl.chain_id as i64),
-                block_number: Set(None),
-                slot_number: Set(Some(spl.slot_number as i64)),
-                tx_hash: Set(spl.signature),
-                created_at: Set(Utc::now().into()),
-            }))
-        } else {
-            Err(eyre::eyre!("Unknown event type: {:?}", value))
-        }
-    }
-}
 
 pub async fn insert_model(
-    model: DbModel,
+    parsed_event: ParsedEvent,
     last_synced: last_synced::ActiveModel,
     db: &DatabaseConnection,
 ) -> Result<()> {
-    match model {
+    match parsed_event.model {
         DbModel::L1Deposit(model) => {
             l1_deposit::Entity::insert(model)
                 .on_conflict(
@@ -91,11 +27,7 @@ pub async fn insert_model(
                         .to_owned(),
                 )
                 .exec(db)
-                .await
-                .map_err(|e| {
-                    error!("Failed to insert L1Deposit: {:?}", e);
-                    eyre::eyre!("Failed to insert L1Deposit: {:?}", e)
-                })?;
+                .await?;
         }
         DbModel::L1Withdraw(model) => {
             l1_withdraw::Entity::insert(model)
@@ -105,11 +37,7 @@ pub async fn insert_model(
                         .to_owned(),
                 )
                 .exec(db)
-                .await
-                .map_err(|e| {
-                    error!("Failed to insert L1Withdraw: {:?}", e);
-                    eyre::eyre!("Failed to insert L1Withdraw: {:?}", e)
-                })?;
+                .await?;
         }
         DbModel::L2Withdraw(model) => {
             l2_withdraw::Entity::insert(model)
@@ -119,11 +47,169 @@ pub async fn insert_model(
                         .to_owned(),
                 )
                 .exec(db)
-                .await
-                .map_err(|e| {
-                    error!("Failed to insert L2Withdraw: {:?}", e);
-                    eyre::eyre!("Failed to insert L2Withdraw: {:?}", e)
+                .await?;
+        }
+        DbModel::TwineTransactionBatch {
+            model,
+            chain_id,
+            tx_hash,
+        } => {
+            let start_block = model.start_block.clone().unwrap();
+            let end_block = model.end_block.clone().unwrap();
+            let root_hash = model.root_hash.clone().unwrap();
+
+            let existing_batch = twine_transaction_batch::Entity::find()
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                .filter(twine_transaction_batch::Column::RootHash.eq(root_hash.clone()))
+                .one(db)
+                .await?;
+
+            let batch = if let Some(batch) = existing_batch {
+                info!("Found existing batch: {:?}", batch);
+                batch
+            } else {
+                let insert_result = twine_transaction_batch::Entity::insert(model.clone())
+                    .on_conflict(
+                        OnConflict::columns([
+                            twine_transaction_batch::Column::StartBlock,
+                            twine_transaction_batch::Column::EndBlock,
+                            twine_transaction_batch::Column::RootHash,
+                        ])
+                        .do_nothing()
+                        .to_owned(),
+                    )
+                    .exec_with_returning(db)
+                    .await?;
+                info!("Inserted new batch: {:?}", insert_result);
+                insert_result
+            };
+
+            // Check for an existing lifecycle entry by tx_hash
+            let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
+                .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash.clone()))
+                .one(db)
+                .await?;
+
+            let inserted_lifecycle = if let Some(lifecycle) = existing_lifecycle {
+                info!("Found existing lifecycle entry for tx_hash: {}", tx_hash);
+                lifecycle
+            } else {
+                let lifecycle_model = twine_lifecycle_l1_transactions::ActiveModel {
+                    id: NotSet,
+                    hash: Set(tx_hash.clone()),
+                    chain_id: Set(chain_id),
+                    l1_transaction_count: Set(0),
+                    l1_gas_price: Set(0.into()),
+                    timestamp: Set(batch.timestamp),
+                    created_at: Set(batch.created_at),
+                    updated_at: Set(batch.updated_at),
+                };
+                let inserted = twine_lifecycle_l1_transactions::Entity::insert(lifecycle_model)
+                    .exec_with_returning(db)
+                    .await?;
+                info!("Inserted new lifecycle entry for tx_hash: {}", tx_hash);
+                inserted
+            };
+
+            let detail_model = twine_transaction_batch_detail::ActiveModel {
+                id: NotSet,
+                batch_number: Set(batch.number.into()),
+                l2_transaction_count: Set(0),
+                l2_fair_gas_price: Set(0.into()),
+                chain_id: Set(chain_id),
+                commit_id: Set(Some(inserted_lifecycle.id as i64)),
+                execute_id: Set(None),
+                created_at: Set(batch.created_at),
+                updated_at: Set(Utc::now().into()),
+            };
+            twine_transaction_batch_detail::Entity::insert(detail_model)
+                .on_conflict(
+                    OnConflict::columns([
+                        twine_transaction_batch_detail::Column::BatchNumber,
+                        twine_transaction_batch_detail::Column::ChainId,
+                    ])
+                    .update_columns([
+                        twine_transaction_batch_detail::Column::CommitId,
+                        twine_transaction_batch_detail::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+                )
+                .exec(db)
+                .await?;
+        }
+        DbModel::TwineLifecycleL1Transactions {
+            model,
+            batch_number,
+        } => {
+            let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
+                .filter(
+                    twine_lifecycle_l1_transactions::Column::Hash.eq(model.hash.clone().unwrap()),
+                )
+                .one(db)
+                .await?;
+
+            let inserted_lifecycle = if let Some(lifecycle) = existing_lifecycle {
+                info!(
+                    "Found existing lifecycle entry for finalize tx_hash: {}",
+                    model.hash.as_ref()
+                );
+                lifecycle
+            } else {
+                let inserted = twine_lifecycle_l1_transactions::Entity::insert(model)
+                    .exec_with_returning(db)
+                    .await?;
+                info!(
+                    "Inserted new lifecycle entry for finalize tx_hash: {}",
+                    inserted.hash
+                );
+                inserted
+            };
+
+            let chain_id = inserted_lifecycle.chain_id;
+            let mut detail = twine_transaction_batch_detail::Entity::find()
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    eyre::eyre!("Batch detail not found for batch_number: {}", batch_number)
+                })?
+                .into_active_model();
+            detail.execute_id = Set(Some(inserted_lifecycle.id as i64));
+            detail.updated_at = Set(Utc::now().into());
+            detail.update(db).await?;
+        }
+        DbModel::UpdateTwineLifecycleL1Transactions {
+            start_block,
+            end_block,
+            chain_id,
+            l1_transaction_count,
+        } => {
+            let batch = twine_transaction_batch::Entity::find()
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "Batch not found for start_block: {}, end_block: {}",
+                        start_block,
+                        end_block
+                    )
                 })?;
+
+            let lifecycle_entries = twine_lifecycle_l1_transactions::Entity::find()
+                .filter(twine_lifecycle_l1_transactions::Column::ChainId.eq(chain_id))
+                .all(db)
+                .await?;
+
+            for entry in lifecycle_entries {
+                let mut lifecycle = entry.into_active_model();
+                lifecycle.l1_transaction_count = Set(l1_transaction_count);
+                lifecycle.updated_at = Set(Utc::now().into());
+                lifecycle.update(db).await?;
+            }
         }
     }
 
@@ -134,11 +220,7 @@ pub async fn insert_model(
                 .to_owned(),
         )
         .exec(db)
-        .await
-        .map_err(|e| {
-            error!("Failed to upsert last synced event: {:?}", e);
-            eyre::eyre!("Failed to upsert last synced event: {:?}", e)
-        })?;
+        .await?;
 
     Ok(())
 }
@@ -155,9 +237,17 @@ pub async fn get_last_synced_slot(
 }
 
 pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {
-    let exists = l1_deposit::Entity::find()
+    let exists_in_deposit = l1_deposit::Entity::find()
         .filter(l1_deposit::Column::TxHash.eq(tx_hash))
         .one(db)
         .await?;
-    Ok(exists.is_some())
+    if exists_in_deposit.is_some() {
+        return Ok(true);
+    }
+
+    let exists_in_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
+        .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash))
+        .one(db)
+        .await?;
+    Ok(exists_in_lifecycle.is_some())
 }

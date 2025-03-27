@@ -69,7 +69,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Rest of the migration remains unchanged
         // 2. Create twine_lifecycle_l1_transactions table
         manager
             .create_table(

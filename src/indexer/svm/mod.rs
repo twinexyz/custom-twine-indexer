@@ -2,7 +2,7 @@ mod db;
 mod parser;
 mod subscriber;
 
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 use super::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use anchor_client::{Client, Cluster};
@@ -29,7 +29,7 @@ impl ChainIndexer for SVMIndexer {
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
-        contract_addrs: Vec<String>,
+        _contract_addrs: Vec<String>,
     ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ADDRESS")?;
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
@@ -70,9 +70,7 @@ impl ChainIndexer for SVMIndexer {
                 )
                 .await
                 {
-                    Ok(events) => {
-                        break events;
-                    }
+                    Ok(events) => break events,
                     Err(e) if retries < MAX_RETRIES => {
                         retries += 1;
                         error!(
@@ -100,7 +98,7 @@ impl ChainIndexer for SVMIndexer {
                     }
                 }
 
-                if let Some(parsed) = parser::parse_log(&logs, signature.clone()) {
+                if let Some(parsed) = parser::parse_log(&logs, signature.clone(), &self.db).await {
                     if parsed.slot_number <= last_synced {
                         continue;
                     }
@@ -112,7 +110,7 @@ impl ChainIndexer for SVMIndexer {
                         chain_id: Set(self.chain_id as i64),
                         block_number: Set(parsed.slot_number),
                     };
-                    Self::process_event_static(&self.db, parsed.event, &last_synced_model).await?;
+                    Self::process_event_static(&self.db, parsed.model, &last_synced_model).await?;
                     processed_count += 1;
                 }
             }
@@ -135,13 +133,11 @@ impl ChainIndexer for SVMIndexer {
                     match subscriber::subscribe_stream(
                         &indexer.ws_url,
                         &indexer.twine_chain_id,
-                        &indexer.tokens_gateway_id,
+                        &indexer.twine_chain_id,
                     )
                     .await
                     {
-                        Ok(stream) => {
-                            break stream;
-                        }
+                        Ok(stream) => break stream,
                         Err(e) if retries < MAX_RETRIES => {
                             retries += 1;
                             error!(
@@ -155,7 +151,9 @@ impl ChainIndexer for SVMIndexer {
                 };
 
                 while let Some((logs, signature)) = stream.next().await {
-                    if let Some(parsed) = parser::parse_log(&logs, signature.clone()) {
+                    if let Some(parsed) =
+                        parser::parse_log(&logs, signature.clone(), &indexer.db).await
+                    {
                         if parsed.slot_number <= current_slot as i64 {
                             continue;
                         }
@@ -171,12 +169,11 @@ impl ChainIndexer for SVMIndexer {
                             block_number: Set(parsed.slot_number),
                         };
 
-                        match indexer.process_event(parsed.event, &last_synced).await {
-                            Ok(_) => {
-                                info!("Processed live event at slot {} ", parsed.slot_number)
-                            }
+                        match indexer.process_event(parsed.model, &last_synced).await {
+                            Ok(_) => info!("Processed live event at slot {}", parsed.slot_number),
                             Err(e) => {
                                 if e.to_string().contains("duplicate key value") {
+                                    // Ignore duplicate key errors
                                 } else {
                                     error!("Failed to process live event: {:?}", e);
                                 }
@@ -204,16 +201,16 @@ impl ChainIndexer for SVMIndexer {
 
 impl SVMIndexer {
     async fn get_current_slot(&self) -> Result<u64> {
-        let rpc_url = self.rpc_url.clone(); // Clone outside the loop
-        let twine_chain_id = self.twine_chain_id.clone(); // Clone outside the loop
+        let rpc_url = self.rpc_url.clone();
+        let twine_chain_id = self.twine_chain_id.clone();
         let mut retries = 0;
 
         loop {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(10),
                 tokio::task::spawn_blocking({
-                    let rpc_url = rpc_url.clone(); // Clone for the closure
-                    let twine_chain_id = twine_chain_id.clone(); // Clone for the closure
+                    let rpc_url = rpc_url.clone();
+                    let twine_chain_id = twine_chain_id.clone();
                     move || {
                         let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
                             Client::new(
@@ -226,8 +223,7 @@ impl SVMIndexer {
                         program
                             .rpc()
                             .get_slot_with_commitment(
-                                anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(
-                                ),
+                                anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
                             )
                             .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
                     }
@@ -235,9 +231,7 @@ impl SVMIndexer {
             )
             .await
             {
-                Ok(Ok(slot)) => {
-                    return Ok(slot?);
-                }
+                Ok(Ok(slot)) => return Ok(slot?),
                 Ok(Err(e)) if retries < MAX_RETRIES => {
                     retries += 1;
                     error!(
@@ -262,27 +256,32 @@ impl SVMIndexer {
 
     async fn process_event_static(
         db: &DatabaseConnection,
-        event: serde_json::Value,
+        model: parser::DbModel,
         last_synced: &crate::entities::last_synced::ActiveModel,
     ) -> Result<()> {
-        let db_model = db::DbModel::try_from(event)?;
-        db::insert_model(db_model, last_synced.clone(), db).await?;
-
-        let chain_id = last_synced.chain_id.as_ref();
-        let block_number = last_synced.block_number.as_ref();
+        db::insert_model(
+            parser::ParsedEvent {
+                model,
+                slot_number: last_synced.block_number.as_ref().clone(),
+            },
+            last_synced.clone(),
+            db,
+        )
+        .await?;
         info!(
             "Processed event and updated last_synced for chain_id: {}, slot: {}",
-            chain_id, block_number
+            last_synced.chain_id.as_ref(),
+            last_synced.block_number.as_ref()
         );
         Ok(())
     }
 
     async fn process_event(
         &self,
-        event: serde_json::Value,
+        model: parser::DbModel,
         last_synced: &crate::entities::last_synced::ActiveModel,
     ) -> Result<()> {
-        Self::process_event_static(&self.db, event, last_synced).await
+        Self::process_event_static(&self.db, model, last_synced).await
     }
 }
 
