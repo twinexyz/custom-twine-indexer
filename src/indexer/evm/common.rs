@@ -26,22 +26,45 @@ pub async fn poll_missing_logs(
     last_synced: u64,
     contract_addresses: &[String],
 ) -> Result<Vec<Log>> {
+    const MAX_BLOCKS_PER_REQUEST: u64 = 1000;
+
     let current_block = provider.get_block_number().await?;
-    info!("Current block is: {}", current_block);
-    info!("Last synced block is: {}", last_synced);
+    info!("Current block: {}", current_block);
+    info!("Last synced block: {}", last_synced);
+
     if last_synced == current_block {
         return Ok(Vec::new());
     }
 
     let addresses = contract_addresses
-        .into_iter()
+        .iter()
         .map(|addr| addr.parse::<Address>().unwrap())
         .collect::<Vec<Address>>();
-    let mut filter = Filter::new()
-        .select((last_synced + 1)..=(current_block))
-        .address(addresses);
-    let logs = provider.get_logs(&filter).await?;
-    Ok(logs)
+
+    let mut all_logs = Vec::new();
+    let mut start_block = last_synced + 1;
+
+    while start_block <= current_block {
+        let end_block = (start_block + MAX_BLOCKS_PER_REQUEST - 1).min(current_block);
+        info!("Fetching logs from blocks {} to {}", start_block, end_block);
+
+        let filter = Filter::new()
+            .select(start_block..=end_block)
+            .address(addresses.clone());
+
+        match provider.get_logs(&filter).await {
+            Ok(logs) => all_logs.extend(logs),
+            Err(e) => {
+                error!("Failed to fetch logs for blocks {}-{}: {}", start_block, end_block, e);
+                return Err(e.into());
+            }
+        }
+
+        start_block = end_block + 1;
+    }
+
+    info!("Total logs fetched: {}", all_logs.len());
+    Ok(all_logs)
 }
 
 pub async fn create_ws_provider(ws_rpc_url: String) -> Result<impl Provider> {
