@@ -25,7 +25,8 @@ pub struct SVMIndexer {
 #[async_trait]
 impl ChainIndexer for SVMIndexer {
     async fn new(
-        rpc_url: String,
+        http_rpc_url: String,
+        ws_rpc_url: String,
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
