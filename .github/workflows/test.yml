@@ -23,6 +23,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check:
+    name: cargo check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set Git Credentials
+        run: |
+          git config --global url."https://${{ secrets.GH_ACTION_PAT }}@github.com".insteadOf "https://github.com"
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Cargo Check
+        run: cargo check
+      - name: Clean Up private Repo
+        run: rm -rf ~/.git-credentials
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
   test:
     name: cargo test
     runs-on: ubuntu-24.04
@@ -32,11 +61,23 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: |
-          git config --global credential.helper store
-          echo "https://${{github.actor}}:${{ secrets.GH_ACTION_PAT }}@github.com" > ~/.git-credentials
-          chmod 600 ~/.git-credentials
-          cargo test --all-features
+      - name: Set Git Credentials
+        run: |
+          git config --global url."https://${{ secrets.GH_ACTION_PAT }}@github.com".insteadOf "https://github.com"
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Cargo Test
+        run: cargo test --all-features
+      - name: Clean Up private Repo
+        run: rm -rf ~/.git-credentials
       - name: Handle build failure
         if: ${{ failure() }}
         run: echo "Build failed. Check logs for details."
@@ -54,6 +95,15 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Rustfmt Check
         uses: actions-rust-lang/rustfmt@v1
       - name: Handle build failure
