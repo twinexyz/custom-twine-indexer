@@ -25,7 +25,8 @@ pub struct SVMIndexer {
 #[async_trait]
 impl ChainIndexer for SVMIndexer {
     async fn new(
-        rpc_url: String,
+        http_rpc_url: String,
+        ws_rpc_url: String,
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
@@ -33,8 +34,8 @@ impl ChainIndexer for SVMIndexer {
     ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ADDRESS")?;
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
-        let rpc_url = std::env::var("SOLANA_RPC_URL").unwrap_or(rpc_url);
-        let ws_url = std::env::var("SOLANA_WS_URL").unwrap();
+        let rpc_url = std::env::var("SOLANA_RPC_URL").unwrap_or(http_rpc_url);
+        let ws_url = std::env::var("SOLANA_WS_URL").unwrap_or(ws_rpc_url);
 
         Ok(Self {
             db: db.clone(),

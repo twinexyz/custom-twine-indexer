@@ -16,7 +16,8 @@ pub const RETRY_DELAY: Duration = Duration::from_millis(5000);
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
     async fn new(
-        rpc_url: String,
+        http_rpc_url: String,
+        ws_rpc_url: String,
         chain_id: u64,
         starting_block: u64,
         db: &DatabaseConnection,
@@ -30,9 +31,16 @@ pub trait ChainIndexer: Send + Sync {
 }
 
 macro_rules! create_and_spawn_indexer {
-    ($type:ty, $rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $name:expr, $contracts:expr) => {{
-        let mut indexer =
-            <$type>::new($rpc_url, $chain_id, $starting_block, &$db_conn, $contracts).await?;
+    ($type:ty, $http_rpc_url:expr, $ws_rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $name:expr, $contracts:expr) => {{
+        let mut indexer = <$type>::new(
+            $http_rpc_url,
+            $ws_rpc_url,
+            $chain_id,
+            $starting_block,
+            &$db_conn,
+            $contracts,
+        )
+        .await?;
         tokio::spawn(async move {
             info!("Starting {} indexer", $name);
             indexer.run().await
@@ -62,7 +70,8 @@ pub async fn start_indexer(
 
     let evm_handle = create_and_spawn_indexer!(
         evm::EVMIndexer,
-        config.evm.rpc_url,
+        config.evm.http_rpc_url,
+        config.evm.ws_rpc_url,
         config.evm.chain_id,
         config.evm.start_block,
         db_conn,
@@ -72,7 +81,8 @@ pub async fn start_indexer(
 
     let twine_handle = create_and_spawn_indexer!(
         twine::TwineIndexer,
-        config.twine.rpc_url,
+        config.twine.http_rpc_url,
+        config.twine.ws_rpc_url,
         config.twine.chain_id,
         config.twine.start_block,
         db_conn,
@@ -82,7 +92,8 @@ pub async fn start_indexer(
 
     let svm_handle = create_and_spawn_indexer!(
         svm::SVMIndexer,
-        config.solana.rpc_url,
+        config.solana.http_rpc_url,
+        config.solana.ws_rpc_url,
         config.solana.chain_id,
         config.solana.start_block,
         db_conn,

@@ -42,10 +42,14 @@ export L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 export TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
 export TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
 
-# chain specifics (notice the `__` here)
-export EVM__RPC_URL="ws://0.0.0.0:8571"
-export TWINE__RPC_URL="ws://0.0.0.0:8546"
-export SOLANA__RPC_URL="http://127.0.0.1:8899"
+# chain specifics
+export EVM__HTTP_RPC_URL="http://0.0.0.0:8570"
+export TWINE__HTTP_RPC_URL="http://0.0.0.0:8545"
+export SOLANA__HTTP_RPC_URL="http://0.0.0.0:8899"
+
+export EVM__WS_RPC_URL="ws://0.0.0.0:8571"
+export TWINE__WS_RPC_URL="ws://0.0.0.0:8546"
+export SOLANA__WS_RPC_URL="ws://0.0.0.0:8590"
 
 export EVM__CHAIN_ID=17000
 export SOLANA__CHAIN_ID=900
@@ -54,9 +58,6 @@ export TWINE__CHAIN_ID=1337
 export EVM__START_BLOCK=10
 export TWINE__START_BLOCK=10
 export SOLANA__START_BLOCK=10
-
-# solana specific
-export SOLANA_WS_URL="ws://127.0.0.1:8900"
 ``` 
 
 **Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
@@ -98,9 +99,13 @@ L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 TOKENS_GATEWAY_PROGRAM_ADDRESS="BEdLPRG4d8TyY293gFuVkLE5zQ9qAeD1YWXpMkNyiYS"
 TWINE_CHAIN_PROGRAM_ADDRESS="8P6bCmFNhi3ZtTYRf4MwtsNkvV6NhtbVocQGFyymcSr5"
 
-EVM__RPC_URL="wss://rpc.ethereum.co"
-TWINE__RPC_URL="wss://rpc.twine.co"
-SOLANA__RPC_URL="http://rpc.solana.co"
+EVM__WS_RPC_URL="wss://rpc.ethereum.co"
+TWINE__WS_RPC_URL="wss://rpc.twine.co"
+SOLANA__WS_RPC_URL="wss://rpc.solana.co"
+
+EVM__HTTP_RPC_URL="https://rpc.ethereum.co"
+TWINE__HTTP_RPC_URL="https://rpc.twine.co"
+SOLANA__HTTP_RPC_URL="https://rpc.solana.co"
 
 EVM__CHAIN_ID=17000
 SOLANA__CHAIN_ID=900
@@ -109,8 +114,6 @@ TWINE__CHAIN_ID=1337
 EVM__START_BLOCK=1000000
 TWINE__START_BLOCK=0
 SOLANA__START_BLOCK=1999223
-
-SOLANA_WS_URL="wss://rpc.solana.co"
 ```
 **Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 

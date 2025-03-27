@@ -9,7 +9,8 @@ pub struct ApiConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ChainConfig {
-    pub rpc_url: String,
+    pub http_rpc_url: String,
+    pub ws_rpc_url: String,
     pub chain_id: u64,
     pub start_block: u64,
 }
@@ -25,7 +26,6 @@ pub struct IndexerConfig {
     pub l1_erc20_gateway_address: String,
     pub tokens_gateway_program_address: String,
     pub twine_chain_program_address: String,
-    pub solana_ws_url: String,
 }
 
 impl ApiConfig {
