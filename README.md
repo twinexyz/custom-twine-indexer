@@ -55,12 +55,14 @@ export ETHEREUM__CHAIN_ID=17000
 export SOLANA__CHAIN_ID=900
 export TWINE__CHAIN_ID=1337
 
+export ETHEREUM__BLOCK_SYNC_BATCH_SIZE=10
+export TWINE__BLOCK_SYNC_BATCH_SIZE=100
+export SOLANA__BLOCK_SYNC_BATCH_SIZE=1000
+
 export ETHEREUM__START_BLOCK=10
 export TWINE__START_BLOCK=10
 export SOLANA__START_BLOCK=10
 ``` 
-
-**Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 
 ### 2. Run the Indexer and API
 
@@ -112,11 +114,14 @@ ETHEREUM__CHAIN_ID=17000
 SOLANA__CHAIN_ID=900
 TWINE__CHAIN_ID=1337
 
+ETHEREUM__BLOCK_SYNC_BATCH_SIZE=10
+TWINE__BLOCK_SYNC_BATCH_SIZE=100
+SOLANA__BLOCK_SYNC_BATCH_SIZE=1000
+
 ETHEREUM__START_BLOCK=1000000
 TWINE__START_BLOCK=0
 SOLANA__START_BLOCK=1999223
 ```
-**Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 
 ### 2. Start Services with Docker Compose
 
