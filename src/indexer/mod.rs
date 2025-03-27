@@ -69,10 +69,10 @@ pub async fn start_indexer(
 
     let evm_handle = create_and_spawn_indexer!(
         evm::EthereumIndexer,
-        config.evm.http_rpc_url,
-        config.evm.ws_rpc_url,
-        config.evm.chain_id,
-        config.evm.start_block,
+        config.ethereum.http_rpc_url,
+        config.ethereum.ws_rpc_url,
+        config.ethereum.chain_id,
+        config.ethereum.start_block,
         db_conn,
         "EVM",
         evm_contracts
