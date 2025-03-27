@@ -1,6 +1,5 @@
 mod evm;
 mod svm;
-mod twine;
 
 use crate::config::IndexerConfig;
 use async_trait::async_trait;
@@ -69,7 +68,7 @@ pub async fn start_indexer(
     ];
 
     let evm_handle = create_and_spawn_indexer!(
-        evm::EVMIndexer,
+        evm::EthereumIndexer,
         config.evm.http_rpc_url,
         config.evm.ws_rpc_url,
         config.evm.chain_id,
@@ -80,7 +79,7 @@ pub async fn start_indexer(
     );
 
     let twine_handle = create_and_spawn_indexer!(
-        twine::TwineIndexer,
+        evm::TwineIndexer,
         config.twine.http_rpc_url,
         config.twine.ws_rpc_url,
         config.twine.chain_id,
