@@ -1,9 +1,9 @@
-mod chain;
 mod db;
 mod parser;
 
-use super::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use crate::entities::last_synced;
+use crate::indexer::evm;
+use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
 use async_trait::async_trait;
@@ -36,8 +36,8 @@ impl ChainIndexer for TwineIndexer {
         db: &DatabaseConnection,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
-        let ws_provider = Self::create_ws_provider(ws_rpc_url).await?;
-        let http_provider = Self::create_http_provider(http_rpc_url).await?;
+        let ws_provider = super::create_ws_provider(ws_rpc_url).await?;
+        let http_provider = super::create_http_provider(http_rpc_url).await?;
         Ok(Self {
             ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
@@ -59,7 +59,7 @@ impl ChainIndexer for TwineIndexer {
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting historical sync up to block {}", current_block);
-            let logs = chain::poll_missing_logs(
+            let logs = evm::common::poll_missing_logs(
                 &*historical_indexer.http_provider,
                 last_synced as u64,
                 &historical_indexer.contract_addrs,
@@ -71,9 +71,11 @@ impl ChainIndexer for TwineIndexer {
 
         let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
-            let mut stream =
-                chain::subscribe_stream(&*live_indexer.ws_provider, &live_indexer.contract_addrs)
-                    .await?;
+            let mut stream = evm::common::subscribe_stream(
+                &*live_indexer.ws_provider,
+                &live_indexer.contract_addrs,
+            )
+            .await?;
 
             while let Some(log) = stream.next().await {
                 match parser::parse_log(log) {
@@ -103,61 +105,6 @@ impl ChainIndexer for TwineIndexer {
 }
 
 impl TwineIndexer {
-    async fn create_ws_provider(ws_rpc_url: String) -> Result<impl Provider> {
-        let mut attempt = 0;
-        loop {
-            attempt += 1;
-            match ProviderBuilder::new()
-                .on_ws(WsConnect::new(&ws_rpc_url))
-                .await
-            {
-                Ok(provider) => {
-                    info!("Connected to WS provider on attempt {}", attempt);
-                    return Ok(provider);
-                }
-                Err(e) => {
-                    error!("WS Attempt {} failed to connect: {}.", attempt, e);
-                    if attempt >= MAX_RETRIES {
-                        error!("Exceeded maximum WS connection attempts.");
-                        return Err(Report::from(e));
-                    }
-                    // Wait before retrying
-                    std::thread::sleep(RETRY_DELAY);
-                }
-            }
-        }
-    }
-
-    async fn create_http_provider(http_rpc_url: String) -> Result<impl Provider> {
-        let parsed_url = http_rpc_url.parse()?;
-        let provider = ProviderBuilder::new().on_http(parsed_url);
-        let mut attempt = 0;
-        loop {
-            attempt += 1;
-            // Test if the provider is working by fetching the chain ID
-            match provider.get_chain_id().await {
-                Ok(chain_id) => {
-                    info!(
-                        "Successfully connected to HTTP provider on attempt {}.",
-                        attempt
-                    );
-                    return Ok(provider);
-                }
-                Err(e) => {
-                    error!(
-                        "Attempt {} failed to connect to HTTP provider: {}",
-                        attempt, e
-                    );
-                    if attempt >= MAX_RETRIES {
-                        error!("Exceeded maximum connection attempts.");
-                        return Err(eyre::Report::from(e));
-                    }
-                    tokio::time::sleep(RETRY_DELAY).await;
-                }
-            }
-        }
-    }
-
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
         for log in logs {
