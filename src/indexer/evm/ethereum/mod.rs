@@ -4,6 +4,7 @@ mod parser;
 use crate::entities::last_synced;
 use crate::indexer::evm;
 use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
+use super::EVMChain;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
@@ -35,8 +36,8 @@ impl ChainIndexer for EthereumIndexer {
         db: &DatabaseConnection,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
-        let ws_provider = super::create_ws_provider(ws_rpc_url).await?;
-        let http_provider = super::create_http_provider(http_rpc_url).await?;
+        let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Ethereum).await?;
+        let http_provider = super::create_http_provider(http_rpc_url, EVMChain::Ethereum).await?;
         Ok(Self {
             ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
@@ -58,6 +59,7 @@ impl ChainIndexer for EthereumIndexer {
             &*self.http_provider,
             last_synced as u64,
             &self.contract_addrs,
+            EVMChain::Ethereum
         )
         .await?;
         self.catchup_missing_blocks(logs).await?;
@@ -69,6 +71,7 @@ impl ChainIndexer for EthereumIndexer {
             match evm::common::subscribe_stream(
                 &*live_indexer.ws_provider,
                 &live_indexer.contract_addrs,
+                EVMChain::Ethereum
             )
             .await
             {
