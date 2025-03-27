@@ -13,6 +13,7 @@ pub struct ChainConfig {
     pub ws_rpc_url: String,
     pub chain_id: u64,
     pub start_block: u64,
+    pub block_sync_batch_size: u64,
 }
 
 #[derive(Deserialize, Debug, Clone)]

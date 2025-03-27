@@ -1,10 +1,10 @@
 mod db;
 mod parser;
 
+use super::EVMChain;
 use crate::entities::last_synced;
 use crate::indexer::evm;
 use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
-use super::EVMChain;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
@@ -50,28 +50,32 @@ impl ChainIndexer for EthereumIndexer {
 
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
-        // Retrieve the last synced block from the DB (or use start_block if not available)
+
         let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
         let current_block = self.http_provider.get_block_number().await?;
 
-        // Process historical logs
+        let max_blocks_per_request = std::env::var("ETHEREUM__BLOCK_SYNC_BATCH_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(100);
+
         let logs = evm::common::poll_missing_logs(
             &*self.http_provider,
             last_synced as u64,
+            max_blocks_per_request,
             &self.contract_addrs,
-            EVMChain::Ethereum
+            EVMChain::Ethereum,
         )
         .await?;
         self.catchup_missing_blocks(logs).await?;
 
-        // Spawn live indexing task
         let live_indexer = self.clone();
         tokio::spawn(async move {
             info!("Starting live indexing from block {}", current_block + 1);
             match evm::common::subscribe_stream(
                 &*live_indexer.ws_provider,
                 &live_indexer.contract_addrs,
-                EVMChain::Ethereum
+                EVMChain::Ethereum,
             )
             .await
             {

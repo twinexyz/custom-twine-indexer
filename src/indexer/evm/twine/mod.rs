@@ -1,10 +1,10 @@
 mod db;
 mod parser;
 
+use super::EVMChain;
 use crate::entities::last_synced;
 use crate::indexer::evm;
 use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
-use super::EVMChain;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
 use async_trait::async_trait;
@@ -52,17 +52,21 @@ impl ChainIndexer for TwineIndexer {
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
-        info!("last synced block is: {last_synced}");
         let current_block = self.http_provider.get_block_number().await?;
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            let max_blocks_per_request = std::env::var("TWINE__BLOCK_SYNC_BATCH_SIZE")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(100);
             info!("Starting historical sync up to block {}", current_block);
             let logs = evm::common::poll_missing_logs(
                 &*historical_indexer.http_provider,
                 last_synced as u64,
+                max_blocks_per_request,
                 &historical_indexer.contract_addrs,
                 EVMChain::Twine,
             )

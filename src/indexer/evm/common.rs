@@ -1,5 +1,5 @@
-use crate::indexer::{MAX_RETRIES, RETRY_DELAY};
 use super::EVMChain;
+use crate::indexer::{MAX_RETRIES, RETRY_DELAY};
 use alloy::{
     primitives::{address, Address},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -32,12 +32,12 @@ pub async fn subscribe_stream(
 pub async fn poll_missing_logs(
     provider: &dyn Provider,
     last_synced: u64,
+    max_blocks_per_request: u64,
     contract_addresses: &[String],
     chain: EVMChain,
 ) -> Result<Vec<Log>> {
-    const MAX_BLOCKS_PER_REQUEST: u64 = 1000;
-
     let current_block = provider.get_block_number().await?;
+    info!("Max blocks per request : {}", max_blocks_per_request);
     info!("Current block: {}", current_block);
 
     if last_synced == current_block {
@@ -55,7 +55,7 @@ pub async fn poll_missing_logs(
     let mut start_block = last_synced + 1;
 
     while start_block <= current_block {
-        let end_block = (start_block + MAX_BLOCKS_PER_REQUEST - 1).min(current_block);
+        let end_block = (start_block + max_blocks_per_request - 1).min(current_block);
         info!(start_block, end_block, "Fetching block range");
 
         let filter = Filter::new()
@@ -66,7 +66,7 @@ pub async fn poll_missing_logs(
             Ok(logs) => {
                 info!(log_count = logs.len(), "Fetched logs");
                 all_logs.extend(logs);
-            },
+            }
             Err(e) => {
                 error!(error = %e, "Failed to fetch logs");
                 return Err(e.into());
@@ -81,10 +81,7 @@ pub async fn poll_missing_logs(
 }
 
 #[instrument(skip_all, fields(CHAIN = %chain))]
-pub async fn create_ws_provider(
-    ws_rpc_url: String,
-    chain: EVMChain,
-) -> Result<impl Provider> {
+pub async fn create_ws_provider(ws_rpc_url: String, chain: EVMChain) -> Result<impl Provider> {
     let mut attempt = 0;
     loop {
         attempt += 1;
@@ -114,11 +111,9 @@ pub async fn create_ws_provider(
 }
 
 #[instrument(skip_all, fields(CHAIN = %chain))]
-pub async fn create_http_provider(
-    http_rpc_url: String,
-    chain: EVMChain,
-) -> Result<impl Provider> {
-    let parsed_url = http_rpc_url.parse()
+pub async fn create_http_provider(http_rpc_url: String, chain: EVMChain) -> Result<impl Provider> {
+    let parsed_url = http_rpc_url
+        .parse()
         .map_err(|e| eyre::eyre!("Invalid HTTP URL: {}", e))?;
 
     let provider = ProviderBuilder::new().on_http(parsed_url);
