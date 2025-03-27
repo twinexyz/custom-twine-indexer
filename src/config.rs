@@ -18,7 +18,7 @@ pub struct ChainConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct IndexerConfig {
     pub database_url: String,
-    pub evm: ChainConfig,
+    pub ethereum: ChainConfig,
     pub solana: ChainConfig,
     pub twine: ChainConfig,
     pub l1_message_queue_address: String,
