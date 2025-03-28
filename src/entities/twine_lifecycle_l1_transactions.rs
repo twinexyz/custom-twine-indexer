@@ -4,21 +4,17 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "l1_deposit")]
+#[sea_orm(table_name = "twine_lifecycle_l1_transactions")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub nonce: i64,
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key)]
+    pub id: i32,
+    pub hash: String,
     pub chain_id: i64,
-    pub block_number: Option<i64>,
-    pub slot_number: Option<i64>,
-    pub from: String,
-    pub to_twine_address: String,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub tx_hash: String,
-    pub amount: String,
+    pub l1_transaction_count: i64,
+    pub l1_gas_price: Decimal,
+    pub timestamp: DateTimeWithTimeZone,
     pub created_at: DateTimeWithTimeZone,
+    pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,28 +1,58 @@
-use eyre::{Context, Result};
-use std::env;
+use eyre::Result;
+use serde::Deserialize;
 
-#[derive(Clone, Debug)]
-pub struct Config {
+#[derive(Deserialize, Debug, Clone)]
+pub struct ApiConfig {
     pub database_url: String,
-    pub evm_rpc_url: String,
     pub api_port: u16,
 }
 
-impl Config {
-    pub fn from_env() -> Result<Self> {
-        let database_url =
-            env::var("DATABASE_URL").context("Failed to read DATABASE_URL environment variable")?;
-        let evm_rpc_url =
-            env::var("EVM_RPC_URL").unwrap_or_else(|_| "ws://localhost:8546".to_owned());
-        let api_port = env::var("HTTP_PORT")
-            .map(|addr| addr.parse().context("Invalid HTTP_PORT format"))
-            .unwrap_or_else(|_| Ok(7777))
-            .context("Failed to parse HTTP_PORT")?;
+#[derive(Deserialize, Debug, Clone)]
+pub struct ChainConfig {
+    pub http_rpc_url: String,
+    pub ws_rpc_url: String,
+    pub chain_id: u64,
+    pub start_block: u64,
+    pub block_sync_batch_size: u64,
+}
 
-        Ok(Self {
-            database_url,
-            evm_rpc_url,
-            api_port,
-        })
+#[derive(Deserialize, Debug, Clone)]
+pub struct IndexerConfig {
+    pub database_url: String,
+    pub ethereum: ChainConfig,
+    pub solana: ChainConfig,
+    pub twine: ChainConfig,
+    pub l1_message_queue_address: String,
+    pub l2_twine_messenger_address: String,
+    pub l1_erc20_gateway_address: String,
+    pub tokens_gateway_program_address: String,
+    pub twine_chain_program_address: String,
+}
+
+impl ApiConfig {
+    pub fn from_env() -> Result<Self> {
+        config::Config::builder()
+            .add_source(
+                config::Environment::default()
+                    .separator("__")
+                    .list_separator(","),
+            )
+            .build()?
+            .try_deserialize()
+            .map_err(eyre::Report::from)
+    }
+}
+
+impl IndexerConfig {
+    pub fn from_env() -> Result<Self> {
+        config::Config::builder()
+            .add_source(
+                config::Environment::default()
+                    .separator("__")
+                    .list_separator(","),
+            )
+            .build()?
+            .try_deserialize()
+            .map_err(eyre::Report::from)
     }
 }

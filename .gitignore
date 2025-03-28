@@ -1,5 +1,6 @@
 target/
 .env
+test-ledger/
 Dockerfile.**
 ingress.yaml
 env.json
