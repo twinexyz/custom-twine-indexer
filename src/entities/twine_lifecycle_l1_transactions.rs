@@ -10,8 +10,6 @@ pub struct Model {
     pub id: i32,
     pub hash: String,
     pub chain_id: i64,
-    pub l1_transaction_count: i64,
-    pub l1_gas_price: Decimal,
     pub timestamp: DateTimeWithTimeZone,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

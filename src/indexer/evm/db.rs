@@ -71,8 +71,6 @@ pub async fn insert_model(
                 id: NotSet,
                 hash: Set(tx_hash.clone()),
                 chain_id: Set(chain_id),
-                l1_transaction_count: Set(0),
-                l1_gas_price: Set(0.into()),
                 timestamp: Set(batch.timestamp),
                 created_at: Set(batch.created_at),
                 updated_at: Set(batch.updated_at),
@@ -93,10 +91,12 @@ pub async fn insert_model(
                 l2_transaction_count: Set(0),
                 l2_fair_gas_price: Set(0.into()),
                 chain_id: Set(chain_id),
+                l1_transaction_count: Set(0),
+                l1_gas_price: Set(0.into()),
                 commit_id: Set(Some(inserted_lifecycle.id as i64)),
                 execute_id: Set(None),
                 created_at: Set(batch.created_at),
-                updated_at: Set(Utc::now().into()), // Update timestamp for new commit
+                updated_at: Set(Utc::now().into()),
             };
             twine_transaction_batch_detail::Entity::insert(detail_model)
                 .on_conflict(
@@ -159,13 +159,14 @@ pub async fn insert_model(
             })?;
         }
 
-        DbModel::UpdateTwineLifecycleL1Transactions {
+        DbModel::UpdateTwineTransactionBatchDetail {
             start_block,
             end_block,
             batch_hash,
             chain_id,
             l1_transaction_count,
         } => {
+            // Find the batch to get the batch number
             let batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
@@ -176,20 +177,27 @@ pub async fn insert_model(
                     end_block: end_block as u64,
                 })?;
 
-            let lifecycle_entries = twine_lifecycle_l1_transactions::Entity::find()
-                .filter(twine_lifecycle_l1_transactions::Column::ChainId.eq(chain_id))
-                .all(db)
-                .await?;
-
-            for entry in lifecycle_entries {
-                let mut lifecycle: twine_lifecycle_l1_transactions::ActiveModel = entry.into();
-                lifecycle.l1_transaction_count = Set(l1_transaction_count);
-                lifecycle.updated_at = Set(Utc::now().into());
-                lifecycle.update(db).await.map_err(|e| {
-                    error!("Failed to update TwineLifecycleL1Transactions: {:?}", e);
-                    eyre::eyre!("Failed to update TwineLifecycleL1Transactions: {:?}", e)
+            // Update the corresponding batch detail
+            let detail = twine_transaction_batch_detail::Entity::find()
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "Batch detail not found for batch_number: {}, chain_id: {}",
+                        batch.number,
+                        chain_id
+                    )
                 })?;
-            }
+
+            let mut detail: twine_transaction_batch_detail::ActiveModel = detail.into();
+            detail.l1_transaction_count = Set(l1_transaction_count);
+            detail.updated_at = Set(Utc::now().into());
+            detail.update(db).await.map_err(|e| {
+                error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
+                eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
+            })?;
         }
 
         DbModel::L1Deposit(model) => {

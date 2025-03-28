@@ -120,7 +120,7 @@ pub enum DbModel {
         model: twine_lifecycle_l1_transactions::ActiveModel,
         batch_number: i32,
     },
-    UpdateTwineLifecycleL1Transactions {
+    UpdateTwineTransactionBatchDetail {
         start_block: i64,
         end_block: i64,
         batch_hash: String,
@@ -135,8 +135,8 @@ pub struct ParsedLog {
     pub block_number: i64,
 }
 
-fn generate_number(start_block: u64, end_block: u64, batch_hash: &str) -> Result<i32, ParserError> {
-    let input = format!("{}:{}:{}", start_block, end_block, batch_hash);
+fn generate_number(start_block: u64, end_block: u64) -> Result<i32, ParserError> {
+    let input = format!("{}:{}", start_block, end_block);
     let digest = hash(input.as_bytes());
     let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
     // Mask to fit within i32 range (0 to 2^31-1)
@@ -263,7 +263,6 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                     block_number,
                 })
             }
-
             CommitBatch::SIGNATURE_HASH => {
                 println!("before commit");
                 let decoded =
@@ -272,20 +271,19 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                             event_type: "CommitBatch",
                             source: Box::new(e),
                         })?;
-                println!("raw commit log: {:?}", log);
+
                 let data = decoded.inner.data;
                 let root_hash = format!("{:?}", data.batchHash);
                 let existing_batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(data.startBlock as i64))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(data.endBlock as i64))
-                    .filter(twine_transaction_batch::Column::RootHash.eq(root_hash.clone()))
                     .one(db)
                     .await?;
                 let batch_number = if let Some(batch) = existing_batch {
                     info!("Found existing batch: {:?}", batch);
                     batch.number
                 } else {
-                    let num = generate_number(data.startBlock, data.endBlock, &root_hash)?;
+                    let num = generate_number(data.startBlock, data.endBlock)?;
                     info!("Generated new batch number: {}", num);
                     num
                 };
@@ -335,8 +333,6 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                         id: NotSet,
                         hash: Set(tx_hash_str),
                         chain_id: Set(data.chainId as i64),
-                        l1_transaction_count: Set(0),
-                        l1_gas_price: Set(0.into()),
                         timestamp: Set(timestamp.into()),
                         created_at: Set(timestamp.into()),
                         updated_at: Set(timestamp.into()),
@@ -357,7 +353,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                 })?;
                 let data = decoded.inner.data;
                 let l1_transaction_count = (data.depositCount + data.withdrawCount) as i64;
-                let model = DbModel::UpdateTwineLifecycleL1Transactions {
+                let model = DbModel::UpdateTwineTransactionBatchDetail {
                     start_block: data.startBlock as i64,
                     end_block: data.endBlock as i64,
                     batch_hash: format!("{:?}", data.batchId),

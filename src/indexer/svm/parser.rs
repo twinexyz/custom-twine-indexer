@@ -12,6 +12,7 @@ use tracing::{debug, info};
 
 use crate::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_lifecycle_l1_transactions, twine_transaction_batch,
+    twine_transaction_batch_detail,
 };
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -73,7 +74,7 @@ pub struct CommitBatch {
     pub start_block: u64,
     pub end_block: u64,
     pub chain_id: u64,
-    pub batch_hash: String, // Must match EVM's batchHash
+    pub batch_hash: String,
     #[borsh(skip)]
     pub signature: String,
     pub slot_number: u64,
@@ -116,7 +117,7 @@ pub enum DbModel {
         model: twine_lifecycle_l1_transactions::ActiveModel,
         batch_number: i32,
     },
-    UpdateTwineLifecycleL1Transactions {
+    UpdateTwineTransactionBatchDetail {
         start_block: i64,
         end_block: i64,
         chain_id: i64,
@@ -207,8 +208,8 @@ pub fn parse_borsh<T: BorshDeserialize + HasSignature>(
     Ok(event)
 }
 
-pub fn generate_number(start_block: u64, end_block: u64, batch_hash: &str) -> Result<i32> {
-    let input = format!("{}:{}:{}", start_block, end_block, batch_hash);
+pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
+    let input = format!("{}:{}", start_block, end_block);
     let digest = blake3::hash(input.as_bytes());
     let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
     let masked_value = value & 0x7FFF_FFFF;
@@ -359,7 +360,6 @@ pub async fn parse_log(
             let existing_batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(commit.start_block as i64))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(commit.end_block as i64))
-                .filter(twine_transaction_batch::Column::RootHash.eq(commit.batch_hash.clone()))
                 .one(db)
                 .await
                 .ok()?;
@@ -367,7 +367,7 @@ pub async fn parse_log(
                 info!("Found existing batch: {:?}", batch);
                 batch.number
             } else {
-                let num = generate_number(commit.start_block, commit.end_block, &commit.batch_hash)
+                let num = generate_number(commit.start_block, commit.end_block)
                     .expect("Failed to generate batch number");
                 info!("Generated new batch number: {:?}", num);
                 num
@@ -378,7 +378,7 @@ pub async fn parse_log(
                     timestamp: Set(timestamp.into()),
                     start_block: Set(commit.start_block as i64),
                     end_block: Set(commit.end_block as i64),
-                    root_hash: Set(commit.batch_hash.clone()),
+                    root_hash: Set(String::new()),
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
                 },
@@ -395,7 +395,6 @@ pub async fn parse_log(
             let batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(finalize.start_block as i64))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(finalize.end_block as i64))
-                .filter(twine_transaction_batch::Column::RootHash.eq(finalize.batch_hash.clone()))
                 .one(db)
                 .await
                 .ok()?
@@ -412,8 +411,6 @@ pub async fn parse_log(
                     id: NotSet,
                     hash: Set(tx_hash),
                     chain_id: Set(finalize.chain_id as i64),
-                    l1_transaction_count: Set(0),
-                    l1_gas_price: Set(0.into()),
                     timestamp: Set(timestamp.into()),
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
@@ -429,7 +426,8 @@ pub async fn parse_log(
             let final_tx =
                 parse_borsh::<FinalizedTransaction>(&encoded_data, signature.clone()).ok()?;
             let l1_transaction_count = (final_tx.deposit_count + final_tx.withdraw_count) as i64;
-            let model = DbModel::UpdateTwineLifecycleL1Transactions {
+            let model = DbModel::UpdateTwineTransactionBatchDetail {
+                // Updated to target batch detail
                 start_block: final_tx.start_block as i64,
                 end_block: final_tx.end_block as i64,
                 chain_id: final_tx.chain_id as i64,

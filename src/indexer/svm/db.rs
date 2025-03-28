@@ -56,12 +56,10 @@ pub async fn insert_model(
         } => {
             let start_block = model.start_block.clone().unwrap();
             let end_block = model.end_block.clone().unwrap();
-            let root_hash = model.root_hash.clone().unwrap();
 
             let existing_batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .filter(twine_transaction_batch::Column::RootHash.eq(root_hash.clone()))
                 .one(db)
                 .await?;
 
@@ -74,7 +72,6 @@ pub async fn insert_model(
                         OnConflict::columns([
                             twine_transaction_batch::Column::StartBlock,
                             twine_transaction_batch::Column::EndBlock,
-                            twine_transaction_batch::Column::RootHash,
                         ])
                         .do_nothing()
                         .to_owned(),
@@ -85,7 +82,6 @@ pub async fn insert_model(
                 insert_result
             };
 
-            // Check for an existing lifecycle entry by tx_hash
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
                 .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash.clone()))
                 .one(db)
@@ -99,8 +95,6 @@ pub async fn insert_model(
                     id: NotSet,
                     hash: Set(tx_hash.clone()),
                     chain_id: Set(chain_id),
-                    l1_transaction_count: Set(0),
-                    l1_gas_price: Set(0.into()),
                     timestamp: Set(batch.timestamp),
                     created_at: Set(batch.created_at),
                     updated_at: Set(batch.updated_at),
@@ -118,6 +112,8 @@ pub async fn insert_model(
                 l2_transaction_count: Set(0),
                 l2_fair_gas_price: Set(0.into()),
                 chain_id: Set(chain_id),
+                l1_transaction_count: Set(0), // Initialize with 0
+                l1_gas_price: Set(0.into()),  // Initialize with 0
                 commit_id: Set(Some(inserted_lifecycle.id as i64)),
                 execute_id: Set(None),
                 created_at: Set(batch.created_at),
@@ -180,7 +176,8 @@ pub async fn insert_model(
             detail.updated_at = Set(Utc::now().into());
             detail.update(db).await?;
         }
-        DbModel::UpdateTwineLifecycleL1Transactions {
+        DbModel::UpdateTwineTransactionBatchDetail {
+            // Updated to target batch detail
             start_block,
             end_block,
             chain_id,
@@ -199,17 +196,23 @@ pub async fn insert_model(
                     )
                 })?;
 
-            let lifecycle_entries = twine_lifecycle_l1_transactions::Entity::find()
-                .filter(twine_lifecycle_l1_transactions::Column::ChainId.eq(chain_id))
-                .all(db)
-                .await?;
+            let detail = twine_transaction_batch_detail::Entity::find()
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "Batch detail not found for batch_number: {}, chain_id: {}",
+                        batch.number,
+                        chain_id
+                    )
+                })?;
 
-            for entry in lifecycle_entries {
-                let mut lifecycle = entry.into_active_model();
-                lifecycle.l1_transaction_count = Set(l1_transaction_count);
-                lifecycle.updated_at = Set(Utc::now().into());
-                lifecycle.update(db).await?;
-            }
+            let mut detail = detail.into_active_model();
+            detail.l1_transaction_count = Set(l1_transaction_count);
+            detail.updated_at = Set(Utc::now().into());
+            detail.update(db).await?;
         }
     }
 

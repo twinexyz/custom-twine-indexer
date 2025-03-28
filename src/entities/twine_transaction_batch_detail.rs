@@ -12,6 +12,8 @@ pub struct Model {
     pub l2_transaction_count: i64,
     pub l2_fair_gas_price: Decimal,
     pub chain_id: i64,
+    pub l1_transaction_count: i64,
+    pub l1_gas_price: Decimal,
     pub commit_id: Option<i64>,
     pub execute_id: Option<i64>,
     pub created_at: DateTimeWithTimeZone,

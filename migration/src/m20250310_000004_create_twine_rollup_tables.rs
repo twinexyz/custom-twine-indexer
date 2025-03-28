@@ -93,18 +93,6 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1TransactionCount)
-                            .big_unsigned()
-                            .not_null()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1GasPrice)
-                            .decimal()
-                            .not_null()
-                            .default(Expr::value(0.0)),
-                    )
-                    .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
                             .timestamp_with_time_zone()
                             .not_null(),
@@ -157,6 +145,18 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(TwineTransactionBatchDetail::ChainId)
                             .big_unsigned()
                             .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
+                            .big_unsigned()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
+                            .decimal()
+                            .not_null()
+                            .default(Expr::value(0.0)),
                     )
                     .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).big_unsigned())
                     .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).big_unsigned())
@@ -270,6 +270,8 @@ enum TwineTransactionBatchDetail {
     L2TransactionCount,
     L2FairGasPrice,
     ChainId,
+    L1TransactionCount,
+    L1GasPrice,
     CommitId,
     ExecuteId,
     CreatedAt,
@@ -282,8 +284,6 @@ enum TwineLifecycleL1Transactions {
     Id,
     Hash,
     ChainId,
-    L1TransactionCount,
-    L1GasPrice,
     Timestamp,
     CreatedAt,
     UpdatedAt,
