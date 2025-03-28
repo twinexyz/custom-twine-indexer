@@ -267,6 +267,7 @@ pub async fn insert_model(
             detail.update(db).await?;
         }
         DbModel::UpdateTwineTransactionBatchDetail {
+            // Updated to target batch detail
             start_block,
             end_block,
             chain_id,
@@ -306,6 +307,23 @@ pub async fn insert_model(
 
             let mut detail = detail.into_active_model();
             detail.l1_transaction_count = Set(l1_transaction_count.try_into().unwrap());
+            detail.updated_at = Set(Utc::now().into());
+            detail.update(db).await?;
+            let detail = twine_transaction_batch_detail::Entity::find()
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "Batch detail not found for batch_number: {}, chain_id: {}",
+                        batch.number,
+                        chain_id
+                    )
+                })?;
+
+            let mut detail = detail.into_active_model();
+            detail.l1_transaction_count = Set(l1_transaction_count);
             detail.updated_at = Set(Utc::now().into());
             detail.update(db).await?;
         }

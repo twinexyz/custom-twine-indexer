@@ -95,18 +95,6 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1TransactionCount)
-                            .big_unsigned()
-                            .not_null()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1GasPrice)
-                            .decimal()
-                            .not_null()
-                            .default(Expr::value(0.0)),
-                    )
-                    .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
                             .timestamp_with_time_zone()
                             .not_null(),
