@@ -267,7 +267,6 @@ pub async fn insert_model(
             detail.update(db).await?;
         }
         DbModel::UpdateTwineTransactionBatchDetail {
-            // Updated to target batch detail
             start_block,
             end_block,
             chain_id,

@@ -55,7 +55,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add unique index on (StartBlock, EndBlock, RootHash)
         manager
             .create_index(
                 Index::create()
@@ -64,7 +63,6 @@ impl MigrationTrait for Migration {
                     .table(TwineTransactionBatch::Table)
                     .col(TwineTransactionBatch::StartBlock)
                     .col(TwineTransactionBatch::EndBlock)
-                    .col(TwineTransactionBatch::RootHash)
                     .unique()
                     .to_owned(),
             )
