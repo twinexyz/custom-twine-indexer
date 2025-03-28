@@ -18,8 +18,24 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::twine_batch_l2_blocks::Entity")]
+    TwineBatchL2Blocks,
+    #[sea_orm(has_many = "super::twine_batch_l2_transactions::Entity")]
+    TwineBatchL2Transactions,
     #[sea_orm(has_many = "super::twine_transaction_batch_detail::Entity")]
     TwineTransactionBatchDetail,
+}
+
+impl Related<super::twine_batch_l2_blocks::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::TwineBatchL2Blocks.def()
+    }
+}
+
+impl Related<super::twine_batch_l2_transactions::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::TwineBatchL2Transactions.def()
+    }
 }
 
 impl Related<super::twine_transaction_batch_detail::Entity> for Entity {

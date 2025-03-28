@@ -4,6 +4,8 @@ pub use super::l1_deposit::Entity as L1Deposit;
 pub use super::l1_withdraw::Entity as L1Withdraw;
 pub use super::l2_withdraw::Entity as L2Withdraw;
 pub use super::last_synced::Entity as LastSynced;
+pub use super::twine_batch_l2_blocks::Entity as TwineBatchL2Blocks;
+pub use super::twine_batch_l2_transactions::Entity as TwineBatchL2Transactions;
 pub use super::twine_l1_deposit::Entity as TwineL1Deposit;
 pub use super::twine_l1_withdraw::Entity as TwineL1Withdraw;
 pub use super::twine_l2_withdraw::Entity as TwineL2Withdraw;

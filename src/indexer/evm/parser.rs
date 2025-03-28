@@ -1,6 +1,6 @@
 use crate::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_lifecycle_l1_transactions, twine_transaction_batch,
-    twine_transaction_batch_detail,
+    l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
+    twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
 use alloy::rpc::types::Log;
 use alloy::sol;
@@ -114,6 +114,8 @@ pub enum DbModel {
         model: twine_transaction_batch::ActiveModel,
         chain_id: i64,
         tx_hash: String,
+        l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
+        l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
     },
     TwineTransactionBatchDetail(twine_transaction_batch_detail::ActiveModel),
     TwineLifecycleL1Transactions {
@@ -139,7 +141,6 @@ fn generate_number(start_block: u64, end_block: u64) -> Result<i32, ParserError>
     let input = format!("{}:{}", start_block, end_block);
     let digest = hash(input.as_bytes());
     let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
-    // Mask to fit within i32 range (0 to 2^31-1)
     let masked_value = value & 0x7FFF_FFFF; // Ensures it fits in i32 positive range
     if masked_value > i32::MAX as u64 {
         Err(ParserError::NumberOverflow {
@@ -148,6 +149,18 @@ fn generate_number(start_block: u64, end_block: u64) -> Result<i32, ParserError>
     } else {
         Ok(masked_value as i32)
     }
+}
+
+fn generate_block_hash(block_number: u64) -> String {
+    let input = format!("block:{}", block_number);
+    let digest = hash(input.as_bytes());
+    format!("{:?}", digest)
+}
+
+fn generate_transaction_hash(block_number: u64, tx_index: u64) -> String {
+    let input = format!("tx:{}:{}", block_number, tx_index);
+    let digest = hash(input.as_bytes());
+    format!("{:?}", digest)
 }
 
 pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, Report> {
@@ -287,6 +300,49 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                     info!("Generated new batch number: {}", num);
                     num
                 };
+
+                // Check if the batch number already exists in twine_batch_l2_blocks
+                let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
+                    .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
+                    .one(db)
+                    .await?
+                    .is_some();
+
+                // If the batch number exists in twine_batch_l2_blocks, skip generating L2 blocks and transactions
+                let (l2_blocks, l2_transactions) = if batch_exists_in_l2_blocks {
+                    info!(
+                        "Batch number {} already exists in twine_batch_l2_blocks, skipping L2 blocks and transactions generation",
+                        batch_number
+                    );
+                    (Vec::new(), Vec::new())
+                } else {
+                    // Generate L2 blocks for the range [start_block, end_block]
+                    let mut l2_blocks = Vec::new();
+                    let mut l2_transactions = Vec::new();
+                    for block_num in data.startBlock..=data.endBlock {
+                        // Generate block hash
+                        let block_hash = generate_block_hash(block_num);
+                        let block_model = twine_batch_l2_blocks::ActiveModel {
+                            batch_number: Set(batch_number),
+                            hash: Set(block_hash),
+                            created_at: Set(timestamp.into()),
+                            updated_at: Set(timestamp.into()),
+                        };
+                        l2_blocks.push(block_model);
+
+                        // Generate one transaction per block
+                        let tx_hash = generate_transaction_hash(block_num, 0); // tx_index = 0 since one tx per block
+                        let tx_model = twine_batch_l2_transactions::ActiveModel {
+                            batch_number: Set(batch_number),
+                            hash: Set(tx_hash),
+                            created_at: Set(timestamp.into()),
+                            updated_at: Set(timestamp.into()),
+                        };
+                        l2_transactions.push(tx_model);
+                    }
+                    (l2_blocks, l2_transactions)
+                };
+
                 let batch_model = DbModel::TwineTransactionBatch {
                     model: twine_transaction_batch::ActiveModel {
                         number: Set(batch_number),
@@ -299,6 +355,8 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                     },
                     chain_id: data.chainId as i64,
                     tx_hash: tx_hash_str,
+                    l2_blocks,
+                    l2_transactions,
                 };
                 info!("Parsed CommitBatch model: {:?}", batch_model);
                 Ok(ParsedLog {

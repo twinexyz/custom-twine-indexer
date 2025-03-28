@@ -55,7 +55,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add unique index on (StartBlock, EndBlock, RootHash)
         manager
             .create_index(
                 Index::create()
@@ -63,7 +62,6 @@ impl MigrationTrait for Migration {
                     .table(TwineTransactionBatch::Table)
                     .col(TwineTransactionBatch::StartBlock)
                     .col(TwineTransactionBatch::EndBlock)
-                    .col(TwineTransactionBatch::RootHash)
                     .unique()
                     .to_owned(),
             )
@@ -224,10 +222,102 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // 4. Create twine_batch_l2_blocks table
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Blocks::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::BatchNumber)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(TwineBatchL2Blocks::Hash).string().not_null())
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Blocks::Hash))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_l2_blocks_batch_number")
+                            .from(TwineBatchL2Blocks::Table, TwineBatchL2Blocks::BatchNumber)
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 5. Create twine_batch_l2_transactions table
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Transactions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::BatchNumber)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::Hash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Transactions::Hash))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_l2_transactions_batch_number")
+                            .from(
+                                TwineBatchL2Transactions::Table,
+                                TwineBatchL2Transactions::BatchNumber,
+                            )
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Drop tables in reverse order to avoid foreign key constraint issues
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineBatchL2Transactions::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TwineBatchL2Blocks::Table).to_owned())
+            .await?;
         manager
             .drop_table(
                 Table::drop()
@@ -285,6 +375,24 @@ enum TwineLifecycleL1Transactions {
     Hash,
     ChainId,
     Timestamp,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Blocks {
+    Table,
+    BatchNumber,
+    Hash,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Transactions {
+    Table,
+    BatchNumber,
+    Hash,
     CreatedAt,
     UpdatedAt,
 }

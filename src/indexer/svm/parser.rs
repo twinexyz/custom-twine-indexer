@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_lifecycle_l1_transactions, twine_transaction_batch,
-    twine_transaction_batch_detail,
+    l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
+    twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -112,6 +112,8 @@ pub enum DbModel {
         model: twine_transaction_batch::ActiveModel,
         chain_id: i64,
         tx_hash: String,
+        l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
+        l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
     },
     TwineLifecycleL1Transactions {
         model: twine_lifecycle_l1_transactions::ActiveModel,
@@ -221,6 +223,18 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     } else {
         Ok(masked_value as i32)
     }
+}
+
+fn generate_block_hash(block_number: u64) -> String {
+    let input = format!("block:{}", block_number);
+    let digest = blake3::hash(input.as_bytes());
+    format!("{:?}", digest)
+}
+
+fn generate_transaction_hash(block_number: u64, tx_index: u64) -> String {
+    let input = format!("tx:{}:{}", block_number, tx_index);
+    let digest = blake3::hash(input.as_bytes());
+    format!("{:?}", digest)
 }
 
 pub async fn parse_log(
@@ -372,6 +386,50 @@ pub async fn parse_log(
                 info!("Generated new batch number: {:?}", num);
                 num
             };
+
+            // Check if the batch number already exists in twine_batch_l2_blocks
+            let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
+                .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
+                .one(db)
+                .await
+                .ok()?
+                .is_some();
+
+            // If the batch number exists in twine_batch_l2_blocks, skip generating L2 blocks and transactions
+            let (l2_blocks, l2_transactions) = if batch_exists_in_l2_blocks {
+                info!(
+                    "Batch number {} already exists in twine_batch_l2_blocks, skipping L2 blocks and transactions generation",
+                    batch_number
+                );
+                (Vec::new(), Vec::new())
+            } else {
+                // Generate L2 blocks for the range [start_block, end_block]
+                let mut l2_blocks = Vec::new();
+                let mut l2_transactions = Vec::new();
+                for block_num in commit.start_block..=commit.end_block {
+                    // Generate block hash
+                    let block_hash = generate_block_hash(block_num);
+                    let block_model = twine_batch_l2_blocks::ActiveModel {
+                        batch_number: Set(batch_number),
+                        hash: Set(block_hash),
+                        created_at: Set(timestamp.into()),
+                        updated_at: Set(timestamp.into()),
+                    };
+                    l2_blocks.push(block_model);
+
+                    // Generate one transaction per block
+                    let tx_hash = generate_transaction_hash(block_num, 0); // tx_index = 0 since one tx per block
+                    let tx_model = twine_batch_l2_transactions::ActiveModel {
+                        batch_number: Set(batch_number),
+                        hash: Set(tx_hash),
+                        created_at: Set(timestamp.into()),
+                        updated_at: Set(timestamp.into()),
+                    };
+                    l2_transactions.push(tx_model);
+                }
+                (l2_blocks, l2_transactions)
+            };
+
             let model = DbModel::TwineTransactionBatch {
                 model: twine_transaction_batch::ActiveModel {
                     number: Set(batch_number),
@@ -384,6 +442,8 @@ pub async fn parse_log(
                 },
                 chain_id: commit.chain_id as i64,
                 tx_hash,
+                l2_blocks,
+                l2_transactions,
             };
             Some(ParsedEvent {
                 model,
@@ -427,7 +487,6 @@ pub async fn parse_log(
                 parse_borsh::<FinalizedTransaction>(&encoded_data, signature.clone()).ok()?;
             let l1_transaction_count = (final_tx.deposit_count + final_tx.withdraw_count) as i64;
             let model = DbModel::UpdateTwineTransactionBatchDetail {
-                // Updated to target batch detail
                 start_block: final_tx.start_block as i64,
                 end_block: final_tx.end_block as i64,
                 chain_id: final_tx.chain_id as i64,

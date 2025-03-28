@@ -9,8 +9,9 @@ use tracing::{error, info};
 
 use super::parser::{DbModel, ParsedEvent};
 use crate::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_lifecycle_l1_transactions,
-    twine_transaction_batch, twine_transaction_batch_detail,
+    l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_batch_l2_blocks,
+    twine_batch_l2_transactions, twine_lifecycle_l1_transactions, twine_transaction_batch,
+    twine_transaction_batch_detail,
 };
 
 pub async fn insert_model(
@@ -53,9 +54,14 @@ pub async fn insert_model(
             model,
             chain_id,
             tx_hash,
+            l2_blocks,
+            l2_transactions,
         } => {
             let start_block = model.start_block.clone().unwrap();
             let end_block = model.end_block.clone().unwrap();
+
+            // Store the length of l2_transactions before consuming it
+            let l2_transaction_count = l2_transactions.len() as i64;
 
             let existing_batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
@@ -81,6 +87,60 @@ pub async fn insert_model(
                 info!("Inserted new batch: {:?}", insert_result);
                 insert_result
             };
+
+            // Insert L2 blocks
+            if !l2_blocks.is_empty() {
+                for block in l2_blocks {
+                    twine_batch_l2_blocks::Entity::insert(block)
+                        .on_conflict(
+                            OnConflict::column(twine_batch_l2_blocks::Column::Hash)
+                                .do_nothing()
+                                .to_owned(),
+                        )
+                        .exec(db)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to insert TwineBatchL2Blocks: {:?}", e);
+                            eyre::eyre!("Failed to insert TwineBatchL2Blocks: {:?}", e)
+                        })?;
+                }
+                info!(
+                    "Inserted {} L2 blocks for batch number {}",
+                    l2_transaction_count, batch.number
+                );
+            } else {
+                info!(
+                    "Skipped inserting L2 blocks for batch number {}",
+                    batch.number
+                );
+            }
+
+            // Insert L2 transactions
+            if !l2_transactions.is_empty() {
+                for tx in l2_transactions {
+                    twine_batch_l2_transactions::Entity::insert(tx)
+                        .on_conflict(
+                            OnConflict::column(twine_batch_l2_transactions::Column::Hash)
+                                .do_nothing()
+                                .to_owned(),
+                        )
+                        .exec(db)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to insert TwineBatchL2Transactions: {:?}", e);
+                            eyre::eyre!("Failed to insert TwineBatchL2Transactions: {:?}", e)
+                        })?;
+                }
+                info!(
+                    "Inserted {} L2 transactions for batch number {}",
+                    l2_transaction_count, batch.number
+                );
+            } else {
+                info!(
+                    "Skipped inserting L2 transactions for batch number {}",
+                    batch.number
+                );
+            }
 
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
                 .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash.clone()))
@@ -109,7 +169,7 @@ pub async fn insert_model(
             let detail_model = twine_transaction_batch_detail::ActiveModel {
                 id: NotSet,
                 batch_number: Set(batch.number.into()),
-                l2_transaction_count: Set(0),
+                l2_transaction_count: Set(l2_transaction_count),
                 l2_fair_gas_price: Set(0.into()),
                 chain_id: Set(chain_id),
                 l1_transaction_count: Set(0), // Initialize with 0
@@ -177,7 +237,6 @@ pub async fn insert_model(
             detail.update(db).await?;
         }
         DbModel::UpdateTwineTransactionBatchDetail {
-            // Updated to target batch detail
             start_block,
             end_block,
             chain_id,
