@@ -387,12 +387,6 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                 let batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(data.startBlock as i32))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(data.endBlock as i32))
-                    .filter(
-                        twine_transaction_batch::Column::RootHash.eq(alloy::hex::decode(
-                            format!("{:?}", data.batchHash).trim_start_matches("0x"),
-                        )
-                        .unwrap()),
-                    )
                     .one(db)
                     .await?;
                 let batch = batch.ok_or_else(|| ParserError::FinalizedBeforeCommit {
