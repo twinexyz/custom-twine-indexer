@@ -9,9 +9,10 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub number: i32,
     pub timestamp: DateTimeWithTimeZone,
-    pub start_block: i64,
-    pub end_block: i64,
-    pub root_hash: String,
+    pub start_block: i32,
+    pub end_block: i32,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)")]
+    pub root_hash: Vec<u8>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

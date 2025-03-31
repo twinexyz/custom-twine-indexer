@@ -1,5 +1,8 @@
+use anchor_client::solana_sdk::bs58;
 use chrono::Utc;
 use eyre::Result;
+use num_traits::cast::FromPrimitive;
+use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, NotSet,
     QueryFilter, Set,
@@ -57,8 +60,21 @@ pub async fn insert_model(
             l2_blocks,
             l2_transactions,
         } => {
-            let start_block = model.start_block.clone().unwrap();
-            let end_block = model.end_block.clone().unwrap();
+            let start_block = model.start_block.clone().unwrap(); // i32
+            let end_block = model.end_block.clone().unwrap(); // i32
+
+            // Validate and log block numbers
+            info!(
+                "Processing TwineTransactionBatch with start_block: {}, end_block: {}",
+                start_block, end_block
+            );
+            if start_block > i32::MAX || end_block > i32::MAX {
+                return Err(eyre::eyre!(
+                    "start_block or end_block exceeds i32::MAX: start_block={}, end_block={}",
+                    start_block,
+                    end_block
+                ));
+            }
 
             // Store the length of l2_transactions before consuming it
             let l2_transaction_count = l2_transactions.len() as i64;
@@ -142,8 +158,29 @@ pub async fn insert_model(
                 );
             }
 
+            // Decode the base58 tx_hash to Vec<u8> for storage in bytea column
+            if tx_hash.is_empty() {
+                return Err(eyre::eyre!(
+                    "Transaction hash is empty for TwineTransactionBatch"
+                ));
+            }
+            let decoded_hash = bs58::decode(&tx_hash).into_vec().map_err(|e| {
+                eyre::eyre!(
+                    "Failed to decode base58 tx_hash: {} (tx_hash: {})",
+                    e,
+                    tx_hash
+                )
+            })?;
+            if decoded_hash.len() != 64 {
+                return Err(eyre::eyre!(
+                    "Invalid hash length: expected 64 bytes, got {} bytes (tx_hash: {})",
+                    decoded_hash.len(),
+                    tx_hash
+                ));
+            }
+
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
-                .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash.clone()))
+                .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(&*decoded_hash))
                 .one(db)
                 .await?;
 
@@ -153,8 +190,8 @@ pub async fn insert_model(
             } else {
                 let lifecycle_model = twine_lifecycle_l1_transactions::ActiveModel {
                     id: NotSet,
-                    hash: Set(tx_hash.clone()),
-                    chain_id: Set(chain_id),
+                    hash: Set(decoded_hash),
+                    chain_id: Set(chain_id), // Update if migration changes
                     timestamp: Set(batch.timestamp),
                     created_at: Set(batch.created_at),
                     updated_at: Set(batch.updated_at),
@@ -169,12 +206,12 @@ pub async fn insert_model(
             let detail_model = twine_transaction_batch_detail::ActiveModel {
                 id: NotSet,
                 batch_number: Set(batch.number.into()),
-                l2_transaction_count: Set(l2_transaction_count),
-                l2_fair_gas_price: Set(0.into()),
+                l2_transaction_count: Set(l2_transaction_count.try_into().unwrap()),
+                l2_fair_gas_price: Set(Decimal::from_i64(0).unwrap()),
                 chain_id: Set(chain_id),
                 l1_transaction_count: Set(0), // Initialize with 0
-                l1_gas_price: Set(0.into()),  // Initialize with 0
-                commit_id: Set(Some(inserted_lifecycle.id as i64)),
+                l1_gas_price: Set(Decimal::from_i64(0).unwrap()),
+                commit_id: Set(Some(inserted_lifecycle.id)),
                 execute_id: Set(None),
                 created_at: Set(batch.created_at),
                 updated_at: Set(Utc::now().into()),
@@ -198,27 +235,20 @@ pub async fn insert_model(
             model,
             batch_number,
         } => {
+            // Extract and validate the hash value
+            let hash_value = model.hash.clone().unwrap();
+
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
-                .filter(
-                    twine_lifecycle_l1_transactions::Column::Hash.eq(model.hash.clone().unwrap()),
-                )
+                .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(hash_value))
                 .one(db)
                 .await?;
 
             let inserted_lifecycle = if let Some(lifecycle) = existing_lifecycle {
-                info!(
-                    "Found existing lifecycle entry for finalize tx_hash: {}",
-                    model.hash.as_ref()
-                );
                 lifecycle
             } else {
                 let inserted = twine_lifecycle_l1_transactions::Entity::insert(model)
                     .exec_with_returning(db)
                     .await?;
-                info!(
-                    "Inserted new lifecycle entry for finalize tx_hash: {}",
-                    inserted.hash
-                );
                 inserted
             };
 
@@ -232,7 +262,7 @@ pub async fn insert_model(
                     eyre::eyre!("Batch detail not found for batch_number: {}", batch_number)
                 })?
                 .into_active_model();
-            detail.execute_id = Set(Some(inserted_lifecycle.id as i64));
+            detail.execute_id = Set(Some(inserted_lifecycle.id));
             detail.updated_at = Set(Utc::now().into());
             detail.update(db).await?;
         }
@@ -242,9 +272,15 @@ pub async fn insert_model(
             chain_id,
             l1_transaction_count,
         } => {
+            // Validate and log block numbers
+            info!(
+                "Updating batch detail with start_block: {}, end_block: {}",
+                start_block, end_block
+            );
+
             let batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block)) // i32
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block)) // i32
                 .one(db)
                 .await?
                 .ok_or_else(|| {
@@ -269,7 +305,7 @@ pub async fn insert_model(
                 })?;
 
             let mut detail = detail.into_active_model();
-            detail.l1_transaction_count = Set(l1_transaction_count);
+            detail.l1_transaction_count = Set(l1_transaction_count.try_into().unwrap());
             detail.updated_at = Set(Utc::now().into());
             detail.update(db).await?;
         }
@@ -299,6 +335,7 @@ pub async fn get_last_synced_slot(
 }
 
 pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {
+    // Check in l1_deposit
     let exists_in_deposit = l1_deposit::Entity::find()
         .filter(l1_deposit::Column::TxHash.eq(tx_hash))
         .one(db)
@@ -307,8 +344,25 @@ pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Res
         return Ok(true);
     }
 
+    // Decode the base58 tx_hash to Vec<u8> for comparison with bytea
+    let decoded_hash = bs58::decode(tx_hash).into_vec().map_err(|e| {
+        eyre::eyre!(
+            "Failed to decode base58 tx_hash: {} (tx_hash: {})",
+            e,
+            tx_hash
+        )
+    })?;
+    if decoded_hash.len() != 64 {
+        return Err(eyre::eyre!(
+            "Invalid hash length: expected 64 bytes, got {} bytes (tx_hash: {})",
+            decoded_hash.len(),
+            tx_hash
+        ));
+    }
+
+    // Check in twine_lifecycle_l1_transactions
     let exists_in_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
-        .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(tx_hash))
+        .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(decoded_hash.as_slice()))
         .one(db)
         .await?;
     Ok(exists_in_lifecycle.is_some())

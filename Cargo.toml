@@ -15,17 +15,17 @@ path = "bin/indexer/main.rs"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-sea-orm = {version = "1.1.4", features = [
+sea-orm = { version = "1.1.4", features = [
         "macros",
         "sqlx-postgres",
         "runtime-tokio-native-tls"
 ] }
 serde = { version = "1.0.217", features = ["derive"] }
 alloy = { version = "0.11.0", features = ["full"]}
-chrono = {version ="0.4.39"}
-futures-util = {version = "0.3.31"}
-twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git"}
-axum = {version = "0.8.1"}
+chrono = { version ="0.4.39"}
+futures-util = { version = "0.3.31"}
+twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "feat/update-metadata" }
+axum = { version = "0.8.1"}
 async-trait = "0.1.87"
 sea-query = "0.32.2"
 serde_json = "1.0"
@@ -40,7 +40,7 @@ hex = "0.4.3"
 config = "0.15.11"
 eyre = "0.6.12"
 blake3 = "1.7.0"
-
+num-traits = "0.2.19"
 
 [dev-dependencies]
 sea-orm-cli = "1.1.7"

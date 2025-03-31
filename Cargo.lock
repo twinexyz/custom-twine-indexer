@@ -9811,7 +9811,7 @@ dependencies = [
 [[package]]
 name = "twine-evm-contracts"
 version = "0.1.0"
-source = "git+https://github.com/twinexyz/contracts-metadata.git#a4697f4ae798a828c653c119d09ea2243c7dd7d8"
+source = "git+https://github.com/twinexyz/contracts-metadata.git?branch=feat%2Fupdate-metadata#b32ae6fd98695c4143926fb4247ed790f8122d77"
 dependencies = [
  "alloy-contract",
  "alloy-sol-types",
@@ -9834,6 +9834,7 @@ dependencies = [
  "eyre",
  "futures-util",
  "hex",
+ "num-traits",
  "sea-orm",
  "sea-orm-cli",
  "sea-query",

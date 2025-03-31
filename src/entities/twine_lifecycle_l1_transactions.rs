@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub hash: String,
-    pub chain_id: i64,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)")]
+    pub hash: Vec<u8>,
+    pub chain_id: Decimal,
     pub timestamp: DateTimeWithTimeZone,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

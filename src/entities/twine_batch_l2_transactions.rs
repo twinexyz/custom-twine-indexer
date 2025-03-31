@@ -7,8 +7,12 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "twine_batch_l2_transactions")]
 pub struct Model {
     pub batch_number: i32,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub hash: String,
+    #[sea_orm(
+        primary_key,
+        auto_increment = false,
+        column_type = "VarBinary(StringLen::None)"
+    )]
+    pub hash: Vec<u8>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

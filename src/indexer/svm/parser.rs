@@ -1,8 +1,11 @@
 use alloy::hex;
+use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::Utc;
 use eyre::Result;
+use num_traits::FromPrimitive;
+use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveValue::{NotSet, Set},
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -74,7 +77,6 @@ pub struct CommitBatch {
     pub start_block: u64,
     pub end_block: u64,
     pub chain_id: u64,
-    pub batch_hash: String,
     #[borsh(skip)]
     pub signature: String,
     pub slot_number: u64,
@@ -84,8 +86,8 @@ pub struct CommitBatch {
 pub struct FinalizedBatch {
     pub start_block: u64,
     pub end_block: u64,
-    pub batch_hash: String,
     pub chain_id: u64,
+    pub batch_hash: [u8; 32], // Added to match the event
     #[borsh(skip)]
     pub signature: String,
     pub slot_number: u64,
@@ -95,9 +97,9 @@ pub struct FinalizedBatch {
 pub struct FinalizedTransaction {
     pub start_block: u64,
     pub end_block: u64,
+    pub chain_id: u64,
     pub deposit_count: u64,
     pub withdraw_count: u64,
-    pub chain_id: u64,
     #[borsh(skip)]
     pub signature: String,
     pub slot_number: u64,
@@ -110,7 +112,7 @@ pub enum DbModel {
     L2Withdraw(l2_withdraw::ActiveModel),
     TwineTransactionBatch {
         model: twine_transaction_batch::ActiveModel,
-        chain_id: i64,
+        chain_id: Decimal, // Aligned with migration and EVM parser
         tx_hash: String,
         l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
         l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
@@ -120,10 +122,10 @@ pub enum DbModel {
         batch_number: i32,
     },
     UpdateTwineTransactionBatchDetail {
-        start_block: i64,
-        end_block: i64,
-        chain_id: i64,
-        l1_transaction_count: i64,
+        start_block: i32,          // Aligned with migration (integer)
+        end_block: i32,            // Aligned with migration (integer)
+        chain_id: Decimal,         // Aligned with migration (decimal)
+        l1_transaction_count: i32, // Aligned with migration (integer)
     },
 }
 
@@ -225,16 +227,16 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     }
 }
 
-fn generate_block_hash(block_number: u64) -> String {
+fn generate_block_hash(block_number: u64) -> Vec<u8> {
     let input = format!("block:{}", block_number);
     let digest = blake3::hash(input.as_bytes());
-    format!("{:?}", digest)
+    digest.as_bytes().to_vec()
 }
 
-fn generate_transaction_hash(block_number: u64, tx_index: u64) -> String {
+fn generate_transaction_hash(block_number: u64, tx_index: u64) -> Vec<u8> {
     let input = format!("tx:{}:{}", block_number, tx_index);
     let digest = blake3::hash(input.as_bytes());
-    format!("{:?}", digest)
+    digest.as_bytes().to_vec()
 }
 
 pub async fn parse_log(
@@ -371,9 +373,28 @@ pub async fn parse_log(
         }
         "commit_batch" => {
             let commit = parse_borsh::<CommitBatch>(&encoded_data, signature.clone()).ok()?;
+            let start_block: i32 = match commit.start_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!(
+                        "Start block overflow for commit_batch: {}",
+                        commit.start_block
+                    );
+                    return None;
+                }
+            };
+            let end_block: i32 = match commit.end_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!("End block overflow for commit_batch: {}", commit.end_block);
+                    return None;
+                }
+            };
+            let chain_id = Decimal::from_i64(commit.chain_id as i64).unwrap();
+
             let existing_batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(commit.start_block as i64))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(commit.end_block as i64))
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
                 .one(db)
                 .await
                 .ok()?;
@@ -387,7 +408,6 @@ pub async fn parse_log(
                 num
             };
 
-            // Check if the batch number already exists in twine_batch_l2_blocks
             let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
                 .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
                 .one(db)
@@ -395,7 +415,6 @@ pub async fn parse_log(
                 .ok()?
                 .is_some();
 
-            // If the batch number exists in twine_batch_l2_blocks, skip generating L2 blocks and transactions
             let (l2_blocks, l2_transactions) = if batch_exists_in_l2_blocks {
                 info!(
                     "Batch number {} already exists in twine_batch_l2_blocks, skipping L2 blocks and transactions generation",
@@ -403,11 +422,9 @@ pub async fn parse_log(
                 );
                 (Vec::new(), Vec::new())
             } else {
-                // Generate L2 blocks for the range [start_block, end_block]
                 let mut l2_blocks = Vec::new();
                 let mut l2_transactions = Vec::new();
                 for block_num in commit.start_block..=commit.end_block {
-                    // Generate block hash
                     let block_hash = generate_block_hash(block_num);
                     let block_model = twine_batch_l2_blocks::ActiveModel {
                         batch_number: Set(batch_number),
@@ -417,8 +434,7 @@ pub async fn parse_log(
                     };
                     l2_blocks.push(block_model);
 
-                    // Generate one transaction per block
-                    let tx_hash = generate_transaction_hash(block_num, 0); // tx_index = 0 since one tx per block
+                    let tx_hash = generate_transaction_hash(block_num, 0);
                     let tx_model = twine_batch_l2_transactions::ActiveModel {
                         batch_number: Set(batch_number),
                         hash: Set(tx_hash),
@@ -434,13 +450,13 @@ pub async fn parse_log(
                 model: twine_transaction_batch::ActiveModel {
                     number: Set(batch_number),
                     timestamp: Set(timestamp.into()),
-                    start_block: Set(commit.start_block as i64),
-                    end_block: Set(commit.end_block as i64),
-                    root_hash: Set(String::new()),
+                    start_block: Set(start_block),
+                    end_block: Set(end_block),
+                    root_hash: Set(Vec::new()), // Placeholder; Solana event lacks root_hash
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
                 },
-                chain_id: commit.chain_id as i64,
+                chain_id,
                 tx_hash,
                 l2_blocks,
                 l2_transactions,
@@ -452,9 +468,29 @@ pub async fn parse_log(
         }
         "finalize_batch" => {
             let finalize = parse_borsh::<FinalizedBatch>(&encoded_data, signature.clone()).ok()?;
+            let start_block: i32 = match finalize.start_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!(
+                        "Start block overflow for finalize_batch: {}",
+                        finalize.start_block
+                    );
+                    return None;
+                }
+            };
+            let end_block: i32 = match finalize.end_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!(
+                        "End block overflow for finalize_batch: {}",
+                        finalize.end_block
+                    );
+                    return None;
+                }
+            };
             let batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(finalize.start_block as i64))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(finalize.end_block as i64))
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
                 .one(db)
                 .await
                 .ok()?
@@ -469,8 +505,8 @@ pub async fn parse_log(
             let model = DbModel::TwineLifecycleL1Transactions {
                 model: twine_lifecycle_l1_transactions::ActiveModel {
                     id: NotSet,
-                    hash: Set(tx_hash),
-                    chain_id: Set(finalize.chain_id as i64),
+                    hash: Set(tx_hash.as_bytes().to_vec()), // Convert to binary
+                    chain_id: Set(Decimal::from_i64(finalize.chain_id as i64).unwrap()),
                     timestamp: Set(timestamp.into()),
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
@@ -485,11 +521,41 @@ pub async fn parse_log(
         "commit_and_finalize_transaction" => {
             let final_tx =
                 parse_borsh::<FinalizedTransaction>(&encoded_data, signature.clone()).ok()?;
-            let l1_transaction_count = (final_tx.deposit_count + final_tx.withdraw_count) as i64;
+            let l1_transaction_count: i32 =
+                match (final_tx.deposit_count + final_tx.withdraw_count).try_into() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        debug!(
+                            "L1 transaction count overflow: {}",
+                            final_tx.deposit_count + final_tx.withdraw_count
+                        );
+                        return None;
+                    }
+                };
+            let start_block: i32 = match final_tx.start_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!(
+                        "Start block overflow for commit_and_finalize_transaction: {}",
+                        final_tx.start_block
+                    );
+                    return None;
+                }
+            };
+            let end_block: i32 = match final_tx.end_block.try_into() {
+                Ok(value) => value,
+                Err(_) => {
+                    debug!(
+                        "End block overflow for commit_and_finalize_transaction: {}",
+                        final_tx.end_block
+                    );
+                    return None;
+                }
+            };
             let model = DbModel::UpdateTwineTransactionBatchDetail {
-                start_block: final_tx.start_block as i64,
-                end_block: final_tx.end_block as i64,
-                chain_id: final_tx.chain_id as i64,
+                start_block,
+                end_block,
+                chain_id: Decimal::from_i64(final_tx.chain_id as i64).unwrap(),
                 l1_transaction_count,
             };
             Some(ParsedEvent {

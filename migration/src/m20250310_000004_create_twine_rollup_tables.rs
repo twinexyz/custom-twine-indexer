@@ -25,17 +25,17 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::StartBlock)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::EndBlock)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::RootHash)
-                            .string()
+                            .binary()
                             .not_null(),
                     )
                     .col(
@@ -82,12 +82,12 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Hash)
-                            .string()
+                            .binary()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::ChainId)
-                            .big_unsigned()
+                            .decimal()
                             .not_null(),
                     )
                     .col(
@@ -129,9 +129,21 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2TransactionCount)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
+                            .decimal()
+                            .not_null()
+                            .default(Expr::value(0.0)),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2FairGasPrice)
@@ -141,23 +153,11 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::ChainId)
-                            .big_unsigned()
+                            .decimal()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
-                            .big_unsigned()
-                            .not_null()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
-                            .decimal()
-                            .not_null()
-                            .default(Expr::value(0.0)),
-                    )
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).big_unsigned())
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).big_unsigned())
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).integer())
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).integer())
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::CreatedAt)
                             .timestamp_with_time_zone()
@@ -233,7 +233,7 @@ impl MigrationTrait for Migration {
                             .integer()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(TwineBatchL2Blocks::Hash).string().not_null())
+                    .col(ColumnDef::new(TwineBatchL2Blocks::Hash).binary().not_null())
                     .col(
                         ColumnDef::new(TwineBatchL2Blocks::CreatedAt)
                             .timestamp_with_time_zone()
@@ -272,7 +272,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineBatchL2Transactions::Hash)
-                            .string()
+                            .binary()
                             .not_null(),
                     )
                     .col(
