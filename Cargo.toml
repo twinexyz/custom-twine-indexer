@@ -26,6 +26,7 @@ blake3 = "1.7.0"
 borsh = "1.5.5"
 chrono = { version = "0.4.39" }
 config = "0.15.11"
+dotenv = "0.15.0"
 eyre = "0.6.12"
 futures-util = { version = "0.3.31" }
 hex = "0.4.3"

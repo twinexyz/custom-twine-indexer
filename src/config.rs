@@ -1,3 +1,5 @@
+use config::Config;
+use dotenv::dotenv;
 use eyre::Result;
 use serde::Deserialize;
 
@@ -32,7 +34,8 @@ pub struct IndexerConfig {
 
 impl ApiConfig {
     pub fn from_env() -> Result<Self> {
-        config::Config::builder()
+        dotenv().ok(); // Load environment variables from .env file if present
+        Config::builder()
             .add_source(
                 config::Environment::default()
                     .separator("__")
@@ -46,7 +49,8 @@ impl ApiConfig {
 
 impl IndexerConfig {
     pub fn from_env() -> Result<Self> {
-        config::Config::builder()
+        dotenv().ok(); // Load environment variables from .env file if present
+        Config::builder()
             .add_source(
                 config::Environment::default()
                     .separator("__")
