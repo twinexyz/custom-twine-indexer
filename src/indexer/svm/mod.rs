@@ -35,6 +35,8 @@ impl ChainIndexer for SVMIndexer {
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
         let rpc_url = std::env::var("SOLANA__RPC_URL").unwrap_or(rpc_url);
         let ws_url = std::env::var("SOLANA_WS_URL").unwrap();
+        println!("twine chain id: {}", twine_chain_id);
+        println!("tokens gateway id: {}", tokens_gateway_id);
 
         Ok(Self {
             db: db.clone(),
@@ -133,7 +135,7 @@ impl ChainIndexer for SVMIndexer {
                     match subscriber::subscribe_stream(
                         &indexer.ws_url,
                         &indexer.twine_chain_id,
-                        &indexer.twine_chain_id,
+                        &indexer.tokens_gateway_id,
                     )
                     .await
                     {

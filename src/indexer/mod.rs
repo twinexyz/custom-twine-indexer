@@ -51,6 +51,7 @@ pub async fn start_indexer(
     let evm_contracts = vec![
         config.l1_erc20_gateway_address.clone(),
         config.l1_message_queue_address.clone(),
+        config.eth_twine_chain_address.clone(),
     ];
 
     let twine_contracts = vec![config.l2_twine_messenger_address.clone()];

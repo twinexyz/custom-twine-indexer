@@ -23,6 +23,7 @@ pub struct IndexerConfig {
     pub l1_message_queue_address: String,
     pub l2_twine_messenger_address: String,
     pub l1_erc20_gateway_address: String,
+    pub eth_twine_chain_address: String,
     pub tokens_gateway_program_address: String,
     pub twine_chain_program_address: String,
     pub solana_ws_url: String,

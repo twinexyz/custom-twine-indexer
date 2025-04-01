@@ -109,6 +109,7 @@ impl EVMIndexer {
             attempt += 1;
             match ProviderBuilder::new().on_ws(WsConnect::new(&rpc_url)).await {
                 Ok(provider) => {
+                    println!("evm provider url: {}", rpc_url);
                     info!("Connected to provider on attempt {}", attempt);
                     return Ok(provider);
                 }
