@@ -229,7 +229,7 @@ pub async fn get_l2_withdraws(
             slot_number: withdraw.slot_number,
             l2_slot_number: twine_record.block_number.parse::<i64>().unwrap_or_default(),
             block_number: withdraw.block_number,
-            status: 1, // TODO: Ask for change in smart contract?
+            // status: 1, // TODO: Ask for change in smart contract?
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
             l1_token: twine_record.l1_token.clone(),
