@@ -122,10 +122,10 @@ pub enum DbModel {
         batch_number: i32,
     },
     UpdateTwineTransactionBatchDetail {
-        start_block: i64,
-        end_block: i64,
-        chain_id: i64,
-        l1_transaction_count: i64,
+        start_block: i32,          // Aligned with migration (integer)
+        end_block: i32,            // Aligned with migration (integer)
+        chain_id: Decimal,         // Aligned with migration (decimal)
+        l1_transaction_count: i32, // Aligned with migration (integer)
     },
 }
 
@@ -212,8 +212,6 @@ pub fn parse_borsh<T: BorshDeserialize + HasSignature>(
     Ok(event)
 }
 
-pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
-    let input = format!("{}:{}", start_block, end_block);
 pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     let input = format!("{}:{}", start_block, end_block);
     let digest = blake3::hash(input.as_bytes());
@@ -405,7 +403,6 @@ pub async fn parse_log(
                 batch.number
             } else {
                 let num = generate_number(commit.start_block, commit.end_block)
-                let num = generate_number(commit.start_block, commit.end_block)
                     .expect("Failed to generate batch number");
                 info!("Generated new batch number: {:?}", num);
                 num
@@ -456,10 +453,6 @@ pub async fn parse_log(
                     start_block: Set(start_block),
                     end_block: Set(end_block),
                     root_hash: Set(Vec::new()), // Placeholder; Solana event lacks root_hash
-                    start_block: Set(commit.start_block as i64),
-                    end_block: Set(commit.end_block as i64),
-                    root_hash: Set(String::new()),
-                    root_hash: Set(String::new()),
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
                 },
@@ -563,10 +556,6 @@ pub async fn parse_log(
                 start_block,
                 end_block,
                 chain_id: Decimal::from_i64(final_tx.chain_id as i64).unwrap(),
-                // Updated to target batch detail
-                start_block: final_tx.start_block as i64,
-                end_block: final_tx.end_block as i64,
-                chain_id: final_tx.chain_id as i64,
                 l1_transaction_count,
             };
             Some(ParsedEvent {

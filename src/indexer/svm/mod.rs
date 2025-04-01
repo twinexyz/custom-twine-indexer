@@ -34,8 +34,8 @@ impl ChainIndexer for SVMIndexer {
     ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ADDRESS")?;
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
-        let rpc_url = std::env::var("SOLANA__RPC_URL").unwrap_or(rpc_url);
-        let ws_url = std::env::var("SOLANA_WS_URL").unwrap();
+        let rpc_url = std::env::var("SOLANA__RPC_URL").unwrap_or(http_rpc_url);
+        let ws_url = std::env::var("SOLANA_WS_URL").unwrap_or(ws_rpc_url);
         println!("twine chain id: {}", twine_chain_id);
         println!("tokens gateway id: {}", tokens_gateway_id);
 

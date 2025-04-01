@@ -6,20 +6,14 @@ use alloy::rpc::types::Log;
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use blake3::hash;
-use blake3::hash;
 use chrono::Utc;
 use eyre::Report;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tracing::info;
-use tracing::info;
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
-use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
-    CommitBatch, FinalizedBatch, FinalizedTransaction,
-};
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
 };
@@ -54,27 +48,12 @@ pub enum ParserError {
     MissingBlockNumber,
     MissingBlockTimestamp,
     InvalidBlockTimestamp,
-    MissingBlockNumber,
-    MissingBlockTimestamp,
-    InvalidBlockTimestamp,
     DecodeError {
         event_type: &'static str,
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     UnknownEvent {
         signature: alloy::primitives::B256,
-    },
-    BatchNotFound {
-        start_block: u64,
-        end_block: u64,
-    },
-    FinalizedBeforeCommit {
-        start_block: u64,
-        end_block: u64,
-        batch_hash: String,
-    },
-    NumberOverflow {
-        value: u64,
     },
     BatchNotFound {
         start_block: u64,

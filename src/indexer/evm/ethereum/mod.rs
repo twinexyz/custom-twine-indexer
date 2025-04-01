@@ -81,7 +81,7 @@ impl ChainIndexer for EthereumIndexer {
             {
                 Ok(mut stream) => {
                     while let Some(log) = stream.next().await {
-                        match parser::parse_log(log).await {
+                        match parser::parse_log(log, &live_indexer.db).await {
                             Ok(parsed) => {
                                 let last_synced = last_synced::ActiveModel {
                                     chain_id: Set(id as i64),
@@ -121,7 +121,7 @@ impl EthereumIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
         for log in logs {
-            match parser::parse_log(log).await {
+            match parser::parse_log(log, &self.db).await {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
