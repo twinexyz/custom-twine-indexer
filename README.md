@@ -33,7 +33,7 @@ export DATABASE_URL="postgresql://dbuser:password@localhost:5432/indexer"
 # api specific
 export API_PORT=7777
 
-# deployed contracts 
+# deployed contracts
 export L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 export L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
 
@@ -57,7 +57,7 @@ export SOLANA__START_BLOCK=10
 
 # solana specific
 export SOLANA_WS_URL="ws://127.0.0.1:8900"
-``` 
+```
 
 **Note:** Ensure that `*__RPC_URL` is a WebSocket (`ws://` or `wss://`) URL for evm based chains and both `HTTP` and `WebSocket` based RPCs are required for svm based chains.
 
@@ -92,6 +92,7 @@ API_PORT=7777
 
 L1_MESSAGE_QUEUE_ADDRESS="0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
 L1_ERC20_GATEWAY_ADDRESS="0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+ETH_TWINE_CHAIN_ADDRESS="0xAEA81eb8DeaC34C35AaA646962f337A86E383430"
 
 L2_TWINE_MESSENGER_ADDRESS="0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 
