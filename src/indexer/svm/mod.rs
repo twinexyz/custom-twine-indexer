@@ -38,8 +38,6 @@ impl ChainIndexer for SVMIndexer {
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
         let rpc_url = std::env::var("SOLANA__RPC_URL").unwrap_or(http_rpc_url);
         let ws_url = std::env::var("SOLANA_WS_URL").unwrap_or(ws_rpc_url);
-        println!("twine chain id: {}", twine_chain_id);
-        println!("tokens gateway id: {}", tokens_gateway_id);
 
         Ok(Self {
             db: db.clone(),
@@ -58,155 +56,76 @@ impl ChainIndexer for SVMIndexer {
 
         let last_synced = db::get_last_synced_slot(&self.db, chain_id, self.start_block).await?;
         let current_slot = self.get_current_slot().await?;
+        let last_synced_u64 = last_synced.max(0) as u64;
 
         info!("Last synced slot: {}", last_synced);
         info!("Current slot: {}", current_slot);
 
-        let last_synced_u64 = last_synced.max(0) as u64;
+        // Polling Phase (Catch-Up)
+        let historical_events = subscriber::poll_missing_slots(
+            &self.rpc_url,
+            &self.twine_chain_id,
+            &self.tokens_gateway_id,
+            last_synced_u64,
+            current_slot,
+        )
+        .await?;
 
-        // Catch-Up Phase
-        if last_synced_u64 < current_slot {
-            let mut retries = 0;
-            let historical_events = loop {
-                match subscriber::poll_missing_slots(
-                    &self.rpc_url,
-                    &self.twine_chain_id,
-                    &self.tokens_gateway_id,
-                    last_synced_u64,
-                )
-                .await
-                {
-                    Ok(events) => break events,
-                    Err(e) if retries < MAX_RETRIES => {
-                        retries += 1;
-                        error!(
-                            "Failed to poll missing slots (attempt {}/{}): {:?}",
-                            retries, MAX_RETRIES, e
-                        );
-                        tokio::time::sleep(RETRY_DELAY).await;
-                    }
-                    Err(e) => return Err(e),
-                }
-            };
+        info!(
+            "Found {} historical events from slot {} to {}",
+            historical_events.len(),
+            last_synced_u64,
+            current_slot
+        );
 
-            info!(
-                "Found {} historical events from slot {} to {}",
-                historical_events.len(),
-                last_synced_u64,
-                current_slot
-            );
+        self.catchup_missing_slots(historical_events).await?;
 
-            let mut processed_count = 0;
-            for (logs, signature) in historical_events {
-                if let Some(tx_hash) = &signature {
-                    if db::is_tx_hash_processed(&self.db, tx_hash).await? {
-                        continue;
-                    }
-                }
-
-                if let Some(parsed) =
-                    parser::parse_log(&logs, signature.clone(), &self.db, &self.blockscout_db).await
-                {
-                    if parsed.slot_number <= last_synced {
-                        continue;
-                    }
-                    if parsed.slot_number > current_slot as i64 {
-                        continue;
-                    }
-
-                    let last_synced_model = crate::entities::last_synced::ActiveModel {
-                        chain_id: Set(self.chain_id as i64),
-                        block_number: Set(parsed.slot_number),
-                    };
-                    Self::process_event_static(
-                        &self.db,
-                        &self.blockscout_db,
-                        parsed.model,
-                        &last_synced_model,
-                    )
-                    .await?;
-                    processed_count += 1;
-                }
-            }
-
-            info!(
-                "Processed {} new historical events from slot {} to {}",
-                processed_count, last_synced_u64, current_slot
-            );
-        } else {
-            info!("No historical events to process");
-        }
-
-        // Live Phase
-        let indexer = self.clone();
+        // Streaming Phase (Live)
+        let live_indexer = self.clone();
         tokio::spawn(async move {
             info!("Starting live indexing from slot {}", current_slot + 1);
-            if let Err(e) = async {
-                let mut retries = 0;
-                let mut stream = loop {
-                    match subscriber::subscribe_stream(
-                        &indexer.ws_url,
-                        &indexer.twine_chain_id,
-                        &indexer.tokens_gateway_id,
-                    )
-                    .await
-                    {
-                        Ok(stream) => break stream,
-                        Err(e) if retries < MAX_RETRIES => {
-                            retries += 1;
-                            error!(
-                                "Failed to subscribe to stream (attempt {}/{}): {:?}",
-                                retries, MAX_RETRIES, e
-                            );
-                            tokio::time::sleep(RETRY_DELAY).await;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                };
-
-                while let Some((logs, signature)) = stream.next().await {
-                    if let Some(parsed) = parser::parse_log(
-                        &logs,
-                        signature.clone(),
-                        &indexer.db,
-                        &indexer.blockscout_db,
-                    )
-                    .await
-                    {
-                        if parsed.slot_number <= current_slot as i64 {
-                            continue;
-                        }
-
-                        if let Some(tx_hash) = &signature {
-                            if db::is_tx_hash_processed(&indexer.db, tx_hash).await? {
-                                continue;
-                            }
-                        }
-
-                        let last_synced = crate::entities::last_synced::ActiveModel {
-                            chain_id: Set(indexer.chain_id as i64),
-                            block_number: Set(parsed.slot_number),
-                        };
-
-                        match indexer.process_event(parsed.model, &last_synced).await {
-                            Ok(_) => info!("Processed live event at slot {}", parsed.slot_number),
-                            Err(e) => {
-                                if e.to_string().contains("duplicate key value") {
-                                    // Ignore duplicate key errors
-                                } else {
-                                    error!("Failed to process live event: {:?}", e);
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok::<(), eyre::Error>(())
-            }
+            match subscriber::subscribe_stream(
+                &live_indexer.ws_url,
+                &live_indexer.twine_chain_id,
+                &live_indexer.tokens_gateway_id,
+            )
             .await
             {
-                error!("Live indexing failed: {:?}", e);
+                Ok(mut stream) => {
+                    while let Some((logs, signature)) = stream.next().await {
+                        match parser::parse_log(
+                            &logs,
+                            signature.clone(),
+                            &live_indexer.db,
+                            &live_indexer.blockscout_db,
+                        )
+                        .await
+                        {
+                            Some(parsed) => {
+                                let last_synced = crate::entities::last_synced::ActiveModel {
+                                    chain_id: Set(chain_id),
+                                    block_number: Set(parsed.slot_number),
+                                };
+                                if let Err(e) = db::insert_model(
+                                    parsed,
+                                    last_synced,
+                                    &live_indexer.db,
+                                    &live_indexer.blockscout_db,
+                                )
+                                .await
+                                {
+                                    error!("Failed to insert model: {:?}", e);
+                                }
+                            }
+                            None => {
+                                error!("No parsed event from log: {:?}", logs);
+                            }
+                        }
+                    }
+                    info!("Live indexing stream ended");
+                }
+                Err(e) => error!("Failed to start live stream: {:?}", e),
             }
-            info!("Live indexing stream ended");
         });
 
         future::pending::<()>().await;
@@ -273,36 +192,26 @@ impl SVMIndexer {
         }
     }
 
-    async fn process_event_static(
-        db: &DatabaseConnection,
-        blockscout_db: &DatabaseConnection,
-        model: parser::DbModel,
-        last_synced: &crate::entities::last_synced::ActiveModel,
-    ) -> Result<()> {
-        db::insert_model(
-            parser::ParsedEvent {
-                model,
-                slot_number: last_synced.block_number.as_ref().clone(),
-            },
-            last_synced.clone(),
-            db,
-            blockscout_db,
-        )
-        .await?;
-        info!(
-            "Processed event and updated last_synced for chain_id: {}, slot: {}",
-            last_synced.chain_id.as_ref(),
-            last_synced.block_number.as_ref()
-        );
-        Ok(())
-    }
-
-    async fn process_event(
+    async fn catchup_missing_slots(
         &self,
-        model: parser::DbModel,
-        last_synced: &crate::entities::last_synced::ActiveModel,
+        events: Vec<(Vec<String>, Option<String>)>,
     ) -> Result<()> {
-        Self::process_event_static(&self.db, &self.blockscout_db, model, last_synced).await
+        let chain_id = self.chain_id as i64;
+        for (logs, signature) in events {
+            match parser::parse_log(&logs, signature.clone(), &self.db, &self.blockscout_db).await {
+                Some(parsed) => {
+                    let last_synced = crate::entities::last_synced::ActiveModel {
+                        chain_id: Set(chain_id),
+                        block_number: Set(parsed.slot_number),
+                    };
+                    db::insert_model(parsed, last_synced, &self.db, &self.blockscout_db).await?;
+                }
+                None => {
+                    error!("No parsed event from historical log: {:?}", logs);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
