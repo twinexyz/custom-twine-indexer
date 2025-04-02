@@ -37,6 +37,7 @@ RUN rm -f ~/.git-credentials && \
 #FROM gcr.io/distroless/cc-debian12
 FROM rust:1.85-alpine
 
+COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=app /app/target/release/api /usr/local/bin/api
 COPY --from=app /app/target/release/indexer /usr/local/bin/indexer
 
