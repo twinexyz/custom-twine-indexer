@@ -1,4 +1,4 @@
-use sea_orm_migration::{prelude::*, schema::*};
+use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -17,11 +17,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(LastSynced::BlockNumber)
-                         .big_unsigned()
-                         .not_null()
+                    .col(
+                        ColumnDef::new(LastSynced::BlockNumber)
+                            .big_unsigned()
+                            .not_null(),
                     )
-                   .to_owned(),
+                    .to_owned(),
             )
             .await?;
 
@@ -39,6 +40,6 @@ impl MigrationTrait for Migration {
 #[derive(DeriveIden)]
 enum LastSynced {
     Table,
-    ChainId,        // uint64 -> big_unsigned()
-    BlockNumber,    // uint64 -> big_unsigned()
+    ChainId,     // uint64 -> big_unsigned()
+    BlockNumber, // uint64 -> big_unsigned()
 }

@@ -11,10 +11,26 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TwineL1Deposit::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(TwineL1Deposit::L1Nonce).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::ChainId).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::Status).tiny_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Deposit::SlotNumber).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(TwineL1Deposit::L1Nonce)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Deposit::ChainId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Deposit::Status)
+                            .tiny_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Deposit::SlotNumber)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(TwineL1Deposit::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
@@ -30,10 +46,26 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(TwineL1Withdraw::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(TwineL1Withdraw::L1Nonce).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::ChainId).big_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::Status).tiny_integer().not_null())
-                    .col(ColumnDef::new(TwineL1Withdraw::SlotNumber).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(TwineL1Withdraw::L1Nonce)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Withdraw::ChainId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Withdraw::Status)
+                            .tiny_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL1Withdraw::SlotNumber)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(TwineL1Withdraw::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
@@ -57,8 +89,16 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TwineL2Withdraw::Value).string().not_null())
                     .col(ColumnDef::new(TwineL2Withdraw::Nonce).string().not_null())
                     .col(ColumnDef::new(TwineL2Withdraw::ChainId).string().not_null())
-                    .col(ColumnDef::new(TwineL2Withdraw::BlockNumber).string().not_null())
-                    .col(ColumnDef::new(TwineL2Withdraw::GasLimit).string().not_null())
+                    .col(
+                        ColumnDef::new(TwineL2Withdraw::BlockNumber)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineL2Withdraw::GasLimit)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(TwineL2Withdraw::TxHash).string().not_null())
                     .primary_key(
                         Index::create()
