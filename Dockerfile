@@ -17,6 +17,8 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
 
 FROM base AS dependency
 
+RUN cargo install sea-orm-cli@1.1.7
+
 FROM base AS app
 
 WORKDIR /app
