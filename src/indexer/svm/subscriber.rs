@@ -25,12 +25,20 @@ pub async fn subscribe_stream(
     let twine_chain_id_owned = twine_chain_id.to_string();
     let tokens_gateway_id_owned = tokens_gateway_id.to_string();
 
+    info!(
+        "Spawning subscription task for twine_chain_id: {}",
+        twine_chain_id_owned
+    );
     tokio::spawn(subscribe_to_single_program(
         ws_url_owned.clone(),
         twine_chain_id_owned.clone(),
         data_sender.clone(),
     ));
 
+    info!(
+        "Spawning subscription task for tokens_gateway_id: {}",
+        tokens_gateway_id_owned
+    );
     tokio::spawn(subscribe_to_single_program(
         ws_url_owned,
         tokens_gateway_id_owned.clone(),
@@ -242,13 +250,18 @@ async fn subscribe_to_single_program(
     program_id: String,
     data_sender: Sender<(Vec<String>, Option<String>)>,
 ) -> Result<()> {
+    info!(
+        "Attempting WebSocket connection for program: {} at URL: {}",
+        program_id, ws_url
+    );
     let mut retries = 0;
     let (mut write, mut read) = loop {
         match connect_async(&ws_url).await {
             Ok((ws_stream, _)) => {
                 info!(
-                    "Successfully connected to WebSocket {} after {} attempt(s)",
+                    "Successfully connected to WebSocket {} for program {} after {} attempt(s)",
                     ws_url,
+                    program_id,
                     retries + 1
                 );
                 break ws_stream.split();
@@ -256,18 +269,25 @@ async fn subscribe_to_single_program(
             Err(e) if retries < MAX_RETRIES => {
                 retries += 1;
                 error!(
-                    "Failed to connect to WebSocket {} (attempt {}/{}): {:?}",
-                    ws_url, retries, MAX_RETRIES, e
+                    "Failed to connect to WebSocket {} for program {} (attempt {}/{}): {:?}",
+                    ws_url, program_id, retries, MAX_RETRIES, e
                 );
                 tokio::time::sleep(RETRY_DELAY).await;
             }
             Err(e) => {
-                error!("WebSocket connection failed after retries: {:?}", e);
+                error!(
+                    "WebSocket connection failed after retries for program {}: {:?}",
+                    program_id, e
+                );
                 return Err(eyre::eyre!("WebSocket connection error: {}", e));
             }
         }
     };
 
+    info!(
+        "WebSocket connected for program: {}, preparing subscription",
+        program_id
+    );
     let subscription = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -283,6 +303,7 @@ async fn subscribe_to_single_program(
     });
 
     write.send(Message::Text(subscription.to_string())).await?;
+    info!("Subscription request sent for program: {}", program_id);
 
     if let Some(first_message) = read.next().await {
         match first_message {
@@ -303,8 +324,17 @@ async fn subscribe_to_single_program(
             Ok(_) => debug!("Received non-text first message for {}", program_id),
             Err(e) => error!("First WebSocket message error for {}: {:?}", program_id, e),
         }
+    } else {
+        info!(
+            "No first message received from WebSocket for program: {}",
+            program_id
+        );
     }
 
+    info!(
+        "Entering main message processing loop for program: {}",
+        program_id
+    );
     while let Some(message) = read.next().await {
         match message {
             Ok(Message::Text(text)) => {

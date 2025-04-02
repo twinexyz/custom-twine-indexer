@@ -87,7 +87,7 @@ pub struct FinalizedBatch {
     pub start_block: u64,
     pub end_block: u64,
     pub chain_id: u64,
-    pub batch_hash: [u8; 32], // Added to match the event
+    pub batch_hash: [u8; 32],
     #[borsh(skip)]
     pub signature: String,
     pub slot_number: u64,
@@ -112,7 +112,7 @@ pub enum DbModel {
     L2Withdraw(l2_withdraw::ActiveModel),
     TwineTransactionBatch {
         model: twine_transaction_batch::ActiveModel,
-        chain_id: Decimal, // Aligned with migration and EVM parser
+        chain_id: Decimal,
         tx_hash: String,
         l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
         l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
@@ -122,10 +122,10 @@ pub enum DbModel {
         batch_number: i32,
     },
     UpdateTwineTransactionBatchDetail {
-        start_block: i32,          // Aligned with migration (integer)
-        end_block: i32,            // Aligned with migration (integer)
-        chain_id: Decimal,         // Aligned with migration (decimal)
-        l1_transaction_count: i32, // Aligned with migration (integer)
+        start_block: i32,
+        end_block: i32,
+        chain_id: Decimal,
+        l1_transaction_count: i32,
     },
 }
 
@@ -242,7 +242,8 @@ fn generate_transaction_hash(block_number: u64, tx_index: u64) -> Vec<u8> {
 pub async fn parse_log(
     logs: &[String],
     signature: Option<String>,
-    db: &DatabaseConnection,
+    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
+    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
 ) -> Option<ParsedEvent> {
     debug!("Parsing logs: {:?}", logs);
 
@@ -395,7 +396,7 @@ pub async fn parse_log(
             let existing_batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(db)
+                .one(blockscout_db) // Use blockscout_db
                 .await
                 .ok()?;
             let batch_number = if let Some(batch) = existing_batch {
@@ -410,7 +411,7 @@ pub async fn parse_log(
 
             let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
                 .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
-                .one(db)
+                .one(blockscout_db) // Use blockscout_db
                 .await
                 .ok()?
                 .is_some();
@@ -452,7 +453,7 @@ pub async fn parse_log(
                     timestamp: Set(timestamp.into()),
                     start_block: Set(start_block),
                     end_block: Set(end_block),
-                    root_hash: Set(Vec::new()), // Placeholder; Solana event lacks root_hash
+                    root_hash: Set(Vec::new()),
                     created_at: Set(timestamp.into()),
                     updated_at: Set(timestamp.into()),
                 },
@@ -491,7 +492,7 @@ pub async fn parse_log(
             let batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(db)
+                .one(blockscout_db) // Use blockscout_db
                 .await
                 .ok()?
                 .ok_or_else(|| {

@@ -14,6 +14,7 @@ use tracing::{error, info};
 
 pub struct SVMIndexer {
     db: DatabaseConnection,
+    blockscout_db: DatabaseConnection,
     rpc_url: String,
     ws_url: String,
     twine_chain_id: String,
@@ -30,6 +31,7 @@ impl ChainIndexer for SVMIndexer {
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
+        blockscout_db: Option<&DatabaseConnection>,
         _contract_addrs: Vec<String>,
     ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ADDRESS")?;
@@ -41,6 +43,7 @@ impl ChainIndexer for SVMIndexer {
 
         Ok(Self {
             db: db.clone(),
+            blockscout_db: blockscout_db.unwrap().clone(),
             rpc_url,
             ws_url,
             twine_chain_id,
@@ -101,7 +104,9 @@ impl ChainIndexer for SVMIndexer {
                     }
                 }
 
-                if let Some(parsed) = parser::parse_log(&logs, signature.clone(), &self.db).await {
+                if let Some(parsed) =
+                    parser::parse_log(&logs, signature.clone(), &self.db, &self.blockscout_db).await
+                {
                     if parsed.slot_number <= last_synced {
                         continue;
                     }
@@ -113,7 +118,13 @@ impl ChainIndexer for SVMIndexer {
                         chain_id: Set(self.chain_id as i64),
                         block_number: Set(parsed.slot_number),
                     };
-                    Self::process_event_static(&self.db, parsed.model, &last_synced_model).await?;
+                    Self::process_event_static(
+                        &self.db,
+                        &self.blockscout_db,
+                        parsed.model,
+                        &last_synced_model,
+                    )
+                    .await?;
                     processed_count += 1;
                 }
             }
@@ -154,8 +165,13 @@ impl ChainIndexer for SVMIndexer {
                 };
 
                 while let Some((logs, signature)) = stream.next().await {
-                    if let Some(parsed) =
-                        parser::parse_log(&logs, signature.clone(), &indexer.db).await
+                    if let Some(parsed) = parser::parse_log(
+                        &logs,
+                        signature.clone(),
+                        &indexer.db,
+                        &indexer.blockscout_db,
+                    )
+                    .await
                     {
                         if parsed.slot_number <= current_slot as i64 {
                             continue;
@@ -259,6 +275,7 @@ impl SVMIndexer {
 
     async fn process_event_static(
         db: &DatabaseConnection,
+        blockscout_db: &DatabaseConnection,
         model: parser::DbModel,
         last_synced: &crate::entities::last_synced::ActiveModel,
     ) -> Result<()> {
@@ -269,6 +286,7 @@ impl SVMIndexer {
             },
             last_synced.clone(),
             db,
+            blockscout_db,
         )
         .await?;
         info!(
@@ -284,7 +302,7 @@ impl SVMIndexer {
         model: parser::DbModel,
         last_synced: &crate::entities::last_synced::ActiveModel,
     ) -> Result<()> {
-        Self::process_event_static(&self.db, model, last_synced).await
+        Self::process_event_static(&self.db, &self.blockscout_db, model, last_synced).await
     }
 }
 
@@ -292,6 +310,7 @@ impl Clone for SVMIndexer {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
+            blockscout_db: self.blockscout_db.clone(),
             rpc_url: self.rpc_url.clone(),
             ws_url: self.ws_url.clone(),
             twine_chain_id: self.twine_chain_id.clone(),

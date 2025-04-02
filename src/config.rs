@@ -21,6 +21,7 @@ pub struct ChainConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct IndexerConfig {
     pub database_url: String,
+    pub blockscout_database_url: String,
     pub ethereum: ChainConfig,
     pub solana: ChainConfig,
     pub twine: ChainConfig,

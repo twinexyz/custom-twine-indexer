@@ -35,6 +35,7 @@ impl ChainIndexer for TwineIndexer {
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
+        blockscout_db: Option<&DatabaseConnection>,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
         let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Twine).await?;

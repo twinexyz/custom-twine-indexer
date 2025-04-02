@@ -21,6 +21,7 @@ pub struct EthereumIndexer {
     /// HTTP provider for polling missing blocks.
     http_provider: Arc<dyn Provider + Send + Sync>,
     db: DatabaseConnection,
+    blockscout_db: DatabaseConnection,
     chain_id: u64,
     start_block: u64,
     contract_addrs: Vec<String>,
@@ -34,6 +35,7 @@ impl ChainIndexer for EthereumIndexer {
         chain_id: u64,
         start_block: u64,
         db: &DatabaseConnection,
+        blockscout_db: Option<&DatabaseConnection>,
         contract_addrs: Vec<String>,
     ) -> Result<Self> {
         let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Ethereum).await?;
@@ -42,6 +44,7 @@ impl ChainIndexer for EthereumIndexer {
             ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
             db: db.clone(),
+            blockscout_db: blockscout_db.unwrap().clone(),
             chain_id,
             start_block,
             contract_addrs,
@@ -81,15 +84,21 @@ impl ChainIndexer for EthereumIndexer {
             {
                 Ok(mut stream) => {
                     while let Some(log) = stream.next().await {
-                        match parser::parse_log(log, &live_indexer.db).await {
+                        match parser::parse_log(log, &live_indexer.db, &live_indexer.blockscout_db)
+                            .await
+                        {
                             Ok(parsed) => {
                                 let last_synced = last_synced::ActiveModel {
                                     chain_id: Set(id as i64),
                                     block_number: Set(parsed.block_number),
                                 };
-                                if let Err(e) =
-                                    db::insert_model(parsed.model, last_synced, &live_indexer.db)
-                                        .await
+                                if let Err(e) = db::insert_model(
+                                    parsed.model,
+                                    last_synced,
+                                    &live_indexer.db,
+                                    &live_indexer.blockscout_db,
+                                )
+                                .await
                                 {
                                     error!("Failed to insert model: {:?}", e);
                                 }
@@ -107,7 +116,6 @@ impl ChainIndexer for EthereumIndexer {
             }
         });
 
-        // Keep the main task alive
         future::pending::<()>().await;
         Ok(())
     }
@@ -121,13 +129,14 @@ impl EthereumIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
         for log in logs {
-            match parser::parse_log(log, &self.db).await {
+            match parser::parse_log(log, &self.db, &self.blockscout_db).await {
                 Ok(parsed) => {
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
                         block_number: Set(parsed.block_number),
                     };
-                    db::insert_model(parsed.model, last_synced, &self.db).await?;
+                    db::insert_model(parsed.model, last_synced, &self.db, &self.blockscout_db)
+                        .await?;
                 }
                 Err(e) => self.handle_error(e)?,
             }
@@ -137,7 +146,7 @@ impl EthereumIndexer {
 
     fn handle_error(&self, e: Report) -> Result<()> {
         match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()), // Skip unknown events
+            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()),
             _ => {
                 error!("Error processing log: {:?}", e);
                 Err(e)
@@ -145,13 +154,13 @@ impl EthereumIndexer {
         }
     }
 }
-
 impl Clone for EthereumIndexer {
     fn clone(&self) -> Self {
         Self {
             ws_provider: Arc::clone(&self.ws_provider),
             http_provider: Arc::clone(&self.http_provider),
             db: self.db.clone(),
+            blockscout_db: self.blockscout_db.clone(),
             start_block: self.start_block,
             chain_id: self.chain_id,
             contract_addrs: self.contract_addrs.clone(),

@@ -78,34 +78,12 @@ impl std::fmt::Display for ParserError {
             ParserError::MissingBlockNumber => write!(f, "Missing block number in log"),
             ParserError::MissingBlockTimestamp => write!(f, "Missing block timestamp in log"),
             ParserError::InvalidBlockTimestamp => write!(f, "Invalid block timestamp"),
-            ParserError::MissingBlockNumber => write!(f, "Missing block number in log"),
-            ParserError::MissingBlockTimestamp => write!(f, "Missing block timestamp in log"),
-            ParserError::InvalidBlockTimestamp => write!(f, "Invalid block timestamp"),
             ParserError::DecodeError { event_type, source } => {
                 write!(f, "Failed to decode {} event: {}", event_type, source)
             }
             ParserError::UnknownEvent { signature } => {
                 write!(f, "Unknown event type: {}", signature)
             }
-            ParserError::BatchNotFound { start_block, end_block } => write!(
-                f,
-                "Batch not found for start_block: {}, end_block: {}",
-                start_block, end_block
-            ),
-            ParserError::FinalizedBeforeCommit {
-                start_block,
-                end_block,
-                batch_hash,
-            } => write!(
-                f,
-                "Finalized event indexed before commit for start_block: {}, end_block: {}, batch_hash: {}",
-                start_block, end_block, batch_hash
-            ),
-            ParserError::NumberOverflow { value } => write!(
-                f,
-                "Generated batch number {} exceeds i32 maximum value",
-                value
-            ),
             ParserError::BatchNotFound { start_block, end_block } => write!(
                 f,
                 "Batch not found for start_block: {}, end_block: {}",
@@ -136,7 +114,7 @@ pub enum DbModel {
     L2Withdraw(l2_withdraw::ActiveModel),
     TwineTransactionBatch {
         model: twine_transaction_batch::ActiveModel,
-        chain_id: Decimal, // Changed to Decimal to match migration
+        chain_id: Decimal,
         tx_hash: String,
         l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
         l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
@@ -187,14 +165,17 @@ fn generate_transaction_hash(block_number: u64, tx_index: u64) -> Vec<u8> {
     digest.as_bytes().to_vec()
 }
 
-pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, Report> {
+pub async fn parse_log(
+    log: Log,
+    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
+    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
+) -> Result<ParsedLog, Report> {
     let tx_hash = log
         .transaction_hash
         .ok_or(ParserError::MissingTransactionHash)?;
 
     let tx_hash_str = format!("{tx_hash:?}");
 
-    let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
     let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
 
     let timestamp = log
@@ -207,6 +188,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
 
     match log.topic0() {
         Some(sig) => match *sig {
+            // Deposits and Withdrawals use local db
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
                 let decoded = log
                     .log_decode::<L1MessageQueue::QueueDepositTransaction>()
@@ -301,6 +283,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                     block_number,
                 })
             }
+            // Batch-related events use blockscout_db
             CommitBatch::SIGNATURE_HASH => {
                 let decoded =
                     log.log_decode::<CommitBatch>()
@@ -308,7 +291,6 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                             event_type: "CommitBatch",
                             source: Box::new(e),
                         })?;
-
                 let data = decoded.inner.data;
                 let root_hash = format!("{:?}", data.batchHash);
                 let chain_id = Decimal::from_i64(data.chainId as i64).unwrap();
@@ -328,7 +310,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                 let existing_batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                    .one(db)
+                    .one(blockscout_db) // Use blockscout_db
                     .await?;
                 let batch_number = if let Some(batch) = existing_batch {
                     info!("Found existing batch: {:?}", batch);
@@ -341,7 +323,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
 
                 let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
                     .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
-                    .one(db)
+                    .one(blockscout_db) // Use blockscout_db
                     .await?
                     .is_some();
 
@@ -410,7 +392,7 @@ pub async fn parse_log(log: Log, db: &DatabaseConnection) -> Result<ParsedLog, R
                 let batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(data.startBlock as i32))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(data.endBlock as i32))
-                    .one(db)
+                    .one(blockscout_db) // Use blockscout_db
                     .await?;
                 let batch = batch.ok_or_else(|| ParserError::FinalizedBeforeCommit {
                     start_block: data.startBlock,

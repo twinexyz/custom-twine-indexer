@@ -20,7 +20,8 @@ use crate::entities::{
 pub async fn insert_model(
     parsed_event: ParsedEvent,
     last_synced: last_synced::ActiveModel,
-    db: &DatabaseConnection,
+    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
+    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
 ) -> Result<()> {
     match parsed_event.model {
         DbModel::L1Deposit(model) => {
@@ -53,6 +54,7 @@ pub async fn insert_model(
                 .exec(db)
                 .await?;
         }
+
         DbModel::TwineTransactionBatch {
             model,
             chain_id,
@@ -60,10 +62,9 @@ pub async fn insert_model(
             l2_blocks,
             l2_transactions,
         } => {
-            let start_block = model.start_block.clone().unwrap(); // i32
-            let end_block = model.end_block.clone().unwrap(); // i32
+            let start_block = model.start_block.clone().unwrap();
+            let end_block = model.end_block.clone().unwrap();
 
-            // Validate and log block numbers
             info!(
                 "Processing TwineTransactionBatch with start_block: {}, end_block: {}",
                 start_block, end_block
@@ -76,13 +77,12 @@ pub async fn insert_model(
                 ));
             }
 
-            // Store the length of l2_transactions before consuming it
             let l2_transaction_count = l2_transactions.len() as i64;
 
             let existing_batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(db)
+                .one(blockscout_db)
                 .await?;
 
             let batch = if let Some(batch) = existing_batch {
@@ -98,13 +98,12 @@ pub async fn insert_model(
                         .do_nothing()
                         .to_owned(),
                     )
-                    .exec_with_returning(db)
+                    .exec_with_returning(blockscout_db)
                     .await?;
                 info!("Inserted new batch: {:?}", insert_result);
                 insert_result
             };
 
-            // Insert L2 blocks
             if !l2_blocks.is_empty() {
                 for block in l2_blocks {
                     twine_batch_l2_blocks::Entity::insert(block)
@@ -113,7 +112,7 @@ pub async fn insert_model(
                                 .do_nothing()
                                 .to_owned(),
                         )
-                        .exec(db)
+                        .exec(blockscout_db)
                         .await
                         .map_err(|e| {
                             error!("Failed to insert TwineBatchL2Blocks: {:?}", e);
@@ -131,7 +130,6 @@ pub async fn insert_model(
                 );
             }
 
-            // Insert L2 transactions
             if !l2_transactions.is_empty() {
                 for tx in l2_transactions {
                     twine_batch_l2_transactions::Entity::insert(tx)
@@ -140,7 +138,7 @@ pub async fn insert_model(
                                 .do_nothing()
                                 .to_owned(),
                         )
-                        .exec(db)
+                        .exec(blockscout_db)
                         .await
                         .map_err(|e| {
                             error!("Failed to insert TwineBatchL2Transactions: {:?}", e);
@@ -157,8 +155,6 @@ pub async fn insert_model(
                     batch.number
                 );
             }
-
-            // Decode the base58 tx_hash to Vec<u8> for storage in bytea column
             if tx_hash.is_empty() {
                 return Err(eyre::eyre!(
                     "Transaction hash is empty for TwineTransactionBatch"
@@ -181,7 +177,7 @@ pub async fn insert_model(
 
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
                 .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(&*decoded_hash))
-                .one(db)
+                .one(blockscout_db)
                 .await?;
 
             let inserted_lifecycle = if let Some(lifecycle) = existing_lifecycle {
@@ -191,13 +187,13 @@ pub async fn insert_model(
                 let lifecycle_model = twine_lifecycle_l1_transactions::ActiveModel {
                     id: NotSet,
                     hash: Set(decoded_hash),
-                    chain_id: Set(chain_id), // Update if migration changes
+                    chain_id: Set(chain_id),
                     timestamp: Set(batch.timestamp),
                     created_at: Set(batch.created_at),
                     updated_at: Set(batch.updated_at),
                 };
                 let inserted = twine_lifecycle_l1_transactions::Entity::insert(lifecycle_model)
-                    .exec_with_returning(db)
+                    .exec_with_returning(blockscout_db)
                     .await?;
                 info!("Inserted new lifecycle entry for tx_hash: {}", tx_hash);
                 inserted
@@ -209,7 +205,7 @@ pub async fn insert_model(
                 l2_transaction_count: Set(l2_transaction_count.try_into().unwrap()),
                 l2_fair_gas_price: Set(Decimal::from_i64(0).unwrap()),
                 chain_id: Set(chain_id),
-                l1_transaction_count: Set(0), // Initialize with 0
+                l1_transaction_count: Set(0),
                 l1_gas_price: Set(Decimal::from_i64(0).unwrap()),
                 commit_id: Set(Some(inserted_lifecycle.id)),
                 execute_id: Set(None),
@@ -228,7 +224,7 @@ pub async fn insert_model(
                     ])
                     .to_owned(),
                 )
-                .exec(db)
+                .exec(blockscout_db)
                 .await?;
         }
         DbModel::TwineLifecycleL1Transactions {
@@ -240,14 +236,14 @@ pub async fn insert_model(
 
             let existing_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
                 .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(hash_value))
-                .one(db)
+                .one(blockscout_db)
                 .await?;
 
             let inserted_lifecycle = if let Some(lifecycle) = existing_lifecycle {
                 lifecycle
             } else {
                 let inserted = twine_lifecycle_l1_transactions::Entity::insert(model)
-                    .exec_with_returning(db)
+                    .exec_with_returning(blockscout_db)
                     .await?;
                 inserted
             };
@@ -256,7 +252,7 @@ pub async fn insert_model(
             let mut detail = twine_transaction_batch_detail::Entity::find()
                 .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
                 .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .one(db)
+                .one(blockscout_db)
                 .await?
                 .ok_or_else(|| {
                     eyre::eyre!("Batch detail not found for batch_number: {}", batch_number)
@@ -264,7 +260,7 @@ pub async fn insert_model(
                 .into_active_model();
             detail.execute_id = Set(Some(inserted_lifecycle.id));
             detail.updated_at = Set(Utc::now().into());
-            detail.update(db).await?;
+            detail.update(blockscout_db).await?;
         }
         DbModel::UpdateTwineTransactionBatchDetail {
             start_block,
@@ -272,16 +268,15 @@ pub async fn insert_model(
             chain_id,
             l1_transaction_count,
         } => {
-            // Validate and log block numbers
             info!(
                 "Updating batch detail with start_block: {}, end_block: {}",
                 start_block, end_block
             );
 
             let batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block)) // i32
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block)) // i32
-                .one(db)
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                .one(blockscout_db)
                 .await?
                 .ok_or_else(|| {
                     eyre::eyre!(
@@ -294,7 +289,7 @@ pub async fn insert_model(
             let detail = twine_transaction_batch_detail::Entity::find()
                 .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
                 .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .one(db)
+                .one(blockscout_db)
                 .await?
                 .ok_or_else(|| {
                     eyre::eyre!(
@@ -307,24 +302,7 @@ pub async fn insert_model(
             let mut detail = detail.into_active_model();
             detail.l1_transaction_count = Set(l1_transaction_count.try_into().unwrap());
             detail.updated_at = Set(Utc::now().into());
-            detail.update(db).await?;
-            let detail = twine_transaction_batch_detail::Entity::find()
-                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
-                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .one(db)
-                .await?
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "Batch detail not found for batch_number: {}, chain_id: {}",
-                        batch.number,
-                        chain_id
-                    )
-                })?;
-
-            let mut detail = detail.into_active_model();
-            detail.l1_transaction_count = Set(l1_transaction_count);
-            detail.updated_at = Set(Utc::now().into());
-            detail.update(db).await?;
+            detail.update(blockscout_db).await?;
         }
     }
 
@@ -352,7 +330,6 @@ pub async fn get_last_synced_slot(
 }
 
 pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {
-    // Check in l1_deposit
     let exists_in_deposit = l1_deposit::Entity::find()
         .filter(l1_deposit::Column::TxHash.eq(tx_hash))
         .one(db)
@@ -361,7 +338,6 @@ pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Res
         return Ok(true);
     }
 
-    // Decode the base58 tx_hash to Vec<u8> for comparison with bytea
     let decoded_hash = bs58::decode(tx_hash).into_vec().map_err(|e| {
         eyre::eyre!(
             "Failed to decode base58 tx_hash: {} (tx_hash: {})",
@@ -377,7 +353,6 @@ pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Res
         ));
     }
 
-    // Check in twine_lifecycle_l1_transactions
     let exists_in_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
         .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(decoded_hash.as_slice()))
         .one(db)

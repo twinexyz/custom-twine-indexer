@@ -13,14 +13,13 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, Set,
 };
 use sea_query::OnConflict;
-use std::time::Duration;
-use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub async fn insert_model(
     model: DbModel,
     last_synced: last_synced::ActiveModel,
-    db: &DatabaseConnection,
+    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
+    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
 ) -> Result<()> {
     match model {
         DbModel::TwineTransactionBatch {
@@ -34,33 +33,11 @@ pub async fn insert_model(
             let end_block = model.end_block.clone().unwrap();
             let l2_transaction_count = l2_transactions.len() as i32;
 
-            let mut attempts = 0;
-            const MAX_ATTEMPTS: u32 = 3;
-            let existing_batch = loop {
-                attempts += 1;
-                match twine_transaction_batch::Entity::find()
-                    .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                    .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                    .one(db)
-                    .await
-                {
-                    Ok(result) => break result,
-                    Err(e) if attempts < MAX_ATTEMPTS => {
-                        warn!(
-                            "Query failed (attempt {}/{}): {:?}, retrying in 1s",
-                            attempts, MAX_ATTEMPTS, e
-                        );
-                        sleep(Duration::from_secs(1)).await;
-                    }
-                    Err(e) => {
-                        return Err(eyre::eyre!(
-                            "Failed after {} attempts: {:?}",
-                            MAX_ATTEMPTS,
-                            e
-                        ))
-                    }
-                }
-            };
+            let existing_batch = twine_transaction_batch::Entity::find()
+                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
+                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                .one(blockscout_db)
+                .await?;
 
             let batch = if let Some(batch) = existing_batch {
                 info!("Found existing batch: {:?}", batch);
@@ -75,7 +52,7 @@ pub async fn insert_model(
                         .do_nothing()
                         .to_owned(),
                     )
-                    .exec_with_returning(db)
+                    .exec_with_returning(blockscout_db)
                     .await?;
                 info!("Inserted new batch: {:?}", insert_result);
                 insert_result
@@ -89,7 +66,7 @@ pub async fn insert_model(
                                 .do_nothing()
                                 .to_owned(),
                         )
-                        .exec(db)
+                        .exec(blockscout_db)
                         .await
                         .map_err(|e| {
                             error!("Failed to insert TwineBatchL2Blocks: {:?}", e);
@@ -115,7 +92,7 @@ pub async fn insert_model(
                                 .do_nothing()
                                 .to_owned(),
                         )
-                        .exec(db)
+                        .exec(blockscout_db)
                         .await
                         .map_err(|e| {
                             error!("Failed to insert TwineBatchL2Transactions: {:?}", e);
@@ -143,7 +120,7 @@ pub async fn insert_model(
             };
             let inserted_lifecycle =
                 twine_lifecycle_l1_transactions::Entity::insert(lifecycle_model)
-                    .exec_with_returning(db)
+                    .exec_with_returning(blockscout_db)
                     .await
                     .map_err(|e| {
                         error!("Failed to insert TwineLifecycleL1Transactions: {:?}", e);
@@ -175,7 +152,7 @@ pub async fn insert_model(
                     ])
                     .to_owned(),
                 )
-                .exec(db)
+                .exec(blockscout_db)
                 .await
                 .map_err(|e| {
                     error!(
@@ -194,7 +171,7 @@ pub async fn insert_model(
             batch_number,
         } => {
             let inserted_lifecycle = twine_lifecycle_l1_transactions::Entity::insert(model)
-                .exec_with_returning(db)
+                .exec_with_returning(blockscout_db)
                 .await
                 .map_err(|e| {
                     error!("Failed to insert TwineLifecycleL1Transactions: {:?}", e);
@@ -206,7 +183,7 @@ pub async fn insert_model(
                 twine_transaction_batch_detail::Entity::find()
                     .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
                     .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                    .one(db)
+                    .one(blockscout_db)
                     .await?
                     .ok_or_else(|| {
                         eyre::eyre!(
@@ -218,7 +195,7 @@ pub async fn insert_model(
                     .into();
             detail.execute_id = Set(Some(inserted_lifecycle.id));
             detail.updated_at = Set(Utc::now().into());
-            detail.update(db).await.map_err(|e| {
+            detail.update(blockscout_db).await.map_err(|e| {
                 error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
                 eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
             })?;
@@ -234,7 +211,7 @@ pub async fn insert_model(
             let batch = twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                 .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(db)
+                .one(blockscout_db)
                 .await?
                 .ok_or_else(|| ParserError::BatchNotFound {
                     start_block: start_block as u64,
@@ -244,7 +221,7 @@ pub async fn insert_model(
             let detail = twine_transaction_batch_detail::Entity::find()
                 .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
                 .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .one(db)
+                .one(blockscout_db)
                 .await?
                 .ok_or_else(|| {
                     eyre::eyre!(
@@ -257,10 +234,28 @@ pub async fn insert_model(
             let mut detail: twine_transaction_batch_detail::ActiveModel = detail.into();
             detail.l1_transaction_count = Set(l1_transaction_count);
             detail.updated_at = Set(Utc::now().into());
-            detail.update(db).await.map_err(|e| {
+            detail.update(blockscout_db).await.map_err(|e| {
                 error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
                 eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
             })?;
+        }
+
+        DbModel::TwineTransactionBatchDetail(detail_model) => {
+            twine_transaction_batch_detail::Entity::insert(detail_model)
+                .on_conflict(
+                    OnConflict::columns([
+                        twine_transaction_batch_detail::Column::BatchNumber,
+                        twine_transaction_batch_detail::Column::ChainId,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
+                )
+                .exec(blockscout_db)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert TwineTransactionBatchDetail: {:?}", e);
+                    eyre::eyre!("Failed to insert TwineTransactionBatchDetail: {:?}", e)
+                })?;
         }
 
         DbModel::L1Deposit(model) => {
@@ -305,24 +300,6 @@ pub async fn insert_model(
                 .map_err(|e| {
                     error!("Failed to insert L2Withdraw: {:?}", e);
                     eyre::eyre!("Failed to insert L2Withdraw: {:?}", e)
-                })?;
-        }
-
-        DbModel::TwineTransactionBatchDetail(detail_model) => {
-            twine_transaction_batch_detail::Entity::insert(detail_model)
-                .on_conflict(
-                    OnConflict::columns([
-                        twine_transaction_batch_detail::Column::BatchNumber,
-                        twine_transaction_batch_detail::Column::ChainId,
-                    ])
-                    .do_nothing()
-                    .to_owned(),
-                )
-                .exec(db)
-                .await
-                .map_err(|e| {
-                    error!("Failed to insert TwineTransactionBatchDetail: {:?}", e);
-                    eyre::eyre!("Failed to insert TwineTransactionBatchDetail: {:?}", e)
                 })?;
         }
     }

@@ -20,6 +20,7 @@ pub trait ChainIndexer: Send + Sync {
         chain_id: u64,
         starting_block: u64,
         db: &DatabaseConnection,
+        blockscout_db: Option<&DatabaseConnection>,
         contract_addrs: Vec<String>,
     ) -> Result<Self>
     where
@@ -30,13 +31,14 @@ pub trait ChainIndexer: Send + Sync {
 }
 
 macro_rules! create_and_spawn_indexer {
-    ($type:ty, $http_rpc_url:expr, $ws_rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $name:expr, $contracts:expr) => {{
+    ($type:ty, $http_rpc_url:expr, $ws_rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $blockscout_db_conn:expr,  $name:expr, $contracts:expr) => {{
         let mut indexer = <$type>::new(
             $http_rpc_url,
             $ws_rpc_url,
             $chain_id,
             $starting_block,
             &$db_conn,
+            $blockscout_db_conn,
             $contracts,
         )
         .await?;
@@ -50,6 +52,7 @@ macro_rules! create_and_spawn_indexer {
 pub async fn start_indexer(
     config: IndexerConfig,
     db_conn: DatabaseConnection,
+    blockscout_db_conn: DatabaseConnection,
 ) -> Result<(
     JoinHandle<Result<()>>,
     JoinHandle<Result<()>>,
@@ -75,6 +78,7 @@ pub async fn start_indexer(
         config.ethereum.chain_id,
         config.ethereum.start_block,
         db_conn,
+        Some(&blockscout_db_conn),
         "EVM",
         evm_contracts
     );
@@ -86,6 +90,7 @@ pub async fn start_indexer(
         config.twine.chain_id,
         config.twine.start_block,
         db_conn,
+        None,
         "Twine",
         twine_contracts
     );
@@ -97,6 +102,7 @@ pub async fn start_indexer(
         config.solana.chain_id,
         config.solana.start_block,
         db_conn,
+        Some(&blockscout_db_conn),
         "SVM",
         svm_contracts
     );
