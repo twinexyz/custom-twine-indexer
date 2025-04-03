@@ -10,6 +10,7 @@ env:
   BRANCH: ${{ github.ref_name }}
   REPO: ${{ github.event.repository.name }}
   ORG: ${{ github.repository_owner }}
+  ACTIONS_RESULTS_URL: http://10.0.3.106:3000/
 
 jobs:
   build_and_push:
