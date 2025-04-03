@@ -1,35 +1,7 @@
 name: Container Scan
 
-#on:
-#  workflow_run:
-#    workflows: [Build and Deploy]
-#    types:
-#      - completed
-#
-#on:
-#  push:
-#    branches:
-#      - '**'  # This will trigger on all branches
-#    tags:
-#      - '**'  # This will trigger on all tags
-#  pull_request:
-#
-#on:
-#  push:
-#    branches:
-#      - '**'  # This will trigger on all branches
-#    tags:
-#      - '**'  # This will trigger on all tags
-#  pull_request:
-#  schedule:
-#    - cron: '0 0 * * *'
-
 on:
   workflow_call:
-
-#concurrency:
-#  group: ${{ github.workflow }}-${{ github.ref }}
-#  cancel-in-progress: true
 
 env:
   # Disable incremental compilation for faster from-scratch builds
@@ -59,8 +31,7 @@ jobs:
           password: ${{ secrets.GH_ACTION_PAT }}
       - name: Pull Docker Image
         run: |
-          docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${GITHUB_SHA}
-          #docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+          docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.29.0
         with:
@@ -90,8 +61,7 @@ jobs:
           password: ${{ secrets.GH_ACTION_PAT }}
       - name: Pull Docker Image
         run: |
-          docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${GITHUB_SHA}
-          #docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
+          docker pull ghcr.io/${{ env.ORG }}/${{ env.REPO }}:${{ env.BRANCH }}-${GITHUB_SHA}
       - name: Scan image
         uses: anchore/scan-action@v6
         with:
