@@ -11,7 +11,7 @@ env:
 jobs:
   trivy_scan:
     name: trivy scan
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
@@ -47,7 +47,7 @@ jobs:
         run: echo "Build failed. Check logs for details."
   secret_scan:
     name: secret scan
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
@@ -63,7 +63,7 @@ jobs:
         run: echo "Build failed. Check logs for details."
   anchore_scan:
     name: anchore scan
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:

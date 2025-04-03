@@ -21,11 +21,12 @@ env:
   # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
+  ACTIONS_RESULTS_URL: ${{ secrets.CACHE_SERVER_URL }}
 
 jobs:
   check:
     name: cargo check
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
@@ -54,7 +55,7 @@ jobs:
         run: echo "Build failed. Check logs for details."
   test:
     name: cargo test
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
@@ -85,7 +86,7 @@ jobs:
   # Check formatting with rustfmt
   formatting:
     name: cargo fmt
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
