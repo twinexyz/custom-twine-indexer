@@ -9,7 +9,7 @@ env:
 
 jobs:
   zap_scan:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted #ubuntu-24.04
     name: Scan the webapplication
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3

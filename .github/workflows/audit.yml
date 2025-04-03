@@ -15,7 +15,7 @@ on:
 
 jobs:
   cargo_audit:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
@@ -35,7 +35,7 @@ jobs:
         if: ${{ failure() }}
         run: echo "Build failed. Check logs for details."
   cargo_deny_audit:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted #ubuntu-24.04
     steps:
       - uses: step-security/harden-runner@446798f8213ac2e75931c1b0769676d927801858 # v2.10.3
         with:
