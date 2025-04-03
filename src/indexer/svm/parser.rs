@@ -274,19 +274,20 @@ pub async fn parse_log(
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
-            _ => continue,
+            _ => continue, // Silently skip unknown log entries
         }
     }
 
     let Some(event_type) = event_type else {
-        return None;
+        debug!("No recognized event type found in logs: {:?}", logs);
+        return None; // Silently return None if no event type is matched
     };
     let Some(encoded_data) = encoded_data else {
-        info!(
+        debug!(
             "No encoded data found for event {} in logs: {:?}",
             event_type, logs
         );
-        return None;
+        return None; // Silently return None if no encoded data is found
     };
 
     debug!(

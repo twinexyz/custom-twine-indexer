@@ -44,24 +44,26 @@ pub async fn poll_missing_slots(
     twine_chain_id: &str,
     tokens_gateway_id: &str,
     last_synced: u64,
-    current_slot: u64, // Explicitly passed to match EVM
+    current_slot: u64,
+    max_slots_per_request: u64, // New parameter for configurability
 ) -> Result<Vec<(Vec<String>, Option<String>)>> {
     if last_synced >= current_slot {
         info!("Already synced to latest slot");
         return Ok(Vec::new());
     }
 
-    let mut events = Vec::new();
+    info!("Max slots per request: {}", max_slots_per_request);
+    info!("Current slot: {}", current_slot);
+
     let program_ids = vec![twine_chain_id, tokens_gateway_id];
-    let max_slots_per_request = 1000; // Mimic EVM's batch size, adjustable via env if needed
+    let mut all_events = Vec::new();
+    let mut start_slot = last_synced + 1;
 
-    for program_id in program_ids {
-        let mut start_slot = last_synced + 1;
+    while start_slot <= current_slot {
+        let end_slot = (start_slot + max_slots_per_request - 1).min(current_slot);
+        info!(start_slot, end_slot, "Fetching slot range");
 
-        while start_slot <= current_slot {
-            let end_slot = (start_slot + max_slots_per_request - 1).min(current_slot);
-            info!(start_slot, end_slot, "Fetching slot range");
-
+        for program_id in &program_ids {
             let signatures = tokio::task::spawn_blocking({
                 let rpc_url_clone = rpc_url.to_string();
                 let program_id_clone = program_id.to_string();
@@ -124,27 +126,27 @@ pub async fn poll_missing_slots(
                 })
                 .await??;
 
-                let logs = tx
-                    .transaction
-                    .meta
-                    .as_ref()
-                    .unwrap()
-                    .log_messages
-                    .as_ref()
-                    .unwrap_or(&vec![])
-                    .to_vec();
-
-                if tx.slot >= start_slot && tx.slot <= end_slot {
-                    events.push((logs, Some(sig_info.signature.clone())));
+                let slot = tx.slot;
+                if slot >= start_slot && slot <= end_slot {
+                    let logs = tx
+                        .transaction
+                        .meta
+                        .as_ref()
+                        .unwrap()
+                        .log_messages
+                        .as_ref()
+                        .unwrap_or(&vec![])
+                        .to_vec();
+                    all_events.push((logs, Some(sig_info.signature.clone())));
                 }
             }
-
-            start_slot = end_slot + 1;
         }
+
+        start_slot = end_slot + 1;
     }
 
-    info!(total_events = events.len(), "Completed slot fetch");
-    Ok(events)
+    info!(total_events = all_events.len(), "Completed slot fetch");
+    Ok(all_events)
 }
 
 async fn subscribe_to_single_program(

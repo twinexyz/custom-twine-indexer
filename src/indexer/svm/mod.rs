@@ -5,12 +5,14 @@ mod subscriber;
 use std::{str::FromStr, sync::Arc};
 
 use super::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
+use alloy::transports::http::reqwest;
 use anchor_client::{Client, Cluster};
 use async_trait::async_trait;
 use eyre::Result;
 use futures_util::{future, StreamExt};
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
-use tracing::{error, info};
+use serde_json::{json, Value};
+use tracing::{debug, error, info};
 
 pub struct SVMIndexer {
     db: DatabaseConnection,
@@ -36,8 +38,8 @@ impl ChainIndexer for SVMIndexer {
     ) -> Result<Self> {
         let twine_chain_id = std::env::var("TWINE_CHAIN_PROGRAM_ADDRESS")?;
         let tokens_gateway_id = std::env::var("TOKENS_GATEWAY_PROGRAM_ADDRESS")?;
-        let rpc_url = std::env::var("SOLANA__RPC_URL").unwrap_or(http_rpc_url);
-        let ws_url = std::env::var("SOLANA_WS_URL").unwrap_or(ws_rpc_url);
+        let rpc_url = std::env::var("SOLANA__HTTP_RPC_URL").unwrap_or(http_rpc_url);
+        let ws_url = std::env::var("SOLANA__WS_RPC_URL").unwrap_or(ws_rpc_url);
 
         Ok(Self {
             db: db.clone(),
@@ -61,13 +63,18 @@ impl ChainIndexer for SVMIndexer {
         info!("Last synced slot: {}", last_synced);
         info!("Current slot: {}", current_slot);
 
-        // Polling Phase (Catch-Up)
+        let max_slots_per_request = std::env::var("SOLANA__BLOCK_SYNC_BATCH_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1000);
+
         let historical_events = subscriber::poll_missing_slots(
             &self.rpc_url,
             &self.twine_chain_id,
             &self.tokens_gateway_id,
             last_synced_u64,
             current_slot,
+            max_slots_per_request,
         )
         .await?;
 
@@ -118,7 +125,7 @@ impl ChainIndexer for SVMIndexer {
                                 }
                             }
                             None => {
-                                error!("No parsed event from log: {:?}", logs);
+                                debug!("Skipping unparsed live event: {:?}", logs);
                             }
                         }
                     }
@@ -140,37 +147,12 @@ impl ChainIndexer for SVMIndexer {
 impl SVMIndexer {
     async fn get_current_slot(&self) -> Result<u64> {
         let rpc_url = self.rpc_url.clone();
-        let twine_chain_id = self.twine_chain_id.clone();
         let mut retries = 0;
 
         loop {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                tokio::task::spawn_blocking({
-                    let rpc_url = rpc_url.clone();
-                    let twine_chain_id = twine_chain_id.clone();
-                    move || {
-                        let client: Client<Arc<anchor_client::solana_sdk::signature::Keypair>> =
-                            Client::new(
-                                Cluster::Custom(rpc_url, "".to_string()),
-                                Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
-                            );
-                        let program = client.program(
-                            anchor_client::solana_sdk::pubkey::Pubkey::from_str(&twine_chain_id)?,
-                        )?;
-                        program
-                            .rpc()
-                            .get_slot_with_commitment(
-                                anchor_client::solana_sdk::commitment_config::CommitmentConfig::finalized(),
-                            )
-                            .map_err(|e| eyre::eyre!("Failed to get current slot: {}", e))
-                    }
-                }),
-            )
-            .await
-            {
-                Ok(Ok(slot)) => return Ok(slot?),
-                Ok(Err(e)) if retries < MAX_RETRIES => {
+            match self.fetch_slot(&rpc_url).await {
+                Ok(slot) => return Ok(slot),
+                Err(e) if retries < MAX_RETRIES => {
                     retries += 1;
                     error!(
                         "Failed to get current slot (attempt {}/{}): {:?}",
@@ -178,18 +160,34 @@ impl SVMIndexer {
                     );
                     tokio::time::sleep(RETRY_DELAY).await;
                 }
-                Ok(Err(e)) => return Err(e.into()),
-                Err(_) if retries < MAX_RETRIES => {
-                    retries += 1;
-                    error!(
-                        "Timeout fetching current slot (attempt {}/{}): {:?}",
-                        retries, MAX_RETRIES, "timeout"
-                    );
-                    tokio::time::sleep(RETRY_DELAY).await;
-                }
-                Err(e) => return Err(eyre::eyre!("Timeout after retries: {}", e)),
+                Err(e) => return Err(e),
             }
         }
+    }
+
+    async fn fetch_slot(&self, rpc_url: &str) -> Result<u64> {
+        let client = reqwest::Client::new();
+        let request_body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getSlot",
+            "params": [
+                {"commitment": "finalized"}
+            ]
+        });
+
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client.post(rpc_url).json(&request_body).send(),
+        )
+        .await??;
+
+        let json: Value = response.json().await?;
+        let slot = json["result"]
+            .as_u64()
+            .ok_or_else(|| eyre::eyre!("Failed to parse slot from response: {:?}", json))?;
+
+        Ok(slot)
     }
 
     async fn catchup_missing_slots(
@@ -207,7 +205,7 @@ impl SVMIndexer {
                     db::insert_model(parsed, last_synced, &self.db, &self.blockscout_db).await?;
                 }
                 None => {
-                    error!("No parsed event from historical log: {:?}", logs);
+                    debug!("Skipping unparsed historical event: {:?}", logs);
                 }
             }
         }

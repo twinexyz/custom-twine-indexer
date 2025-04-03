@@ -328,34 +328,3 @@ pub async fn get_last_synced_slot(
         .map(|record| record.block_number)
         .unwrap_or(start_block as i64))
 }
-
-pub async fn is_tx_hash_processed(db: &DatabaseConnection, tx_hash: &str) -> Result<bool> {
-    let exists_in_deposit = l1_deposit::Entity::find()
-        .filter(l1_deposit::Column::TxHash.eq(tx_hash))
-        .one(db)
-        .await?;
-    if exists_in_deposit.is_some() {
-        return Ok(true);
-    }
-
-    let decoded_hash = bs58::decode(tx_hash).into_vec().map_err(|e| {
-        eyre::eyre!(
-            "Failed to decode base58 tx_hash: {} (tx_hash: {})",
-            e,
-            tx_hash
-        )
-    })?;
-    if decoded_hash.len() != 64 {
-        return Err(eyre::eyre!(
-            "Invalid hash length: expected 64 bytes, got {} bytes (tx_hash: {})",
-            decoded_hash.len(),
-            tx_hash
-        ));
-    }
-
-    let exists_in_lifecycle = twine_lifecycle_l1_transactions::Entity::find()
-        .filter(twine_lifecycle_l1_transactions::Column::Hash.eq(decoded_hash.as_slice()))
-        .one(db)
-        .await?;
-    Ok(exists_in_lifecycle.is_some())
-}
