@@ -21,7 +21,7 @@ env:
   # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  ACTIONS_RESULTS_URL: http://10.0.3.106:3000/
+  ACTIONS_RESULTS_URL: ${{ secrets.CACHE_SERVER_URL }}
 
 jobs:
   check:
