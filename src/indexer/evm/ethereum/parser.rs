@@ -1,8 +1,12 @@
+use std::env;
+
 use crate::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
     twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
-use alloy::rpc::types::Log;
+use alloy::primitives::B256;
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::rpc::types::{BlockTransactions, Log};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use blake3::hash;
@@ -12,11 +16,9 @@ use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
-use tracing::info;
+use tracing::{error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
-use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
-    CommitBatch, FinalizedBatch, FinalizedTransaction,
-};
+use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{CommitBatch, FinalizedBatch};
 
 sol! {
     #[derive(Debug)]
@@ -124,13 +126,6 @@ pub enum DbModel {
         model: twine_lifecycle_l1_transactions::ActiveModel,
         batch_number: i32,
     },
-    UpdateTwineTransactionBatchDetail {
-        start_block: i32,
-        end_block: i32,
-        batch_hash: String,
-        chain_id: Decimal,
-        l1_transaction_count: i32,
-    },
 }
 
 #[derive(Debug)]
@@ -153,22 +148,11 @@ fn generate_number(start_block: u64, end_block: u64) -> Result<i32, ParserError>
     }
 }
 
-fn generate_block_hash(block_number: u64) -> Vec<u8> {
-    let input = format!("block:{}", block_number);
-    let digest = hash(input.as_bytes());
-    digest.as_bytes().to_vec()
-}
-
-fn generate_transaction_hash(block_number: u64, tx_index: u64) -> Vec<u8> {
-    let input = format!("tx:{}:{}", block_number, tx_index);
-    let digest = hash(input.as_bytes());
-    digest.as_bytes().to_vec()
-}
-
 pub async fn parse_log(
     log: Log,
-    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
-    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
+    db: &DatabaseConnection,
+    blockscout_db: &DatabaseConnection,
+    chain_id: u64,
 ) -> Result<ParsedLog, Report> {
     let tx_hash = log
         .transaction_hash
@@ -188,7 +172,6 @@ pub async fn parse_log(
 
     match log.topic0() {
         Some(sig) => match *sig {
-            // Deposits and Withdrawals use local db
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
                 let decoded = log
                     .log_decode::<L1MessageQueue::QueueDepositTransaction>()
@@ -283,7 +266,6 @@ pub async fn parse_log(
                     block_number,
                 })
             }
-            // Batch-related events use blockscout_db
             CommitBatch::SIGNATURE_HASH => {
                 let decoded =
                     log.log_decode::<CommitBatch>()
@@ -293,7 +275,7 @@ pub async fn parse_log(
                         })?;
                 let data = decoded.inner.data;
                 let root_hash = format!("{:?}", data.batchHash);
-                let chain_id = Decimal::from_i64(data.chainId as i64).unwrap();
+                let chain_id = Decimal::from_i64(chain_id as i64).unwrap();
                 let start_block =
                     data.startBlock
                         .try_into()
@@ -310,7 +292,7 @@ pub async fn parse_log(
                 let existing_batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                    .one(blockscout_db) // Use blockscout_db
+                    .one(blockscout_db)
                     .await?;
                 let batch_number = if let Some(batch) = existing_batch {
                     info!("Found existing batch: {:?}", batch);
@@ -323,7 +305,7 @@ pub async fn parse_log(
 
                 let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
                     .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
-                    .one(blockscout_db) // Use blockscout_db
+                    .one(blockscout_db)
                     .await?
                     .is_some();
 
@@ -334,27 +316,73 @@ pub async fn parse_log(
                     );
                     (Vec::new(), Vec::new())
                 } else {
+                    let rpc_url = env::var("TWINE__HTTP_RPC_URL")
+                        .unwrap_or_else(|_| "https://rpc1.twine.limited".to_string());
+                    info!("Fetching blocks from RPC: {}", rpc_url);
+                    let provider = ProviderBuilder::new().on_http(rpc_url.parse().unwrap());
+
                     let mut l2_blocks = Vec::new();
                     let mut l2_transactions = Vec::new();
+
                     for block_num in data.startBlock..=data.endBlock {
-                        let block_hash = generate_block_hash(block_num);
+                        info!("Fetching block number: {}", block_num);
+                        let block = provider
+                            .get_block_by_number(block_num.into(), true.into())
+                            .await
+                            .map_err(|e| {
+                                error!("Failed to fetch block {}: {:?}", block_num, e);
+                                eyre::eyre!("Failed to fetch block {}: {:?}", block_num, e)
+                            })?;
+
+                        let block = block.ok_or_else(|| {
+                            error!("Block {} not found", block_num);
+                            eyre::eyre!("Block {} not found", block_num)
+                        })?;
+                        let block_hash = block.header.hash;
+
                         let block_model = twine_batch_l2_blocks::ActiveModel {
                             batch_number: Set(batch_number),
-                            hash: Set(block_hash),
+                            hash: Set(block_hash.to_vec()),
                             created_at: Set(timestamp.into()),
                             updated_at: Set(timestamp.into()),
                         };
                         l2_blocks.push(block_model);
 
-                        let tx_hash = generate_transaction_hash(block_num, 0);
-                        let tx_model = twine_batch_l2_transactions::ActiveModel {
-                            batch_number: Set(batch_number),
-                            hash: Set(tx_hash),
-                            created_at: Set(timestamp.into()),
-                            updated_at: Set(timestamp.into()),
-                        };
-                        l2_transactions.push(tx_model);
+                        match &block.transactions {
+                            BlockTransactions::Full(transactions) => {
+                                for tx in transactions {
+                                    let tx_hash = tx.inner.tx_hash().to_vec();
+                                    let tx_model = twine_batch_l2_transactions::ActiveModel {
+                                        batch_number: Set(batch_number),
+                                        hash: Set(tx_hash),
+                                        created_at: Set(timestamp.into()),
+                                        updated_at: Set(timestamp.into()),
+                                    };
+                                    l2_transactions.push(tx_model);
+                                }
+                            }
+                            BlockTransactions::Hashes(hashes) => {
+                                for tx_hash in hashes {
+                                    let tx_model = twine_batch_l2_transactions::ActiveModel {
+                                        batch_number: Set(batch_number),
+                                        hash: Set(tx_hash.to_vec()),
+                                        created_at: Set(timestamp.into()),
+                                        updated_at: Set(timestamp.into()),
+                                    };
+                                    l2_transactions.push(tx_model);
+                                }
+                            }
+                            BlockTransactions::Uncle => {
+                                info!("Block {} is an uncle block, no transactions", block_num);
+                            }
+                        }
                     }
+                    info!(
+                        "Collected {} blocks and {} transactions for batch {}",
+                        l2_blocks.len(),
+                        l2_transactions.len(),
+                        batch_number
+                    );
                     (l2_blocks, l2_transactions)
                 };
 
@@ -375,7 +403,7 @@ pub async fn parse_log(
                     l2_blocks,
                     l2_transactions,
                 };
-                info!("Parsed CommitBatch model: {:?}", batch_model);
+
                 Ok(ParsedLog {
                     model: batch_model,
                     block_number,
@@ -392,7 +420,7 @@ pub async fn parse_log(
                 let batch = twine_transaction_batch::Entity::find()
                     .filter(twine_transaction_batch::Column::StartBlock.eq(data.startBlock as i32))
                     .filter(twine_transaction_batch::Column::EndBlock.eq(data.endBlock as i32))
-                    .one(blockscout_db) // Use blockscout_db
+                    .one(blockscout_db)
                     .await?;
                 let batch = batch.ok_or_else(|| ParserError::FinalizedBeforeCommit {
                     start_block: data.startBlock,
@@ -403,7 +431,7 @@ pub async fn parse_log(
                     model: twine_lifecycle_l1_transactions::ActiveModel {
                         id: NotSet,
                         hash: Set(alloy::hex::decode(tx_hash_str.trim_start_matches("0x")).unwrap()),
-                        chain_id: Set(Decimal::from_i64(data.chainId as i64).unwrap()),
+                        chain_id: Set(Decimal::from_i64(chain_id as i64).unwrap()),
                         timestamp: Set(timestamp.into()),
                         created_at: Set(timestamp.into()),
                         updated_at: Set(timestamp.into()),
@@ -412,39 +440,6 @@ pub async fn parse_log(
                 };
                 Ok(ParsedLog {
                     model: lifecycle_model,
-                    block_number,
-                })
-            }
-            FinalizedTransaction::SIGNATURE_HASH => {
-                let decoded = log.log_decode::<FinalizedTransaction>().map_err(|e| {
-                    ParserError::DecodeError {
-                        event_type: "FinalizedTransaction",
-                        source: Box::new(e),
-                    }
-                })?;
-                let data = decoded.inner.data;
-                let l1_transaction_count = (data.depositCount + data.withdrawCount)
-                    .try_into()
-                    .map_err(|_| ParserError::NumberOverflow {
-                        value: (data.depositCount + data.withdrawCount) as u64,
-                    })?;
-                let model = DbModel::UpdateTwineTransactionBatchDetail {
-                    start_block: data.startBlock.try_into().map_err(|_| {
-                        ParserError::NumberOverflow {
-                            value: data.startBlock,
-                        }
-                    })?,
-                    end_block: data.endBlock.try_into().map_err(|_| {
-                        ParserError::NumberOverflow {
-                            value: data.endBlock,
-                        }
-                    })?,
-                    batch_hash: format!("{:?}", data.batchId),
-                    chain_id: Decimal::from_i64(data.chainId as i64).unwrap(),
-                    l1_transaction_count,
-                };
-                Ok(ParsedLog {
-                    model,
                     block_number,
                 })
             }

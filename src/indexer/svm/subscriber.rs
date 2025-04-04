@@ -45,7 +45,7 @@ pub async fn poll_missing_slots(
     tokens_gateway_id: &str,
     last_synced: u64,
     current_slot: u64,
-    max_slots_per_request: u64, // New parameter for configurability
+    max_slots_per_request: u64,
 ) -> Result<Vec<(Vec<String>, Option<String>)>> {
     if last_synced >= current_slot {
         info!("Already synced to latest slot");
@@ -73,9 +73,9 @@ pub async fn poll_missing_slots(
                             Cluster::Custom(rpc_url_clone, "".to_string()),
                             Arc::new(anchor_client::solana_sdk::signature::Keypair::new()),
                         );
-                    let program = client.program(anchor_client::solana_sdk::pubkey::Pubkey::from_str(
-                        &program_id_clone,
-                    )?)?;
+                    let program = client.program(
+                        anchor_client::solana_sdk::pubkey::Pubkey::from_str(&program_id_clone)?,
+                    )?;
                     program
                         .rpc()
                         .get_signatures_for_address_with_config(
@@ -91,8 +91,7 @@ pub async fn poll_missing_slots(
                         )
                         .map_err(|e| eyre::eyre!("Failed to get signatures: {}", e))
                 }
-            })
-            .await??;
+            }).await??;
 
             for sig_info in signatures {
                 let signature =

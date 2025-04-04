@@ -18,8 +18,8 @@ use tracing::{error, info};
 pub async fn insert_model(
     model: DbModel,
     last_synced: last_synced::ActiveModel,
-    db: &DatabaseConnection,            // Local DB for deposits/withdrawals
-    blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
+    db: &DatabaseConnection,
+    blockscout_db: &DatabaseConnection,
 ) -> Result<()> {
     match model {
         DbModel::TwineTransactionBatch {
@@ -59,8 +59,8 @@ pub async fn insert_model(
             };
 
             if !l2_blocks.is_empty() {
-                for block in l2_blocks {
-                    twine_batch_l2_blocks::Entity::insert(block)
+                for block in &l2_blocks {
+                    twine_batch_l2_blocks::Entity::insert(block.clone())
                         .on_conflict(
                             OnConflict::column(twine_batch_l2_blocks::Column::Hash)
                                 .do_nothing()
@@ -75,7 +75,8 @@ pub async fn insert_model(
                 }
                 info!(
                     "Inserted {} L2 blocks for batch number {}",
-                    l2_transaction_count, batch.number
+                    l2_blocks.len(),
+                    batch.number
                 );
             } else {
                 info!(
@@ -194,45 +195,6 @@ pub async fn insert_model(
                     })?
                     .into();
             detail.execute_id = Set(Some(inserted_lifecycle.id));
-            detail.updated_at = Set(Utc::now().into());
-            detail.update(blockscout_db).await.map_err(|e| {
-                error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
-                eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
-            })?;
-        }
-
-        DbModel::UpdateTwineTransactionBatchDetail {
-            start_block,
-            end_block,
-            batch_hash: _,
-            chain_id,
-            l1_transaction_count,
-        } => {
-            let batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(blockscout_db)
-                .await?
-                .ok_or_else(|| ParserError::BatchNotFound {
-                    start_block: start_block as u64,
-                    end_block: end_block as u64,
-                })?;
-
-            let detail = twine_transaction_batch_detail::Entity::find()
-                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
-                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .one(blockscout_db)
-                .await?
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "Batch detail not found for batch_number: {}, chain_id: {}",
-                        batch.number,
-                        chain_id
-                    )
-                })?;
-
-            let mut detail: twine_transaction_batch_detail::ActiveModel = detail.into();
-            detail.l1_transaction_count = Set(l1_transaction_count);
             detail.updated_at = Set(Utc::now().into());
             detail.update(blockscout_db).await.map_err(|e| {
                 error!("Failed to update TwineTransactionBatchDetail: {:?}", e);

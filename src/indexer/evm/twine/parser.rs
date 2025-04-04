@@ -46,7 +46,6 @@ pub enum DbModel {
     TwineL1Deposit(twine_l1_deposit::ActiveModel),
     TwineL1Withdraw(twine_l1_withdraw::ActiveModel),
     TwineL2Withdraw(twine_l2_withdraw::ActiveModel),
-    // TwineTransactionBatch(twine_transaction_batch::ActiveModel),
 }
 
 #[derive(Debug)]
@@ -60,6 +59,7 @@ fn process_precompile_return(
     tx_hash: alloy::primitives::B256,
     block_number: i64,
 ) -> Option<ParsedLog> {
+    println!("✨✨✨✨✨ {:?}", pr);
     pr.deposit
         .first()
         .map(|deposit_txn| ParsedLog {
