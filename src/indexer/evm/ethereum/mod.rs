@@ -7,6 +7,8 @@ use crate::indexer::evm;
 use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
+use alloy::sol;
+use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use eyre::{Report, Result};
 use futures_util::{future, StreamExt};
@@ -15,6 +17,44 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
+use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
+use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
+    CommitBatch, FinalizedBatch, FinalizedTransaction,
+};
+
+sol! {
+    #[derive(Debug)]
+    event FinalizeWithdrawETH(
+        string l1Token,
+        string l2Token,
+        string indexed to,
+        string amount,
+        uint64 nonce,
+        uint64 chainId,
+        uint256 blockNumber
+    );
+
+    #[derive(Debug)]
+    event FinalizeWithdrawERC20(
+        string indexed l1Token,
+        string indexed l2Token,
+        string to,
+        string amount,
+        uint64 nonce,
+        uint64 chainId,
+        uint256 blockNumber,
+    );
+}
+
+pub const ETHEREUM_EVENT_SIGNATURES: &[&str] = &[
+    L1MessageQueue::QueueDepositTransaction::SIGNATURE,
+    L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
+    FinalizeWithdrawERC20::SIGNATURE,
+    FinalizeWithdrawETH::SIGNATURE,
+    CommitBatch::SIGNATURE,
+    FinalizedBatch::SIGNATURE,
+    FinalizedTransaction::SIGNATURE,
+];
 
 pub struct EthereumIndexer {
     /// WS provider for live subscription.

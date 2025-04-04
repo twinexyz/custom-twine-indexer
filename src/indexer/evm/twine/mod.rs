@@ -7,6 +7,7 @@ use crate::indexer::evm;
 use crate::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
+use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
@@ -15,6 +16,13 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
+use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
+
+pub const TWINE_EVENT_SIGNATURES: &[&str] = &[
+    L2Messenger::EthereumTransactionsHandled::SIGNATURE,
+    L2Messenger::SolanaTransactionsHandled::SIGNATURE,
+    L2Messenger::SentMessage::SIGNATURE,
+];
 
 pub struct TwineIndexer {
     /// WS provider for live subscription.

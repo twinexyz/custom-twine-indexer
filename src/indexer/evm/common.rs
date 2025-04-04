@@ -15,13 +15,14 @@ pub async fn subscribe_stream(
     contract_addresses: &[String],
     chain: EVMChain,
 ) -> Result<impl Stream<Item = Log>> {
+    let events = chain.get_event_signatures();
     let addresses = contract_addresses
         .iter()
         .map(|addr| addr.parse::<Address>())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| eyre::eyre!("Invalid address format: {}", e))?;
 
-    let filter = Filter::new().address(addresses);
+    let filter = Filter::new().address(addresses).events(events);
     info!("Creating log subscription");
 
     let subscription = provider.subscribe_logs(&filter).await?;
@@ -50,6 +51,7 @@ pub async fn poll_missing_logs(
         max_blocks_per_request
     );
 
+    let events = chain.get_event_signatures();
     let addresses = contract_addresses
         .iter()
         .map(|addr| addr.parse::<Address>())
@@ -66,6 +68,7 @@ pub async fn poll_missing_logs(
         let end_block = (start_block + max_blocks_per_request - 1).min(current_block);
         let filter = Filter::new()
             .select(start_block..=end_block)
+            .events(events)
             .address(addresses.clone());
 
         match provider.get_logs(&filter).await {

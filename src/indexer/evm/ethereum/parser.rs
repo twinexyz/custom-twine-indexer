@@ -1,5 +1,6 @@
 use std::env;
 
+use super::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
 use crate::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
     twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
@@ -18,31 +19,9 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tracing::{error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
-use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{CommitBatch, FinalizedBatch};
-
-sol! {
-    #[derive(Debug)]
-    event FinalizeWithdrawETH(
-        string l1Token,
-        string l2Token,
-        string indexed to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber
-    );
-
-    #[derive(Debug)]
-    event FinalizeWithdrawERC20(
-        string indexed l1Token,
-        string indexed l2Token,
-        string to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber,
-    );
-}
+use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
+    CommitBatch, FinalizedBatch, FinalizedTransaction,
+};
 
 #[derive(Debug)]
 pub enum ParserError {
