@@ -5,8 +5,8 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
 use chrono::Utc;
 use eyre::Report;
-
 use sea_orm::ActiveValue::Set;
+use tracing::{info, warn};
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
 
 #[derive(Debug)]
@@ -59,7 +59,14 @@ fn process_precompile_return(
     tx_hash: alloy::primitives::B256,
     block_number: i64,
 ) -> Option<ParsedLog> {
-    println!("✨✨✨✨✨ {:?}", pr);
+    if pr.deposit.is_empty() && pr.withdraws.is_empty() {
+        info!(
+            "Empty deposits and withdrawals in precompile return {}",
+            tx_hash
+        );
+        return None;
+    }
+
     pr.deposit
         .first()
         .map(|deposit_txn| ParsedLog {
@@ -98,7 +105,7 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
         .block_timestamp
         .and_then(|ts| chrono::DateTime::<Utc>::from_timestamp(ts as i64, 0))
         .unwrap_or_else(|| {
-            tracing::warn!("Missing or invalid block timestamp in log. Using default timestamp.");
+            warn!("Missing or invalid block timestamp in log. Using default timestamp.");
             Utc::now()
         });
 
