@@ -58,18 +58,11 @@ fn process_precompile_return(
     pr: PrecompileReturn,
     tx_hash: alloy::primitives::B256,
     block_number: i64,
-) -> Option<ParsedLog> {
-    if pr.deposit.is_empty() && pr.withdraws.is_empty() {
-        info!(
-            "Empty deposits and withdrawals in precompile return {}",
-            tx_hash
-        );
-        return None;
-    }
+) -> Result<Vec<ParsedLog>, ParserError> {
+    let mut parsed_logs = Vec::new();
 
-    pr.deposit
-        .first()
-        .map(|deposit_txn| ParsedLog {
+    for deposit_txn in pr.deposit {
+        parsed_logs.push(ParsedLog {
             model: DbModel::TwineL1Deposit(twine_l1_deposit::ActiveModel {
                 l1_nonce: Set(deposit_txn.l1_nonce as i64),
                 chain_id: Set(deposit_txn.detail.chain_id as i64),
@@ -78,22 +71,32 @@ fn process_precompile_return(
                 tx_hash: Set(tx_hash.to_string()),
             }),
             block_number,
-        })
-        .or_else(|| {
-            pr.withdraws.first().map(|withdraw_txn| ParsedLog {
-                model: DbModel::TwineL1Withdraw(twine_l1_withdraw::ActiveModel {
-                    l1_nonce: Set(withdraw_txn.l1_nonce as i64),
-                    chain_id: Set(withdraw_txn.detail.chain_id as i64),
-                    status: Set(withdraw_txn.detail.status as i16),
-                    slot_number: Set(withdraw_txn.detail.slot_number as i64),
-                    tx_hash: Set(tx_hash.to_string()),
-                }),
-                block_number,
-            })
-        })
+        });
+    }
+
+    for withdraw_txn in pr.withdraws {
+        parsed_logs.push(ParsedLog {
+            model: DbModel::TwineL1Withdraw(twine_l1_withdraw::ActiveModel {
+                l1_nonce: Set(withdraw_txn.l1_nonce as i64),
+                chain_id: Set(withdraw_txn.detail.chain_id as i64),
+                status: Set(withdraw_txn.detail.status as i16),
+                slot_number: Set(withdraw_txn.detail.slot_number as i64),
+                tx_hash: Set(tx_hash.to_string()),
+            }),
+            block_number,
+        });
+    }
+
+    if parsed_logs.is_empty() {
+        info!(
+            "Skipping. Empty deposits and withdrawals in precompile return {}",
+            tx_hash
+        );
+    }
+    Ok(parsed_logs)
 }
 
-pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
+pub fn parse_log(log: Log) -> Result<Vec<ParsedLog>, Report> {
     let tx_hash = log
         .transaction_hash
         .ok_or_else(|| eyre::eyre!("Missing tx_hash in log"))?;
@@ -119,14 +122,14 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
             let event = decoded.inner.data.transactionOutput;
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            process_precompile_return(pr, tx_hash, block_number).ok_or(ParserError::SkipLog.into())
+            process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
         }
         L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SolanaTransactionsHandled>()?;
             let event = decoded.inner.data.transactionOutput;
             let pr = PrecompileReturn::abi_decode(&event, true)
                 .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            process_precompile_return(pr, tx_hash, block_number).ok_or(ParserError::SkipLog.into())
+            process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
         }
         L2Messenger::SentMessage::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SentMessage>()?;
@@ -144,10 +147,10 @@ pub fn parse_log(log: Log) -> Result<ParsedLog, Report> {
                 gas_limit: Set(data.gasLimit.to_string()),
                 tx_hash: Set(tx_hash.to_string()),
             });
-            Ok(ParsedLog {
+            Ok(vec![ParsedLog {
                 model,
                 block_number,
-            })
+            }])
         }
         other => Err(ParserError::UnknownEvent { signature: other }.into()),
     }

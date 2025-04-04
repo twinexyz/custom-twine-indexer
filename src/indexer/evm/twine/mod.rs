@@ -95,18 +95,21 @@ impl ChainIndexer for TwineIndexer {
 
             while let Some(log) = stream.next().await {
                 match parser::parse_log(log) {
-                    Ok(parsed) => {
-                        let last_synced = last_synced::ActiveModel {
-                            chain_id: Set(id as i64),
-                            block_number: Set(parsed.block_number),
-                        };
-                        db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
+                    Ok(parsed_logs) => {
+                        for parsed in parsed_logs {
+                            let last_synced = last_synced::ActiveModel {
+                                chain_id: Set(id as i64),
+                                block_number: Set(parsed.block_number),
+                            };
+                            db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
+                        }
                     }
                     Err(e) => live_indexer.handle_error(e)?,
                 }
             }
             Ok(())
         });
+
         let (historical_res, live_res) = tokio::join!(historical_handle, live_handle);
         historical_res??;
         live_res??;
@@ -125,12 +128,14 @@ impl TwineIndexer {
         let id = self.chain_id();
         for log in logs {
             match parser::parse_log(log) {
-                Ok(parsed) => {
-                    let last_synced = last_synced::ActiveModel {
-                        chain_id: Set(id as i64),
-                        block_number: Set(parsed.block_number),
-                    };
-                    db::insert_model(parsed.model, last_synced, &self.db).await;
+                Ok(parsed_logs) => {
+                    for parsed in parsed_logs {
+                        let last_synced = last_synced::ActiveModel {
+                            chain_id: Set(id as i64),
+                            block_number: Set(parsed.block_number),
+                        };
+                        db::insert_model(parsed.model, last_synced, &self.db).await;
+                    }
                 }
                 Err(e) => self.handle_error(e)?,
             }
