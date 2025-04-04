@@ -42,7 +42,7 @@ serde_json = "1.0"
 solana-transaction-status-client-types = "2.2.3"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
-tokio-tungstenite = "0.23.1"
+tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "master" }

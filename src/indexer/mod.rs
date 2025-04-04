@@ -53,11 +53,9 @@ pub async fn start_indexer(
     config: IndexerConfig,
     db_conn: DatabaseConnection,
     blockscout_db_conn: DatabaseConnection,
-) -> Result<(
-    JoinHandle<Result<()>>,
-    JoinHandle<Result<()>>,
-    JoinHandle<Result<()>>,
-)> {
+) -> Result<Vec<JoinHandle<Result<()>>>> {
+    let mut handles = Vec::new();
+
     let evm_contracts = vec![
         config.l1_erc20_gateway_address.clone(),
         config.l1_message_queue_address.clone(),
@@ -71,7 +69,7 @@ pub async fn start_indexer(
         config.twine_chain_program_address.clone(),
     ];
 
-    let evm_handle = create_and_spawn_indexer!(
+    handles.push(create_and_spawn_indexer!(
         evm::EthereumIndexer,
         config.ethereum.http_rpc_url,
         config.ethereum.ws_rpc_url,
@@ -81,9 +79,9 @@ pub async fn start_indexer(
         Some(&blockscout_db_conn),
         "EVM",
         evm_contracts
-    );
+    ));
 
-    let twine_handle = create_and_spawn_indexer!(
+    handles.push(create_and_spawn_indexer!(
         evm::TwineIndexer,
         config.twine.http_rpc_url,
         config.twine.ws_rpc_url,
@@ -93,9 +91,9 @@ pub async fn start_indexer(
         None,
         "Twine",
         twine_contracts
-    );
+    ));
 
-    let svm_handle = create_and_spawn_indexer!(
+    handles.push(create_and_spawn_indexer!(
         svm::SVMIndexer,
         config.solana.http_rpc_url,
         config.solana.ws_rpc_url,
@@ -105,7 +103,7 @@ pub async fn start_indexer(
         Some(&blockscout_db_conn),
         "SVM",
         svm_contracts
-    );
+    ));
 
-    Ok((evm_handle, twine_handle, svm_handle))
+    Ok(handles)
 }

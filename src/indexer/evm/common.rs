@@ -7,7 +7,7 @@ use alloy::{
 };
 use eyre::{Report, Result};
 use futures_util::Stream;
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 #[instrument(skip_all, fields(CHAIN = %chain))]
 pub async fn subscribe_stream(
@@ -37,13 +37,18 @@ pub async fn poll_missing_logs(
     chain: EVMChain,
 ) -> Result<Vec<Log>> {
     let current_block = provider.get_block_number().await?;
-    info!("Max blocks per request : {}", max_blocks_per_request);
-    info!("Current block: {}", current_block);
 
     if last_synced == current_block {
-        info!("Already synced to latest block");
+        debug!("Already synced to latest block {}", current_block);
         return Ok(Vec::new());
     }
+
+    info!(
+        "Starting log sync from block {} to {} (max blocks per request: {})",
+        last_synced + 1,
+        current_block,
+        max_blocks_per_request
+    );
 
     let addresses = contract_addresses
         .iter()
@@ -54,29 +59,41 @@ pub async fn poll_missing_logs(
     let mut all_logs = Vec::new();
     let mut start_block = last_synced + 1;
 
+    let total_blocks = current_block - last_synced;
+    let mut blocks_processed = 0;
+
     while start_block <= current_block {
         let end_block = (start_block + max_blocks_per_request - 1).min(current_block);
-        info!(start_block, end_block, "Fetching block range");
-
         let filter = Filter::new()
             .select(start_block..=end_block)
             .address(addresses.clone());
 
         match provider.get_logs(&filter).await {
             Ok(logs) => {
-                info!(log_count = logs.len(), "Fetched logs");
+                if !logs.is_empty() {
+                    debug!(
+                        "Fetched {} logs for blocks {}-{}",
+                        logs.len(),
+                        start_block,
+                        end_block
+                    );
+                }
                 all_logs.extend(logs);
             }
             Err(e) => {
-                error!(error = %e, "Failed to fetch logs");
+                error!(error = %e, "Failed to fetch logs for blocks {}-{}", start_block, end_block);
                 return Err(e.into());
             }
         }
-
         start_block = end_block + 1;
     }
 
-    info!(total_logs = all_logs.len(), "Completed log fetch");
+    info!(
+        "Completed log sync: {} logs fetched across {} blocks",
+        all_logs.len(),
+        total_blocks
+    );
+
     Ok(all_logs)
 }
 
