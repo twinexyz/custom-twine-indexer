@@ -189,7 +189,7 @@ pub async fn insert_model(
                     hash: Set(decoded_hash),
                     chain_id: Set(chain_id),
                     timestamp: Set(batch.timestamp),
-                    created_at: Set(batch.created_at),
+                    inserted_at: Set(batch.inserted_at),
                     updated_at: Set(batch.updated_at),
                 };
                 let inserted = twine_lifecycle_l1_transactions::Entity::insert(lifecycle_model)
@@ -209,8 +209,8 @@ pub async fn insert_model(
                 l1_gas_price: Set(Decimal::from_i64(0).unwrap()),
                 commit_id: Set(Some(inserted_lifecycle.id)),
                 execute_id: Set(None),
-                created_at: Set(batch.created_at),
-                updated_at: Set(Utc::now().into()),
+                inserted_at: Set(batch.inserted_at),
+                updated_at: Set(batch.updated_at),
             };
             twine_transaction_batch_detail::Entity::insert(detail_model)
                 .on_conflict(
@@ -259,7 +259,7 @@ pub async fn insert_model(
                 })?
                 .into_active_model();
             detail.execute_id = Set(Some(inserted_lifecycle.id));
-            detail.updated_at = Set(Utc::now().into());
+            detail.updated_at = Set(inserted_lifecycle.updated_at);
             detail.update(blockscout_db).await?;
         }
         DbModel::UpdateTwineTransactionBatchDetail {
@@ -301,7 +301,7 @@ pub async fn insert_model(
 
             let mut detail = detail.into_active_model();
             detail.l1_transaction_count = Set(l1_transaction_count.try_into().unwrap());
-            detail.updated_at = Set(Utc::now().into());
+            detail.updated_at = Set(batch.updated_at);
             detail.update(blockscout_db).await?;
         }
     }

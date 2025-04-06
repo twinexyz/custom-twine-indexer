@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub number: i32,
-    pub timestamp: DateTimeWithTimeZone,
+    pub timestamp: DateTime,
     pub start_block: i32,
     pub end_block: i32,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub root_hash: Vec<u8>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub inserted_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -23,7 +23,7 @@ pub enum Relation {
     TwineBatchL2Blocks,
     #[sea_orm(has_many = "super::twine_batch_l2_transactions::Entity")]
     TwineBatchL2Transactions,
-    #[sea_orm(has_many = "super::twine_transaction_batch_detail::Entity")]
+    #[sea_orm(has_one = "super::twine_transaction_batch_detail::Entity")]
     TwineTransactionBatchDetail,
 }
 

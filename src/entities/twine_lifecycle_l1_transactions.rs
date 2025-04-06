@@ -11,9 +11,9 @@ pub struct Model {
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub hash: Vec<u8>,
     pub chain_id: Decimal,
-    pub timestamp: DateTimeWithTimeZone,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub timestamp: DateTime,
+    pub inserted_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

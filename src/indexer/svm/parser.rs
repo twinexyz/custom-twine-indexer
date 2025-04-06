@@ -431,8 +431,8 @@ pub async fn parse_log(
                     let block_model = twine_batch_l2_blocks::ActiveModel {
                         batch_number: Set(batch_number),
                         hash: Set(block_hash),
-                        created_at: Set(timestamp.into()),
-                        updated_at: Set(timestamp.into()),
+                        inserted_at: Set(timestamp.naive_utc()),
+                        updated_at: Set(timestamp.naive_utc()),
                     };
                     l2_blocks.push(block_model);
 
@@ -440,8 +440,8 @@ pub async fn parse_log(
                     let tx_model = twine_batch_l2_transactions::ActiveModel {
                         batch_number: Set(batch_number),
                         hash: Set(tx_hash),
-                        created_at: Set(timestamp.into()),
-                        updated_at: Set(timestamp.into()),
+                        inserted_at: Set(timestamp.naive_utc()),
+                        updated_at: Set(timestamp.naive_utc()),
                     };
                     l2_transactions.push(tx_model);
                 }
@@ -451,12 +451,12 @@ pub async fn parse_log(
             let model = DbModel::TwineTransactionBatch {
                 model: twine_transaction_batch::ActiveModel {
                     number: Set(batch_number),
-                    timestamp: Set(timestamp.into()),
+                    timestamp: Set(timestamp.naive_utc()),
                     start_block: Set(start_block),
                     end_block: Set(end_block),
                     root_hash: Set(Vec::new()),
-                    created_at: Set(timestamp.into()),
-                    updated_at: Set(timestamp.into()),
+                    inserted_at: todo!(),
+                    updated_at: todo!(),
                 },
                 chain_id,
                 tx_hash,
@@ -509,9 +509,9 @@ pub async fn parse_log(
                     id: NotSet,
                     hash: Set(tx_hash.as_bytes().to_vec()), // Convert to binary
                     chain_id: Set(Decimal::from_i64(finalize.chain_id as i64).unwrap()),
-                    timestamp: Set(timestamp.into()),
-                    created_at: Set(timestamp.into()),
-                    updated_at: Set(timestamp.into()),
+                    timestamp: Set(timestamp.naive_utc()),
+                    inserted_at: Set(timestamp.naive_utc()),
+                    updated_at: Set(timestamp.naive_utc()),
                 },
                 batch_number: batch.number,
             };

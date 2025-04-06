@@ -13,8 +13,8 @@ pub struct Model {
         column_type = "VarBinary(StringLen::None)"
     )]
     pub hash: Vec<u8>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub inserted_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

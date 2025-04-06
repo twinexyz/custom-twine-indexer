@@ -20,7 +20,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Timestamp)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null(),
                     )
                     .col(
@@ -39,14 +39,14 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineTransactionBatch::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineTransactionBatch::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -55,20 +55,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_start_end_root_unique")
-                    .name("idx_start_end_root_unique")
-                    .table(TwineTransactionBatch::Table)
-                    .col(TwineTransactionBatch::StartBlock)
-                    .col(TwineTransactionBatch::EndBlock)
-                    .unique()
-                    .to_owned(),
-            )
-            .await?;
-
-        // Rest of the migration remains unchanged
         // 2. Create twine_lifecycle_l1_transactions table
         manager
             .create_table(
@@ -94,18 +80,18 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineLifecycleL1Transactions::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -127,7 +113,6 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::BatchNumber)
-                            .integer()
                             .integer()
                             .not_null(),
                     )
@@ -162,14 +147,14 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).integer())
                     .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).integer())
                     .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineTransactionBatchDetail::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -218,7 +203,6 @@ impl MigrationTrait for Migration {
                             .name("idx_batch_number_chain_id_unique")
                             .table(TwineTransactionBatchDetail::Table)
                             .col(TwineTransactionBatchDetail::BatchNumber)
-                            .col(TwineTransactionBatchDetail::ChainId)
                             .unique(),
                     )
                     .to_owned(),
@@ -238,14 +222,14 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(TwineBatchL2Blocks::Hash).binary().not_null())
                     .col(
-                        ColumnDef::new(TwineBatchL2Blocks::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineBatchL2Blocks::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineBatchL2Blocks::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -279,14 +263,14 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineBatchL2Transactions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineBatchL2Transactions::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineBatchL2Transactions::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -310,7 +294,15 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Drop tables in reverse order to avoid foreign key constraint issues
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_batch_number_chain_id_unique")
+                    .table(TwineTransactionBatchDetail::Table)
+                    .to_owned(),
+            )
+            .await?;
+
         manager
             .drop_table(
                 Table::drop()
@@ -351,7 +343,7 @@ enum TwineTransactionBatch {
     StartBlock,
     EndBlock,
     RootHash,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -367,7 +359,7 @@ enum TwineTransactionBatchDetail {
     L1GasPrice,
     CommitId,
     ExecuteId,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -378,7 +370,7 @@ enum TwineLifecycleL1Transactions {
     Hash,
     ChainId,
     Timestamp,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -387,7 +379,7 @@ enum TwineBatchL2Blocks {
     Table,
     BatchNumber,
     Hash,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -396,6 +388,6 @@ enum TwineBatchL2Transactions {
     Table,
     BatchNumber,
     Hash,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }

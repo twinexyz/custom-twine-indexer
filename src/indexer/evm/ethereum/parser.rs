@@ -289,29 +289,20 @@ pub async fn parse_log(
                             value: data.endBlock,
                         })?;
 
+                // Generate the batch number first
+                let batch_number = generate_number(data.startBlock, data.endBlock)?;
+
+                // Check if a batch with this batch_number already exists
                 let existing_batch = twine_transaction_batch::Entity::find()
-                    .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                    .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
+                    .filter(twine_transaction_batch::Column::Number.eq(batch_number))
                     .one(blockscout_db)
                     .await?;
-                let batch_number = if let Some(batch) = existing_batch {
-                    info!("Found existing batch: {:?}", batch);
-                    batch.number
-                } else {
-                    let num = generate_number(data.startBlock, data.endBlock)?;
-                    info!("Generated new batch number: {}", num);
-                    num
-                };
 
-                let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
-                    .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
-                    .one(blockscout_db)
-                    .await?
-                    .is_some();
+                let batch_exists = existing_batch.is_some();
 
-                let (l2_blocks, l2_transactions) = if batch_exists_in_l2_blocks {
+                let (l2_blocks, l2_transactions) = if batch_exists {
                     info!(
-                        "Batch number {} already exists in twine_batch_l2_blocks, skipping L2 blocks and transactions generation",
+                        "Batch number {} already exists in twine_transaction_batch, skipping L2 blocks and transactions generation",
                         batch_number
                     );
                     (Vec::new(), Vec::new())
@@ -343,8 +334,8 @@ pub async fn parse_log(
                         let block_model = twine_batch_l2_blocks::ActiveModel {
                             batch_number: Set(batch_number),
                             hash: Set(block_hash.to_vec()),
-                            created_at: Set(timestamp.into()),
-                            updated_at: Set(timestamp.into()),
+                            inserted_at: Set(timestamp.naive_utc()),
+                            updated_at: Set(timestamp.naive_utc()),
                         };
                         l2_blocks.push(block_model);
 
@@ -355,8 +346,8 @@ pub async fn parse_log(
                                     let tx_model = twine_batch_l2_transactions::ActiveModel {
                                         batch_number: Set(batch_number),
                                         hash: Set(tx_hash),
-                                        created_at: Set(timestamp.into()),
-                                        updated_at: Set(timestamp.into()),
+                                        inserted_at: Set(timestamp.naive_utc()),
+                                        updated_at: Set(timestamp.naive_utc()),
                                     };
                                     l2_transactions.push(tx_model);
                                 }
@@ -366,8 +357,8 @@ pub async fn parse_log(
                                     let tx_model = twine_batch_l2_transactions::ActiveModel {
                                         batch_number: Set(batch_number),
                                         hash: Set(tx_hash.to_vec()),
-                                        created_at: Set(timestamp.into()),
-                                        updated_at: Set(timestamp.into()),
+                                        inserted_at: Set(timestamp.naive_utc()),
+                                        updated_at: Set(timestamp.naive_utc()),
                                     };
                                     l2_transactions.push(tx_model);
                                 }
@@ -386,29 +377,59 @@ pub async fn parse_log(
                     (l2_blocks, l2_transactions)
                 };
 
-                let batch_model = DbModel::TwineTransactionBatch {
-                    model: twine_transaction_batch::ActiveModel {
-                        number: Set(batch_number),
-                        timestamp: Set(timestamp.into()),
-                        start_block: Set(start_block),
-                        end_block: Set(end_block),
-                        root_hash: Set(
-                            alloy::hex::decode(root_hash.trim_start_matches("0x")).unwrap()
-                        ),
-                        created_at: Set(timestamp.into()),
-                        updated_at: Set(timestamp.into()),
-                    },
-                    chain_id,
-                    tx_hash: tx_hash_str.clone(),
-                    l2_blocks,
-                    l2_transactions,
+                let batch_model = if batch_exists {
+                    info!(
+                        "Skipping batch insertion for batch_number: {}",
+                        batch_number
+                    );
+                    None
+                } else {
+                    Some(DbModel::TwineTransactionBatch {
+                        model: twine_transaction_batch::ActiveModel {
+                            number: Set(batch_number),
+                            timestamp: Set(timestamp.naive_utc()),
+                            start_block: Set(start_block),
+                            end_block: Set(end_block),
+                            root_hash: Set(
+                                alloy::hex::decode(root_hash.trim_start_matches("0x")).unwrap()
+                            ),
+                            inserted_at: Set(timestamp.naive_utc()),
+                            updated_at: Set(timestamp.naive_utc()),
+                        },
+                        chain_id,
+                        tx_hash: tx_hash_str.clone(),
+                        l2_blocks,
+                        l2_transactions,
+                    })
                 };
 
+                if batch_model.is_none() {
+                    return Ok(ParsedLog {
+                        model: DbModel::TwineTransactionBatchDetail(
+                            twine_transaction_batch_detail::ActiveModel {
+                                batch_number: Set(batch_number),
+                                l2_transaction_count: Set(0),
+                                l2_fair_gas_price: Set(Decimal::from_i32(0).unwrap()),
+                                chain_id: Set(chain_id),
+                                l1_transaction_count: Set(0),
+                                l1_gas_price: Set(Decimal::from_i32(0).unwrap()),
+                                commit_id: Set(None),
+                                execute_id: Set(None),
+                                inserted_at: Set(timestamp.naive_utc()),
+                                updated_at: Set(timestamp.naive_utc()),
+                                ..Default::default()
+                            },
+                        ),
+                        block_number,
+                    });
+                }
+
                 Ok(ParsedLog {
-                    model: batch_model,
+                    model: batch_model.unwrap(),
                     block_number,
                 })
             }
+
             FinalizedBatch::SIGNATURE_HASH => {
                 let decoded =
                     log.log_decode::<FinalizedBatch>()
@@ -417,24 +438,27 @@ pub async fn parse_log(
                             source: Box::new(e),
                         })?;
                 let data = decoded.inner.data;
+
+                let batch_number = generate_number(data.startBlock, data.endBlock)?;
+
                 let batch = twine_transaction_batch::Entity::find()
-                    .filter(twine_transaction_batch::Column::StartBlock.eq(data.startBlock as i32))
-                    .filter(twine_transaction_batch::Column::EndBlock.eq(data.endBlock as i32))
+                    .filter(twine_transaction_batch::Column::Number.eq(batch_number))
                     .one(blockscout_db)
-                    .await?;
-                let batch = batch.ok_or_else(|| ParserError::FinalizedBeforeCommit {
-                    start_block: data.startBlock,
-                    end_block: data.endBlock,
-                    batch_hash: format!("{:?}", data.batchHash),
-                })?;
+                    .await?
+                    .ok_or_else(|| ParserError::FinalizedBeforeCommit {
+                        start_block: data.startBlock,
+                        end_block: data.endBlock,
+                        batch_hash: format!("{:?}", data.batchHash),
+                    })?;
+
                 let lifecycle_model = DbModel::TwineLifecycleL1Transactions {
                     model: twine_lifecycle_l1_transactions::ActiveModel {
-                        id: NotSet,
                         hash: Set(alloy::hex::decode(tx_hash_str.trim_start_matches("0x")).unwrap()),
                         chain_id: Set(Decimal::from_i64(chain_id as i64).unwrap()),
-                        timestamp: Set(timestamp.into()),
-                        created_at: Set(timestamp.into()),
-                        updated_at: Set(timestamp.into()),
+                        timestamp: Set(timestamp.naive_utc()),
+                        inserted_at: Set(timestamp.naive_utc()),
+                        updated_at: Set(timestamp.naive_utc()),
+                        ..Default::default()
                     },
                     batch_number: batch.number,
                 };
