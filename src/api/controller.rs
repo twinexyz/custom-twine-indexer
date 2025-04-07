@@ -14,8 +14,10 @@ use axum::{
     response::IntoResponse,
 };
 use sea_orm::{
-    ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
+use sea_orm::{ModelTrait, Select};
+use std::fmt::Debug;
 
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse {
@@ -25,27 +27,79 @@ pub async fn health_check() -> impl IntoResponse {
     }
 }
 
+/// Look up the reference transaction by chain_id and nonce and then filters to only include
+/// transactions that occurred before that transaction (or, in case of equal timestamps, with a lower nonce).
+async fn apply_reference_filter<E>(
+    query: Select<E>,
+    ref_chain_id: Option<u64>,
+    ref_nonce: Option<u64>,
+    db: &DatabaseConnection,
+    column_chain_id: E::Column,
+    column_nonce: E::Column,
+    column_created_at: E::Column,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+    E::Model: ModelTrait,
+{
+    if let (Some(ref_chain_id), Some(ref_nonce)) = (ref_chain_id, ref_nonce) {
+        let reference_tx = E::find()
+            .filter(
+                Condition::all()
+                    .add(column_chain_id.eq(ref_chain_id as i64))
+                    .add(column_nonce.eq(ref_nonce as i64)),
+            )
+            .one(db)
+            .await
+            .map_err(AppError::Database)?;
+        if let Some(tx) = reference_tx {
+            let created_at = tx.get(column_created_at).clone();
+            let chain_id_value = tx.get(column_chain_id).clone();
+            let nonce_value = tx.get(column_nonce).clone();
+            let condition = Condition::any()
+                .add(column_created_at.lt(created_at.clone()))
+                .add(
+                    Condition::all().add(column_created_at.eq(created_at)).add(
+                        Condition::any()
+                            .add(column_chain_id.ne(chain_id_value.clone()))
+                            .add(
+                                Condition::all()
+                                    .add(column_chain_id.eq(chain_id_value))
+                                    .add(column_nonce.lt(nonce_value)),
+                            ),
+                    ),
+                );
+            Ok(query.filter(condition))
+        } else {
+            Ok(query)
+        }
+    } else {
+        Ok(query)
+    }
+}
+
 pub async fn get_l1_deposits(
     State(state): State<AppState>,
     Query(pagination): Query<L1DepositPagination>,
 ) -> ApiResult<Vec<L1DepositResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
+    let query = l1_deposit::Entity::find();
 
-    let mut query = l1_deposit::Entity::find();
-
-    // If pagination parameters are provided use them
-    if let (Some(last_block), Some(_last_tx_hash)) =
-        (pagination.l1_block_number, &pagination.transaction_hash)
-    {
-        query = query.filter(
-            Condition::any().add(l1_deposit::Column::BlockNumber.lt(last_block)),
-            //TODO: case when 2 different txs exist in the same block.
-            // Add a condition to order them by nonce or date.
-        );
-    }
+    let query = apply_reference_filter(
+        query,
+        pagination.chain_id,
+        pagination.nonce,
+        &state.db,
+        l1_deposit::Column::ChainId,
+        l1_deposit::Column::Nonce,
+        l1_deposit::Column::CreatedAt,
+    )
+    .await?;
 
     let deposits = query
-        .order_by_desc(l1_deposit::Column::BlockNumber)
+        .order_by_desc(l1_deposit::Column::CreatedAt)
+        .order_by_desc(l1_deposit::Column::ChainId)
+        .order_by_desc(l1_deposit::Column::Nonce)
         .limit(items_count)
         .all(&state.db)
         .await
@@ -63,8 +117,6 @@ pub async fn get_l1_deposits(
             .one(&state.db)
             .await
             .map_err(AppError::Database)?;
-
-        // Skip this deposit if the record does not exist in l2 table as well.
         let Some(twine_record) = twine_record else {
             tracing::warn!(
                 "Skipping deposit: No corresponding Twine record found for nonce {} on chain {}",
@@ -73,14 +125,12 @@ pub async fn get_l1_deposits(
             );
             continue;
         };
-
-        let response_item = L1DepositResponse {
+        response_items.push(L1DepositResponse {
             l1_tx_hash: deposit.tx_hash.clone(),
             l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: deposit.slot_number,
             l2_slot_number: twine_record.slot_number,
             block_number: deposit.block_number,
-            status: twine_record.status,
             nonce: deposit.nonce,
             chain_id: deposit.chain_id,
             l1_token: deposit.l1_token.clone(),
@@ -89,17 +139,13 @@ pub async fn get_l1_deposits(
             to_twine_address: deposit.to_twine_address.clone(),
             amount: deposit.amount.clone(),
             created_at: deposit.created_at,
-        };
-
-        response_items.push(response_item);
+        });
     }
-
     let next_page_params = deposits.last().map(|d| L1DepositPagination {
         items_count: Some(items_count),
-        l1_block_number: Some(d.block_number.unwrap_or(0) as u64),
-        transaction_hash: Some(d.tx_hash.clone()),
+        chain_id: Some(d.chain_id as u64),
+        nonce: Some(d.nonce as u64),
     });
-
     Ok(ApiResponse {
         success: true,
         items: response_items,
@@ -112,15 +158,20 @@ pub async fn get_l1_withdraws(
     Query(pagination): Query<L1WithdrawalPagination>,
 ) -> ApiResult<Vec<L1WithdrawResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
-    let mut query = l1_withdraw::Entity::find();
-
-    // If nonce is provided, use it for pagination
-    if let Some(nonce) = pagination.nonce {
-        query = query.filter(l1_withdraw::Column::Nonce.lt(nonce));
-    }
+    let query = l1_withdraw::Entity::find();
+    let query = apply_reference_filter(
+        query,
+        pagination.chain_id,
+        pagination.nonce,
+        &state.db,
+        l1_withdraw::Column::ChainId,
+        l1_withdraw::Column::Nonce,
+        l1_withdraw::Column::CreatedAt,
+    )
+    .await?;
 
     let withdraws = query
-        .order_by_desc(l1_withdraw::Column::Nonce)
+        .order_by_desc(l1_withdraw::Column::CreatedAt)
         .limit(items_count)
         .all(&state.db)
         .await
@@ -138,8 +189,6 @@ pub async fn get_l1_withdraws(
             .one(&state.db)
             .await
             .map_err(AppError::Database)?;
-
-        // Skip this withdraw if the record does not exist
         let Some(twine_record) = twine_record else {
             tracing::warn!(
                 "Skipping forcedWithdraw: No corresponding Twine record found for nonce {} on chain {}",
@@ -148,14 +197,12 @@ pub async fn get_l1_withdraws(
             );
             continue;
         };
-
-        let response_item = L1WithdrawResponse {
+        response_items.push(L1WithdrawResponse {
             l1_tx_hash: withdraw.tx_hash.clone(),
             l2_tx_hash: twine_record.tx_hash.clone(),
             slot_number: withdraw.slot_number,
             l2_slot_number: twine_record.slot_number,
             block_number: withdraw.block_number,
-            status: twine_record.status,
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
             l1_token: withdraw.l1_token.clone(),
@@ -164,16 +211,13 @@ pub async fn get_l1_withdraws(
             to_twine_address: withdraw.to_twine_address.clone(),
             amount: withdraw.amount.clone(),
             created_at: withdraw.created_at,
-        };
-
-        response_items.push(response_item);
+        });
     }
-
     let next_page_params = withdraws.last().map(|w| L1WithdrawalPagination {
         items_count: Some(items_count),
+        chain_id: Some(w.chain_id as u64),
         nonce: Some(w.nonce as u64),
     });
-
     Ok(ApiResponse {
         success: true,
         items: response_items,
@@ -186,15 +230,21 @@ pub async fn get_l2_withdraws(
     Query(pagination): Query<L2WithdrawalPagination>,
 ) -> ApiResult<Vec<L2WithdrawResponse>, impl Pagination> {
     let items_count = items_count(pagination.items_count);
-    let mut query = l2_withdraw::Entity::find();
+    let query = l2_withdraw::Entity::find();
 
-    // If nonce is provided, use it for pagination
-    if let Some(nonce) = pagination.nonce {
-        query = query.filter(l2_withdraw::Column::Nonce.lt(nonce));
-    }
+    let query = apply_reference_filter(
+        query,
+        pagination.chain_id,
+        pagination.nonce,
+        &state.db,
+        l2_withdraw::Column::ChainId,
+        l2_withdraw::Column::Nonce,
+        l2_withdraw::Column::CreatedAt,
+    )
+    .await?;
 
     let withdraws = query
-        .order_by_desc(l2_withdraw::Column::Nonce)
+        .order_by_desc(l2_withdraw::Column::CreatedAt)
         .limit(items_count)
         .all(&state.db)
         .await
@@ -212,8 +262,6 @@ pub async fn get_l2_withdraws(
             .one(&state.db)
             .await
             .map_err(AppError::Database)?;
-
-        // Skip this withdraw if the record does not exist
         let Some(twine_record) = twine_record else {
             tracing::warn!(
                 "Skipping withdraw: No corresponding Twine L2 record found for nonce {} on chain {}",
@@ -222,14 +270,12 @@ pub async fn get_l2_withdraws(
             );
             continue;
         };
-
-        let response_item = L2WithdrawResponse {
+        response_items.push(L2WithdrawResponse {
             l1_tx_hash: twine_record.tx_hash.clone(),
             l2_tx_hash: withdraw.tx_hash.clone(),
             slot_number: withdraw.slot_number,
             l2_slot_number: twine_record.block_number.parse::<i64>().unwrap_or_default(),
             block_number: withdraw.block_number,
-            // status: 1, // TODO: Ask for change in smart contract?
             nonce: withdraw.nonce,
             chain_id: withdraw.chain_id,
             l1_token: twine_record.l1_token.clone(),
@@ -238,16 +284,13 @@ pub async fn get_l2_withdraws(
             to_twine_address: twine_record.to.clone(),
             amount: twine_record.amount.clone(),
             created_at: withdraw.created_at,
-        };
-
-        response_items.push(response_item);
+        });
     }
-
     let next_page_params = withdraws.last().map(|w| L2WithdrawalPagination {
         items_count: Some(items_count),
+        chain_id: Some(w.chain_id as u64),
         nonce: Some(w.nonce as u64),
     });
-
     Ok(ApiResponse {
         success: true,
         items: response_items,
