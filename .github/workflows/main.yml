@@ -53,4 +53,3 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
       app_name: "api,indexer"
-
