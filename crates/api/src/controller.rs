@@ -1,23 +1,22 @@
-use crate::api::error::AppError;
-use crate::api::pagination::{
+use crate::error::AppError;
+use crate::pagination::{
     items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination,
     PlaceholderPagination,
 };
-use crate::api::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
-use crate::api::AppState;
-use crate::api::{ApiResponse, ApiResult};
-use crate::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
-};
+use crate::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
+use crate::AppState;
+use crate::{ApiResponse, ApiResult};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
+};
+use common::entities::{
+    l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
 };
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use sea_orm::{ModelTrait, Select};
-use std::fmt::Debug;
 
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse {

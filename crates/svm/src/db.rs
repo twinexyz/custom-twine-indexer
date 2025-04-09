@@ -11,7 +11,7 @@ use sea_query::OnConflict;
 use tracing::{error, info};
 
 use super::parser::{DbModel, ParsedEvent};
-use crate::entities::{
+use common::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_batch_l2_blocks,
     twine_batch_l2_transactions, twine_lifecycle_l1_transactions, twine_transaction_batch,
     twine_transaction_batch_detail,

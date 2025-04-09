@@ -1,4 +1,4 @@
-use alloy::hex;
+// use alloy::hex;
 use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -13,7 +13,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-use crate::entities::{
+use common::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
     twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };

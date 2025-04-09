@@ -1,10 +1,10 @@
 use super::EVMChain;
-use crate::indexer::{MAX_RETRIES, RETRY_DELAY};
 use alloy::{
     primitives::{address, Address},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{Filter, Log},
 };
+use common::indexer::{MAX_RETRIES, RETRY_DELAY};
 use eyre::{Report, Result};
 use futures_util::Stream;
 use tracing::{debug, error, info, instrument};

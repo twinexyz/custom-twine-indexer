@@ -1,5 +1,5 @@
-use crate::api::pagination::PlaceholderPagination;
-use crate::api::ApiResponse;
+use crate::pagination::PlaceholderPagination;
+use crate::ApiResponse;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},

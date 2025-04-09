@@ -4,10 +4,10 @@ mod subscriber;
 
 use std::{str::FromStr, sync::Arc};
 
-use super::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use alloy::transports::http::reqwest;
 use anchor_client::{Client, Cluster};
 use async_trait::async_trait;
+use common::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
 use eyre::Result;
 use futures_util::{future, StreamExt};
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
@@ -109,7 +109,7 @@ impl ChainIndexer for SVMIndexer {
                         .await
                         {
                             Some(parsed) => {
-                                let last_synced = crate::entities::last_synced::ActiveModel {
+                                let last_synced = common::entities::last_synced::ActiveModel {
                                     chain_id: Set(chain_id),
                                     block_number: Set(parsed.slot_number),
                                 };
@@ -198,7 +198,7 @@ impl SVMIndexer {
         for (logs, signature) in events {
             match parser::parse_log(&logs, signature.clone(), &self.db, &self.blockscout_db).await {
                 Some(parsed) => {
-                    let last_synced = crate::entities::last_synced::ActiveModel {
+                    let last_synced = common::entities::last_synced::ActiveModel {
                         chain_id: Set(chain_id),
                         block_number: Set(parsed.slot_number),
                     };

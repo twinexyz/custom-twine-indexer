@@ -1,9 +1,9 @@
-use crate::entities::{
-    twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw, twine_transaction_batch,
-};
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
 use chrono::Utc;
+use common::entities::{
+    twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw, twine_transaction_batch,
+};
 use eyre::Report;
 use sea_orm::ActiveValue::Set;
 use tracing::{info, warn};

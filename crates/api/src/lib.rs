@@ -2,13 +2,14 @@ mod controller;
 mod error;
 mod pagination;
 mod response;
-use crate::api::error::AppError;
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
+use error::AppError;
 use serde::Serialize;
 use std::net::SocketAddrV4;
 use tracing::info;

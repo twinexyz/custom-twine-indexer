@@ -1,0 +1,13 @@
+[package]
+name = "api-lib"
+edition = "2021"
+
+[dependencies]
+common = { workspace = true }
+axum = { version = "0.8.1" }
+sea-orm = { workspace = true }
+tracing = { workspace = true }
+eyre = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

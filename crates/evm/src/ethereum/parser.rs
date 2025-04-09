@@ -1,10 +1,6 @@
 use std::env;
 
 use super::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
-use crate::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-    twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
-};
 use alloy::primitives::B256;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockTransactions, Log};
@@ -12,6 +8,10 @@ use alloy::sol;
 use alloy::sol_types::SolEvent;
 use blake3::hash;
 use chrono::Utc;
+use common::entities::{
+    l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
+    twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
+};
 use eyre::Report;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
