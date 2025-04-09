@@ -11,7 +11,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use common::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
@@ -77,9 +77,9 @@ pub struct CommitBatch {
     pub start_block: u64,
     pub end_block: u64,
     pub chain_id: u64,
+    pub slot_number: u64,
     #[borsh(skip)]
     pub signature: String,
-    pub slot_number: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -394,32 +394,23 @@ pub async fn parse_log(
             };
             let chain_id = Decimal::from_i64(commit.chain_id as i64).unwrap();
 
+            // Generate batch number
+            let batch_number = generate_number(commit.start_block, commit.end_block)
+                .expect("Failed to generate batch number");
+
+            // Check if batch already exists
             let existing_batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(blockscout_db) // Use blockscout_db
+                .filter(twine_transaction_batch::Column::Number.eq(batch_number))
+                .one(blockscout_db)
                 .await
                 .ok()?;
-            let batch_number = if let Some(batch) = existing_batch {
-                info!("Found existing batch: {:?}", batch);
-                batch.number
-            } else {
-                let num = generate_number(commit.start_block, commit.end_block)
-                    .expect("Failed to generate batch number");
-                info!("Generated new batch number: {:?}", num);
-                num
-            };
 
-            let batch_exists_in_l2_blocks = twine_batch_l2_blocks::Entity::find()
-                .filter(twine_batch_l2_blocks::Column::BatchNumber.eq(batch_number))
-                .one(blockscout_db) // Use blockscout_db
-                .await
-                .ok()?
-                .is_some();
+            let batch_exists = existing_batch.is_some();
+            let batch_number = existing_batch.map(|b| b.number).unwrap_or(batch_number);
 
-            let (l2_blocks, l2_transactions) = if batch_exists_in_l2_blocks {
+            let (l2_blocks, l2_transactions) = if batch_exists {
                 info!(
-                    "Batch number {} already exists in twine_batch_l2_blocks, skipping L2 blocks and transactions generation",
+                    "Batch number {} already exists in twine_transaction_batch, skipping L2 blocks and transactions generation",
                     batch_number
                 );
                 (Vec::new(), Vec::new())
@@ -455,18 +446,26 @@ pub async fn parse_log(
                     start_block: Set(start_block),
                     end_block: Set(end_block),
                     root_hash: Set(Vec::new()),
-                    inserted_at: todo!(),
-                    updated_at: todo!(),
+                    inserted_at: Set(timestamp.naive_utc()),
+                    updated_at: Set(timestamp.naive_utc()),
                 },
                 chain_id,
                 tx_hash,
                 l2_blocks,
                 l2_transactions,
             };
-            Some(ParsedEvent {
+
+            let parsed_event = ParsedEvent {
                 model,
                 slot_number: commit.slot_number as i64,
-            })
+            };
+
+            info!(
+                "Parsed CommitBatch event: batch_number={}, start_block={}, end_block={}, slot_number={}",
+                batch_number, start_block, end_block, commit.slot_number
+            );
+
+            Some(parsed_event)
         }
         "finalize_batch" => {
             let finalize = parse_borsh::<FinalizedBatch>(&encoded_data, signature.clone()).ok()?;
@@ -490,28 +489,37 @@ pub async fn parse_log(
                     return None;
                 }
             };
+
+            // Generate batch number
+            let batch_number = generate_number(finalize.start_block, finalize.end_block)
+                .expect("Failed to generate batch number");
+
+            // Check if batch exists
             let batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(blockscout_db) // Use blockscout_db
+                .filter(twine_transaction_batch::Column::Number.eq(batch_number))
+                .one(blockscout_db)
                 .await
                 .ok()?
                 .ok_or_else(|| {
+                    error!(
+                        "Finalized event indexed before commit for start_block: {}, end_block: {}, batch_hash: {:?}",
+                        finalize.start_block, finalize.end_block, finalize.batch_hash
+                    );
                     eyre::eyre!(
-                        "Batch not found for start_block: {}, end_block: {}",
-                        finalize.start_block,
-                        finalize.end_block
+                        "Finalized event indexed before commit for start_block: {}, end_block: {}",
+                        finalize.start_block, finalize.end_block
                     )
                 })
                 .ok()?;
+
             let model = DbModel::TwineLifecycleL1Transactions {
                 model: twine_lifecycle_l1_transactions::ActiveModel {
-                    id: NotSet,
-                    hash: Set(tx_hash.as_bytes().to_vec()), // Convert to binary
+                    hash: Set(tx_hash.as_bytes().to_vec()),
                     chain_id: Set(Decimal::from_i64(finalize.chain_id as i64).unwrap()),
                     timestamp: Set(timestamp.naive_utc()),
                     inserted_at: Set(timestamp.naive_utc()),
                     updated_at: Set(timestamp.naive_utc()),
+                    ..Default::default()
                 },
                 batch_number: batch.number,
             };

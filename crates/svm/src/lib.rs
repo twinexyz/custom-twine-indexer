@@ -56,6 +56,8 @@ impl ChainIndexer for SVMIndexer {
     async fn run(&mut self) -> Result<()> {
         let chain_id = self.chain_id as i64;
 
+        // Commented out historical polling
+        /*
         let last_synced = db::get_last_synced_slot(&self.db, chain_id, self.start_block).await?;
         let current_slot = self.get_current_slot().await?;
         let last_synced_u64 = last_synced.max(0) as u64;
@@ -86,11 +88,13 @@ impl ChainIndexer for SVMIndexer {
         );
 
         self.catchup_missing_slots(historical_events).await?;
+        */
 
         // Streaming Phase (Live)
         let live_indexer = self.clone();
         tokio::spawn(async move {
-            info!("Starting live indexing from slot {}", current_slot + 1);
+            // Modified to start live indexing without reference to current_slot
+            info!("Starting live indexing");
             match subscriber::subscribe_stream(
                 &live_indexer.ws_url,
                 &live_indexer.twine_chain_id,
@@ -190,6 +194,7 @@ impl SVMIndexer {
         Ok(slot)
     }
 
+    /*
     async fn catchup_missing_slots(
         &self,
         events: Vec<(Vec<String>, Option<String>)>,
@@ -211,6 +216,7 @@ impl SVMIndexer {
         }
         Ok(())
     }
+    */
 }
 
 impl Clone for SVMIndexer {
