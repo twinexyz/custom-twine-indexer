@@ -18,26 +18,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
-  file-scan:
-    needs: ["test"]
-    uses: ./.github/workflows/scan.yml
-    secrets: inherit
-  cargo-audit:
-    needs: ["test"]
-    uses: ./.github/workflows/audit.yml
-    secrets: inherit
-  build-and-deploy:
-    needs: ["test", "file-scan"]
-    uses: ./.github/workflows/build-and-deploy.yml
-    secrets: inherit
-  #container-scan:
-  #  needs: ["test", "file-scan", "build-and-deploy"]
-  #  uses: ./.github/workflows/container-scan.yml
+  #test:
+  #  uses: twinexyz/workflows/.github/workflows/test.yml@main
   #  secrets: inherit
-  zap-scan:
-    needs: ["test", "file-scan", "build-and-deploy"]
-    uses: ./.github/workflows/zap.yml
+  #file-scan:
+  #  needs: ["test"]
+  #  uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+  #  secrets: inherit
+  #cargo-audit:
+  #  needs: ["test"]
+  #  uses: twinexyz/workflows/.github/workflows/audit.yml@main
+  #  secrets: inherit
+  build:
+    uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+  container-scan:
+    needs: ["build"]
+    uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+  deploy:
+    needs: ["build", "container-scan"]
+    uses: twinexyz/workflows/.github/workflows/deploy.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      app_name: "api,indexer"
