@@ -37,7 +37,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan:
-    needs: ["build", "file-scan"]
+    needs: ["build"]
     uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
