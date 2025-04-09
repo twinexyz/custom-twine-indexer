@@ -27,11 +27,11 @@ jobs:
     secrets: inherit
   cargo-audit:
     needs: ["test"]
-    uses: twinexyz/workkflows/.github/workflows/audit.yml@main
+    uses: twinexyz/workflows/.github/workflows/audit.yml@main
     secrets: inherit
   build:
     needs: ["test", "file-scan"]
-    uses: twinexyz/workkflows/.github/workflows/build.yml@main
+    uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
@@ -39,7 +39,7 @@ jobs:
       repo_name: ${{ github.event.repository.name }}
   container-scan:
     needs: ["test", "build", "file-scan"]
-    uses: twinexyz/workkflows/.github/workflows/container-scan.yml@main
+    uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
@@ -47,7 +47,7 @@ jobs:
       repo_name: ${{ github.event.repository.name }}
   deploy:
     needs: ["test", "build", "file-scan", "container-scan"]
-    uses: twinexyz/workkflows/.github/workflows/deploy.yml@main
+    uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
