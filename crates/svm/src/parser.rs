@@ -1,4 +1,5 @@
 // use alloy::hex;
+
 use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -274,20 +275,20 @@ pub async fn parse_log(
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
-            _ => continue, // Silently skip unknown log entries
+            _ => continue,
         }
     }
 
     let Some(event_type) = event_type else {
         debug!("No recognized event type found in logs: {:?}", logs);
-        return None; // Silently return None if no event type is matched
+        return None;
     };
     let Some(encoded_data) = encoded_data else {
         debug!(
             "No encoded data found for event {} in logs: {:?}",
             event_type, logs
         );
-        return None; // Silently return None if no encoded data is found
+        return None;
     };
 
     debug!(
@@ -512,9 +513,26 @@ pub async fn parse_log(
                 })
                 .ok()?;
 
+            let decoded_hash = match bs58::decode(&tx_hash).into_vec() {
+                Ok(hash) => {
+                    if hash.len() != 64 {
+                        error!(
+                            "Invalid hash length for finalize_batch: expected 64, got {}",
+                            hash.len()
+                        );
+                        return None;
+                    }
+                    hash
+                }
+                Err(e) => {
+                    error!("Failed to decode Base58 tx_hash for finalize_batch: {}", e);
+                    return None;
+                }
+            };
+
             let model = DbModel::TwineLifecycleL1Transactions {
                 model: twine_lifecycle_l1_transactions::ActiveModel {
-                    hash: Set(tx_hash.as_bytes().to_vec()),
+                    hash: Set(decoded_hash),
                     chain_id: Set(Decimal::from_i64(finalize.chain_id as i64).unwrap()),
                     timestamp: Set(timestamp.naive_utc()),
                     inserted_at: Set(timestamp.naive_utc()),
