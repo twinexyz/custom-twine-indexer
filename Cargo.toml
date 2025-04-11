@@ -21,12 +21,12 @@ edition = "2021"
 [workspace]
 resolver = "2"
 members = [
+    "bin/api",
+    "bin/indexer",
+    "crates/api",
+    "crates/common",
     "crates/evm",
     "crates/svm",
-    "crates/common",
-    "crates/api",
-    "bin/indexer",
-    "bin/api",
     "migration",
 ]
 default-members = ["bin/indexer", "bin/api"]
