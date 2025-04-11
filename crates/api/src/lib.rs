@@ -2,6 +2,7 @@ mod controller;
 mod error;
 mod pagination;
 mod response;
+mod search;
 
 use axum::{
     http::StatusCode,
@@ -45,6 +46,7 @@ fn make_server(state: AppState) -> Router {
         .route("/l1_deposits", get(controller::get_l1_deposits))
         .route("/l1_withdraws", get(controller::get_l1_withdraws))
         .route("/l2_withdraws", get(controller::get_l2_withdraws))
+        .route("/search/quick", get(controller::quick_search))
         .route("/status", get(controller::health_check))
         .with_state(state)
 }

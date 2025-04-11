@@ -4,6 +4,7 @@ use crate::pagination::{
     PlaceholderPagination,
 };
 use crate::response::{L1DepositResponse, L1WithdrawResponse, L2WithdrawResponse};
+use crate::search::{QuickSearchParams, QuickSearchQuery, QuickSearchable, TransactionSuggestion};
 use crate::AppState;
 use crate::{ApiResponse, ApiResult};
 use axum::{
@@ -294,5 +295,88 @@ pub async fn get_l2_withdraws(
         success: true,
         items: response_items,
         next_page_params,
+    })
+}
+
+pub async fn quick_search(
+    State(state): State<AppState>,
+    Query(params): Query<QuickSearchParams>,
+) -> ApiResult<Vec<TransactionSuggestion>, ()> {
+    let quick = QuickSearchQuery::from(params.q.as_str());
+    let limit = params.limit.unwrap_or(5).min(10);
+    let mut results: Vec<TransactionSuggestion> = Vec::new();
+
+    let query = l1_deposit::Entity::find();
+    let query = <l1_deposit::Entity as QuickSearchable>::apply_quick_search(query, &quick)
+        .order_by_desc(l1_deposit::Column::CreatedAt)
+        .limit(limit / 3 + 1);
+
+    let l1_deposits = query.all(&state.db).await.map_err(AppError::Database)?;
+    for deposit in l1_deposits {
+        match <l1_deposit::Entity as QuickSearchable>::to_search_suggestion(&deposit, &state.db)
+            .await
+        {
+            Ok(suggestion) => results.push(suggestion),
+            Err(e) => {
+                tracing::warn!("Skipping invalid L1 deposit: {}", e);
+                continue;
+            }
+        }
+    }
+
+    if results.len() < limit as usize {
+        let remaining = limit - (results.len() as u64);
+        let query = l1_withdraw::Entity::find();
+        let query = <l1_withdraw::Entity as QuickSearchable>::apply_quick_search(query, &quick)
+            .order_by_desc(l1_withdraw::Column::CreatedAt)
+            .limit(remaining / 2 + 1);
+
+        let l1_withdraws = query.all(&state.db).await.map_err(AppError::Database)?;
+        for withdraw in l1_withdraws {
+            match <l1_withdraw::Entity as QuickSearchable>::to_search_suggestion(
+                &withdraw, &state.db,
+            )
+            .await
+            {
+                Ok(suggestion) => results.push(suggestion),
+                Err(e) => {
+                    tracing::warn!("Skipping invalid L1 withdraw: {}", e);
+                    continue;
+                }
+            }
+        }
+    }
+
+    if results.len() < limit as usize {
+        let remaining = limit - (results.len() as u64);
+        let query = twine_l2_withdraw::Entity::find();
+        let query =
+            <twine_l2_withdraw::Entity as QuickSearchable>::apply_quick_search(query, &quick)
+                .order_by_desc(twine_l2_withdraw::Column::Nonce)
+                .limit(remaining);
+
+        let l2_withdraws = query.all(&state.db).await.map_err(AppError::Database)?;
+
+        for withdraw in l2_withdraws {
+            match <twine_l2_withdraw::Entity as QuickSearchable>::to_search_suggestion(
+                &withdraw, &state.db,
+            )
+            .await
+            {
+                Ok(suggestion) => results.push(suggestion),
+                Err(e) => {
+                    tracing::warn!("Skipping invalid L2 withdraw: {}", e);
+                    continue;
+                }
+            }
+        }
+    }
+
+    results.truncate(limit as usize);
+
+    Ok(ApiResponse {
+        success: true,
+        items: results,
+        next_page_params: None,
     })
 }
