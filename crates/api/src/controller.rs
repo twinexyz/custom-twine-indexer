@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::pagination::apply_reference_filter;
 use crate::pagination::{
     items_count, L1DepositPagination, L1WithdrawalPagination, L2WithdrawalPagination, Pagination,
     PlaceholderPagination,
@@ -14,67 +15,13 @@ use axum::{
 use common::entities::{
     l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
 };
-use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-};
-use sea_orm::{ModelTrait, Select};
+use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse {
         success: true,
         items: "OK",
         next_page_params: None::<PlaceholderPagination>,
-    }
-}
-
-/// Look up the reference transaction by chain_id and nonce and then filters to only include
-/// transactions that occurred before that transaction (or, in case of equal timestamps, with a lower nonce).
-async fn apply_reference_filter<E>(
-    query: Select<E>,
-    ref_chain_id: Option<u64>,
-    ref_nonce: Option<u64>,
-    db: &DatabaseConnection,
-    column_chain_id: E::Column,
-    column_nonce: E::Column,
-    column_created_at: E::Column,
-) -> Result<Select<E>, AppError>
-where
-    E: EntityTrait,
-    E::Model: ModelTrait,
-{
-    if let (Some(ref_chain_id), Some(ref_nonce)) = (ref_chain_id, ref_nonce) {
-        let reference_tx = E::find()
-            .filter(
-                Condition::all()
-                    .add(column_chain_id.eq(ref_chain_id as i64))
-                    .add(column_nonce.eq(ref_nonce as i64)),
-            )
-            .one(db)
-            .await
-            .map_err(AppError::Database)?;
-        if let Some(tx) = reference_tx {
-            let created_at = tx.get(column_created_at).clone();
-            let chain_id_value = tx.get(column_chain_id).clone();
-            let nonce_value = tx.get(column_nonce).clone();
-            let condition = Condition::any()
-                .add(column_created_at.lt(created_at.clone()))
-                .add(
-                    Condition::all().add(column_created_at.eq(created_at)).add(
-                        Condition::any()
-                            .add(column_chain_id.ne(chain_id_value.clone()))
-                            .add(
-                                Condition::all()
-                                    .add(column_chain_id.eq(chain_id_value))
-                                    .add(column_nonce.lt(nonce_value)),
-                            ),
-                    ),
-                );
-            Ok(query.filter(condition))
-        } else {
-            Ok(query)
-        }
-    } else {
-        Ok(query)
     }
 }
 
