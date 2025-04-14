@@ -24,17 +24,17 @@ members = [
     "bin/api",
     "bin/indexer",
     "crates/api",
-    "crates/common",
-    "crates/evm",
-    "crates/svm",
+    "crates/indexer/common",
+    "crates/indexer/evm",
+    "crates/indexer/svm",
     "migration",
 ]
 default-members = ["bin/indexer", "bin/api"]
 
 [workspace.dependencies]
-evm = { path = "crates/evm" }
-svm = { path = "crates/svm" }
-common = { path = "crates/common" }
+evm = { path = "crates/indexer/evm" }
+svm = { path = "crates/indexer/svm" }
+common = { path = "crates/indexer/common" }
 api-lib = { path = "crates/api" }
 
 anyhow = "1.0.97"
