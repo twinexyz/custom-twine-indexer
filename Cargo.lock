@@ -2985,6 +2985,7 @@ dependencies = [
  "common",
  "eyre",
  "futures-util",
+ "hex",
  "num-traits",
  "sea-orm",
  "sea-query",
