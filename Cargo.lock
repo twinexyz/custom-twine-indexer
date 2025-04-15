@@ -10044,6 +10044,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "twine-indexer"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anchor-client",
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "borsh 1.5.5",
+ "chrono",
+ "config",
+ "eyre",
+ "futures-util",
+ "hex",
+ "pre-commit-hooks",
+ "sea-orm",
+ "sea-orm-cli",
+ "sea-query",
+ "serde",
+ "serde_json",
+ "solana-transaction-status-client-types",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.23.1",
+ "tracing",
+ "tracing-subscriber",
+ "twine-evm-contracts",
+]
+
+[[package]]
 name = "typenum"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10800,6 +10831,15 @@ name = "windows_x86_64_msvc"
 version = "0.53.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
+
+[[package]]
+name = "winnow"
+version = "0.5.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

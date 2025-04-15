@@ -28,7 +28,6 @@ COPY Cargo.toml Cargo.lock ./
 RUN  sed -i -E '/\[\[bin\]\]/{N;/name = "api"/{N;d}}; /name = "indexer"/{N;s/path = "[^"]+"/path = "dummy.rs"/}' Cargo.toml
 RUN echo "fn main() {}" > dummy.rs
 
-RUN cargo build --release
 
 # Copy full source and build binaries
 COPY . .
