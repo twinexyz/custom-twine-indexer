@@ -485,7 +485,7 @@ pub async fn parse_log(
                     timestamp: Set(timestamp.naive_utc()),
                     start_block: Set(start_block),
                     end_block: Set(end_block),
-                    root_hash: Set(Vec::new()),
+                    root_hash: Set(vec![0u8; 32]),
                     inserted_at: Set(timestamp.naive_utc()),
                     updated_at: Set(timestamp.naive_utc()),
                 },
@@ -585,7 +585,6 @@ pub async fn parse_log(
                 slot_number: finalize.slot_number as i64,
             })
         }
-
         _ => None,
     }
 }

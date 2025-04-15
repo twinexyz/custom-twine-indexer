@@ -43,17 +43,17 @@ pub async fn start_indexer(
         config.twine_chain_program_address.clone(),
     ];
 
-    // handles.push(create_and_spawn_indexer!(
-    //     evm::EthereumIndexer,
-    //     config.ethereum.http_rpc_url,
-    //     config.ethereum.ws_rpc_url,
-    //     config.ethereum.chain_id,
-    //     config.ethereum.start_block,
-    //     db_conn,
-    //     Some(&blockscout_db_conn),
-    //     "EVM",
-    //     evm_contracts
-    // ));
+    handles.push(create_and_spawn_indexer!(
+        evm::EthereumIndexer,
+        config.ethereum.http_rpc_url,
+        config.ethereum.ws_rpc_url,
+        config.ethereum.chain_id,
+        config.ethereum.start_block,
+        db_conn,
+        Some(&blockscout_db_conn),
+        "EVM",
+        evm_contracts
+    ));
 
     handles.push(create_and_spawn_indexer!(
         evm::TwineIndexer,
