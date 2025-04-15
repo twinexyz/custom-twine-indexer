@@ -1100,6 +1100,8 @@ dependencies = [
  "api-lib",
  "common",
  "eyre",
+ "pre-commit-hooks",
+ "sea-orm-cli",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3985,7 +3987,9 @@ dependencies = [
  "common",
  "evm",
  "eyre",
+ "pre-commit-hooks",
  "sea-orm",
+ "sea-orm-cli",
  "svm",
  "tokio",
  "tracing",
@@ -10037,14 +10041,6 @@ source = "git+https://github.com/twinexyz/contracts-metadata.git?branch=master#8
 dependencies = [
  "alloy-contract",
  "alloy-sol-types",
-]
-
-[[package]]
-name = "twine-indexer"
-version = "0.0.0"
-dependencies = [
- "pre-commit-hooks",
- "sea-orm-cli",
 ]
 
 [[package]]
