@@ -171,7 +171,6 @@ pub async fn insert_model(
                 ));
             }
 
-            // Log the transaction hash being stored for CommitBatch
             info!(
                 "Storing CommitBatch tx_hash in twine_lifecycle_l1_transactions: {}",
                 tx_hash
@@ -281,7 +280,6 @@ pub async fn insert_model(
             model,
             batch_number,
         } => {
-            // Log the transaction hash being stored for FinalizeBatch
             if let Set(ref hash) = model.hash {
                 let base58_hash = bs58::encode(hash).into_string();
                 info!(
