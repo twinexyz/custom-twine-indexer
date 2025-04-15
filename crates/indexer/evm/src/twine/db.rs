@@ -24,7 +24,7 @@ pub async fn insert_model(
                 .exec(db)
                 .await
             {
-                error!("Failed to insert TwineL1Withdraw: {e:?}");
+                error!("Failed to insert TwineL1Deposit: {e:?}");
             }
         }
         DbModel::TwineL1Withdraw(model) => {
@@ -40,7 +40,7 @@ pub async fn insert_model(
                 .exec(db)
                 .await
             {
-                error!("Failed to insert TwineL1Deposit: {e:?}");
+                error!("Failed to insert TwineL1Withdraw: {e:?}");
             }
         }
         DbModel::TwineL2Withdraw(model) => {

@@ -120,17 +120,41 @@ pub fn parse_log(log: Log) -> Result<Vec<ParsedLog>, Report> {
         L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::EthereumTransactionsHandled>()?;
             let event = decoded.inner.data.transactionOutput;
-            let pr = PrecompileReturn::abi_decode(&event, true)
-                .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
+
+            match PrecompileReturn::abi_decode(&event, true) {
+                Ok(pr) => {
+                    process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
+                }
+                Err(e) => {
+                    warn!(
+                        "Empty event found. skipping this log. Error: {}. Raw event: {}",
+                        e,
+                        hex::encode(&event)
+                    );
+                    Err(ParserError::SkipLog.into())
+                }
+            }
         }
+
         L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SolanaTransactionsHandled>()?;
             let event = decoded.inner.data.transactionOutput;
-            let pr = PrecompileReturn::abi_decode(&event, true)
-                .map_err(|e| eyre::eyre!("ABI decode error: {}", e))?;
-            process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
+
+            match PrecompileReturn::abi_decode(&event, true) {
+                Ok(pr) => {
+                    process_precompile_return(pr, tx_hash, block_number).map_err(|e| e.into())
+                }
+                Err(e) => {
+                    warn!(
+                        "Empty event found. skipping this log. Error: {}. Raw event: {}",
+                        e,
+                        hex::encode(&event)
+                    );
+                    Err(ParserError::SkipLog.into())
+                }
+            }
         }
+
         L2Messenger::SentMessage::SIGNATURE_HASH => {
             let decoded = log.log_decode::<L2Messenger::SentMessage>()?;
             let data = decoded.inner.data;
@@ -152,6 +176,7 @@ pub fn parse_log(log: Log) -> Result<Vec<ParsedLog>, Report> {
                 block_number,
             }])
         }
+
         other => Err(ParserError::UnknownEvent { signature: other }.into()),
     }
 }

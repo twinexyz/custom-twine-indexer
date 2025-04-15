@@ -21,18 +21,19 @@ edition = "2021"
 [workspace]
 resolver = "2"
 members = [
-    "crates/evm",
-    "crates/svm",
-    "crates/common",
-    "crates/api",
-    "bin/indexer",
     "bin/api",
+    "bin/indexer",
+    "crates/api",
+    "crates/common",
+    "crates/indexer/evm",
+    "crates/indexer/svm",
+    "migration",
 ]
 default-members = ["bin/indexer", "bin/api"]
 
 [workspace.dependencies]
-evm = { path = "crates/evm" }
-svm = { path = "crates/svm" }
+evm = { path = "crates/indexer/evm" }
+svm = { path = "crates/indexer/svm" }
 common = { path = "crates/common" }
 api-lib = { path = "crates/api" }
 

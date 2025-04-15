@@ -2,7 +2,7 @@ mod db;
 mod parser;
 
 use super::EVMChain;
-use crate::common::{poll_missing_logs, subscribe_stream};
+use crate::common::{poll_missing_logs, subscribe_stream, with_retry};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::SolEvent;
@@ -61,7 +61,13 @@ impl ChainIndexer for TwineIndexer {
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
-        let current_block = self.http_provider.get_block_number().await?;
+        let current_block = with_retry(|| async {
+            self.http_provider
+                .get_block_number()
+                .await
+                .map_err(eyre::Report::from)
+        })
+        .await?;
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
