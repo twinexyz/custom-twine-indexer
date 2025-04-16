@@ -20,50 +20,37 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Timestamp)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::StartBlock)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::EndBlock)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::RootHash)
-                            .string()
+                            .binary()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineTransactionBatch::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineTransactionBatch::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .primary_key(Index::create().col(TwineTransactionBatch::Number))
-                    .to_owned(),
-            )
-            .await?;
-
-        // Add unique index on (StartBlock, EndBlock)
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_start_end_unique")
-                    .table(TwineTransactionBatch::Table)
-                    .col(TwineTransactionBatch::StartBlock)
-                    .col(TwineTransactionBatch::EndBlock)
-                    .unique()
                     .to_owned(),
             )
             .await?;
@@ -83,40 +70,28 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Hash)
-                            .string()
+                            .binary()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::ChainId)
-                            .big_unsigned()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1TransactionCount)
-                            .big_unsigned()
-                            .not_null()
-                            .default(0), // Default to 0, updated by app later
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::L1GasPrice)
                             .decimal()
-                            .not_null()
-                            .default(Expr::value(0.0)),
+                            .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineLifecycleL1Transactions::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineLifecycleL1Transactions::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -138,13 +113,25 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::BatchNumber)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
                     )
                     .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1TransactionCount)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2TransactionCount)
-                            .big_unsigned()
+                            .integer()
                             .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::L1GasPrice)
+                            .decimal()
+                            .not_null()
+                            .default(Expr::value(0.0)),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::L2FairGasPrice)
@@ -154,20 +141,20 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::ChainId)
-                            .big_unsigned()
+                            .decimal()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).big_unsigned())
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).big_unsigned())
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).integer())
+                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).integer())
                     .col(
-                        ColumnDef::new(TwineTransactionBatchDetail::CreatedAt)
-                            .timestamp_with_time_zone()
+                        ColumnDef::new(TwineTransactionBatchDetail::InsertedAt)
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::UpdatedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
@@ -216,8 +203,88 @@ impl MigrationTrait for Migration {
                             .name("idx_batch_number_chain_id_unique")
                             .table(TwineTransactionBatchDetail::Table)
                             .col(TwineTransactionBatchDetail::BatchNumber)
-                            .col(TwineTransactionBatchDetail::ChainId)
                             .unique(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 4. Create twine_batch_l2_blocks table
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Blocks::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::BatchNumber)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(TwineBatchL2Blocks::Hash).binary().not_null())
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::InsertedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Blocks::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Blocks::Hash))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_l2_blocks_batch_number")
+                            .from(TwineBatchL2Blocks::Table, TwineBatchL2Blocks::BatchNumber)
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 5. Create twine_batch_l2_transactions table
+        manager
+            .create_table(
+                Table::create()
+                    .table(TwineBatchL2Transactions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::BatchNumber)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::Hash)
+                            .binary()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::InsertedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(TwineBatchL2Transactions::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .primary_key(Index::create().col(TwineBatchL2Transactions::Hash))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_l2_transactions_batch_number")
+                            .from(
+                                TwineBatchL2Transactions::Table,
+                                TwineBatchL2Transactions::BatchNumber,
+                            )
+                            .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )
@@ -227,6 +294,25 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_batch_number_chain_id_unique")
+                    .table(TwineTransactionBatchDetail::Table)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(TwineBatchL2Transactions::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(TwineBatchL2Blocks::Table).to_owned())
+            .await?;
         manager
             .drop_table(
                 Table::drop()
@@ -257,7 +343,7 @@ enum TwineTransactionBatch {
     StartBlock,
     EndBlock,
     RootHash,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -269,9 +355,11 @@ enum TwineTransactionBatchDetail {
     L2TransactionCount,
     L2FairGasPrice,
     ChainId,
+    L1TransactionCount,
+    L1GasPrice,
     CommitId,
     ExecuteId,
-    CreatedAt,
+    InsertedAt,
     UpdatedAt,
 }
 
@@ -281,9 +369,25 @@ enum TwineLifecycleL1Transactions {
     Id,
     Hash,
     ChainId,
-    L1TransactionCount,
-    L1GasPrice,
     Timestamp,
-    CreatedAt,
+    InsertedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Blocks {
+    Table,
+    BatchNumber,
+    Hash,
+    InsertedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum TwineBatchL2Transactions {
+    Table,
+    BatchNumber,
+    Hash,
+    InsertedAt,
     UpdatedAt,
 }
