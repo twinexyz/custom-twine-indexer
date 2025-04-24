@@ -3,9 +3,6 @@
 [![Security Audit](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/cargo-audit.yml/badge.svg)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/cargo-audit.yml)
 [![Test](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/test.yml/badge.svg)](https://github.com/twinexyz/custom-twine-indexer/actions/workflows/test.yml)
 
-
-
-
 # Twine Indexer Setup Guide
 
 Twine Indexer is a Rust-based indexing service that listens to an Ethereum execution client (e.g., Reth) and indexes relevant blockchain data into a PostgreSQL database.
@@ -62,7 +59,7 @@ export SOLANA__BLOCK_SYNC_BATCH_SIZE=1000
 export ETHEREUM__START_BLOCK=10
 export TWINE__START_BLOCK=10
 export SOLANA__START_BLOCK=10
-``` 
+```
 
 ### 2. Run the Indexer and API
 

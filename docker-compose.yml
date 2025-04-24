@@ -21,7 +21,7 @@ services:
   migrations:
     build: .
     working_dir: /app/migration
-    command: cargo run --release up 
+    command: cargo run --release up
     env_file: .env
     depends_on:
       twine-db:
