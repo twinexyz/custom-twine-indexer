@@ -7,6 +7,7 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     openssl-dev \
     postgresql-dev \
     git \
+    make \
     musl-dev \
     libcrypto3 \
     perl \
