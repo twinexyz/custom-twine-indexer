@@ -18,18 +18,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  #test:
-  #  uses: twinexyz/workflows/.github/workflows/test.yml@main
-  #  secrets: inherit
-  #file-scan:
-  #  needs: ["test"]
-  #  uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
-  #  secrets: inherit
-  #cargo-audit:
-  #  needs: ["test"]
-  #  uses: twinexyz/workflows/.github/workflows/audit.yml@main
-  #  secrets: inherit
+  precommit:
+    uses: twinexyz/workflows/.github/workflows/precommit.yml@main
+    secrets: inherit
   build:
+    needs: ["precommit"]
     uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
