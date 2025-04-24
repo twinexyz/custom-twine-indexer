@@ -9,6 +9,7 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     git \
     musl-dev \
     libcrypto3 \
+    perl \
     openssl-libs-static && \
     # Set up Git credentials for private repositories
     git config --global credential.helper store && \
