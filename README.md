@@ -62,7 +62,7 @@ export SOLANA__BLOCK_SYNC_BATCH_SIZE=1000
 export ETHEREUM__START_BLOCK=10
 export TWINE__START_BLOCK=10
 export SOLANA__START_BLOCK=10
-``` 
+```
 
 ### 2. Run the Indexer and API
 
@@ -131,3 +131,6 @@ Ensure you have Docker and Docker Compose installed. Also, make sure the executi
 docker compose up -d
 ```
 ---
+
+
+

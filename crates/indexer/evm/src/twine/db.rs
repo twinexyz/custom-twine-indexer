@@ -1,7 +1,8 @@
 use super::parser::DbModel;
-use common::entities::{
-    last_synced, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw, twine_transaction_batch,
-};
+use common::entities::{last_synced, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw};
+
+use common::blockscout_entities::twine_transaction_batch;
+
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error;
 

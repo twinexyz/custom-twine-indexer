@@ -7,9 +7,12 @@ use std::{str::FromStr, sync::Arc};
 use alloy::transports::http::reqwest;
 use anchor_client::{Client, Cluster};
 use async_trait::async_trait;
-use common::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
+use common::{
+    entities::last_synced,
+    indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY},
+};
 use eyre::Result;
-use futures_util::{future, StreamExt};
+use futures_util::{future, Stream, StreamExt};
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use serde_json::{json, Value};
 use tokio::task::JoinHandle;
@@ -66,7 +69,7 @@ impl ChainIndexer for SVMIndexer {
         let max_slots_per_request = std::env::var("SOLANA__BLOCK_SYNC_BATCH_SIZE")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(1000);
+            .unwrap_or(100); // Match log batch size
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
@@ -77,29 +80,18 @@ impl ChainIndexer for SVMIndexer {
                 last_synced_u64 + 1,
                 current_slot
             );
-            let historical_events = match subscriber::poll_missing_slots(
+            let commit_batch_stream = subscriber::poll_missing_slots(
                 &historical_indexer.rpc_url,
                 &historical_indexer.twine_chain_id,
                 &historical_indexer.tokens_gateway_id,
                 last_synced_u64,
                 current_slot,
                 max_slots_per_request,
-            )
-            .await
-            {
-                Ok(events) => {
-                    info!("Historical sync returned {} events", events.len());
-                    events
-                }
-                Err(e) => {
-                    error!("Historical sync failed: {:?}", e);
-                    return Err(e);
-                }
-            };
+            );
 
-            info!("Processing {} historical events", historical_events.len());
+            info!("Processing events from historical stream");
             match historical_indexer
-                .catchup_missing_slots(historical_events)
+                .catchup_missing_slots(commit_batch_stream)
                 .await
             {
                 Ok(()) => info!("Historical sync completed successfully"),
@@ -111,7 +103,6 @@ impl ChainIndexer for SVMIndexer {
             Ok(())
         });
 
-        // Live indexing starts from current_slot + 1
         let live_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!("Starting live indexing from slot {}", current_slot);
             match subscriber::subscribe_stream(
@@ -123,6 +114,7 @@ impl ChainIndexer for SVMIndexer {
             {
                 Ok(mut stream) => {
                     while let Some((logs, signature)) = stream.next().await {
+                        debug!("Processing live event with signature {:?}", signature);
                         match parser::parse_log(
                             &logs,
                             signature.clone(),
@@ -131,32 +123,33 @@ impl ChainIndexer for SVMIndexer {
                         )
                         .await
                         {
-                            Some(parsed) => {
-                                // Only process events after current_slot
-                                if parsed.slot_number > current_slot as i64 {
-                                    let last_synced = common::entities::last_synced::ActiveModel {
-                                        chain_id: Set(chain_id),
-                                        block_number: Set(parsed.slot_number),
-                                    };
-                                    if let Err(e) = db::insert_model(
-                                        parsed,
-                                        last_synced,
-                                        &live_indexer.db,
-                                        &live_indexer.blockscout_db,
-                                    )
-                                    .await
-                                    {
-                                        error!("Failed to insert model: {:?}", e);
-                                    }
-                                } else {
-                                    debug!(
-                                        "Skipping live event at slot {} (already synced historically)",
-                                        parsed.slot_number
+                            Some(parsed_event) => {
+                                let last_synced = last_synced::ActiveModel {
+                                    chain_id: Set(live_indexer.chain_id as i64),
+                                    block_number: Set(parsed_event.slot_number),
+                                    ..Default::default()
+                                };
+                                if let Err(e) = db::insert_model(
+                                    parsed_event,
+                                    last_synced,
+                                    &live_indexer.db,
+                                    &live_indexer.blockscout_db,
+                                )
+                                .await
+                                {
+                                    error!(
+                                        "Failed to insert live event with signature {:?}: {:?}",
+                                        signature, e
                                     );
+                                } else {
+                                    info!("Inserted live event with signature {:?}", signature);
                                 }
                             }
                             None => {
-                                debug!("Skipping unparsed live event: {:?}", logs);
+                                debug!(
+                                    "No recognized event parsed for signature {:?}: logs={:?}",
+                                    signature, logs
+                                );
                             }
                         }
                     }
@@ -227,26 +220,42 @@ impl SVMIndexer {
 
     async fn catchup_missing_slots(
         &self,
-        events: Vec<(Vec<String>, Option<String>)>,
+        mut events: impl Stream<Item = Result<(Vec<String>, Option<String>)>> + Unpin,
     ) -> Result<()> {
-        let chain_id = self.chain_id as i64;
-        let mut parsed_count = 0;
-        for (logs, signature) in events {
+        let mut processed_count = 0;
+        while let Some(event) = events.next().await {
+            let (logs, signature) = event?;
+            debug!("Processing historical event with signature {:?}", signature);
             match parser::parse_log(&logs, signature.clone(), &self.db, &self.blockscout_db).await {
-                Some(parsed) => {
-                    parsed_count += 1;
-                    let last_synced = common::entities::last_synced::ActiveModel {
-                        chain_id: Set(chain_id),
-                        block_number: Set(parsed.slot_number),
+                Some(parsed_event) => {
+                    let last_synced = last_synced::ActiveModel {
+                        chain_id: Set(self.chain_id as i64),
+                        block_number: Set(parsed_event.slot_number),
+                        ..Default::default()
                     };
-                    db::insert_model(parsed, last_synced, &self.db, &self.blockscout_db).await?;
+                    if let Err(e) =
+                        db::insert_model(parsed_event, last_synced, &self.db, &self.blockscout_db)
+                            .await
+                    {
+                        error!(
+                            "Failed to insert historical event with signature {:?}: {:?}",
+                            signature, e
+                        );
+                    } else {
+                        info!("Inserted historical event with signature {:?}", signature);
+                    }
                 }
                 None => {
-                    debug!("Skipping unparsed historical event: {:?}", logs);
+                    debug!(
+                        "No recognized event parsed for signature {:?}: logs={:?}",
+                        signature, logs
+                    );
                 }
             }
+            processed_count += 1;
+            info!("Processed {} events so far", processed_count);
         }
-        info!("Parsed and inserted {} historical events", parsed_count);
+        info!("Completed processing {} events", processed_count);
         Ok(())
     }
 }

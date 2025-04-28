@@ -5,7 +5,7 @@ use anchor_client::{
     Client, Cluster,
 };
 use eyre::{eyre, Result};
-use futures_util::{SinkExt, Stream, StreamExt};
+use futures_util::{stream, SinkExt, Stream, StreamExt};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -67,108 +67,153 @@ pub async fn subscribe_stream(
     Ok(ReceiverStream::new(data_receiver))
 }
 
-pub async fn poll_missing_slots(
+pub fn poll_missing_slots(
     rpc_url: &str,
     twine_chain_id: &str,
     tokens_gateway_id: &str,
     last_synced: u64,
     current_slot: u64,
     max_slots_per_request: u64,
-) -> Result<Vec<(Vec<String>, Option<String>)>> {
-    if last_synced >= current_slot {
-        debug!("Already synced to latest slot {}", current_slot);
-        return Ok(Vec::new());
-    }
+) -> impl Stream<Item = Result<(Vec<String>, Option<String>)>> + Unpin {
+    let rpc_url = rpc_url.to_string();
+    let twine_chain_id = twine_chain_id.to_string();
+    let tokens_gateway_id = tokens_gateway_id.to_string();
 
+    Box::pin(
+        stream::unfold(
+            (last_synced + 1, current_slot, max_slots_per_request),
+            move |(start_slot, end_slot, max_slots)| {
+                let rpc_url = rpc_url.clone();
+                let twine_chain_id = twine_chain_id.clone();
+                let tokens_gateway_id = tokens_gateway_id.clone();
+                async move {
+                    if start_slot > end_slot {
+                        return None;
+                    }
+
+                    let batch_end = (start_slot + max_slots - 1).min(end_slot);
+                    let events = match fetch_commit_batch_events(
+                        &rpc_url,
+                        &twine_chain_id,
+                        &tokens_gateway_id,
+                        start_slot,
+                        batch_end,
+                    )
+                    .await
+                    {
+                        Ok(events) => events,
+                        Err(e) => {
+                            error!(
+                                "Error fetching events for slots {}-{}: {:?}",
+                                start_slot, batch_end, e
+                            );
+                            vec![Err(e)]
+                        }
+                    };
+
+                    Some((stream::iter(events), (batch_end + 1, end_slot, max_slots)))
+                }
+            },
+        )
+        .flatten(),
+    )
+}
+
+async fn fetch_commit_batch_events(
+    rpc_url: &str,
+    twine_chain_id: &str,
+    tokens_gateway_id: &str,
+    start_slot: u64,
+    end_slot: u64,
+) -> Result<Vec<Result<(Vec<String>, Option<String>)>>> {
     info!(
-        "Starting historical sync from slot {} to {} (max slots per request: {})",
-        last_synced + 1,
-        current_slot,
-        max_slots_per_request
+        "Fetching transactions for slots {}-{}",
+        start_slot, end_slot
     );
 
     let program_ids = vec![twine_chain_id, tokens_gateway_id];
-    let mut all_events = Vec::new();
-    let mut start_slot = last_synced + 1;
-    let total_slots = current_slot - last_synced;
+    let mut commit_batch_events = Vec::new();
 
-    while start_slot <= current_slot {
-        let end_slot = (start_slot + max_slots_per_request - 1).min(current_slot);
-        info!(
-            "Fetching transactions for slots {}-{}",
-            start_slot, end_slot
-        );
-
-        // Fetch signatures for the current slot range
-        let mut slot_signatures = Vec::new();
-        for program_id in &program_ids {
-            let signatures =
-                fetch_signatures_for_program(rpc_url, program_id, start_slot, end_slot).await?;
-            debug!(
-                "Fetched {} signatures for program {} in slots {}-{}",
-                signatures.len(),
-                program_id,
-                start_slot,
-                end_slot
-            );
-            slot_signatures.extend(signatures);
-        }
-
-        // Sort and deduplicate signatures by slot and signature
-        slot_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
-        slot_signatures.dedup_by(|a, b| a.signature == b.signature);
-
+    // Fetch signatures for the current slot range
+    let mut slot_signatures = Vec::new();
+    for program_id in &program_ids {
+        let signatures =
+            fetch_signatures_for_program(rpc_url, program_id, start_slot, end_slot).await?;
         debug!(
-            "Total {} unique signatures for slots {}-{}",
-            slot_signatures.len(),
+            "Fetched {} signatures for program {} in slots {}-{}",
+            signatures.len(),
+            program_id,
             start_slot,
             end_slot
         );
-
-        // Fetch transaction details for each signature
-        for sig_info in slot_signatures {
-            let signature =
-                anchor_client::solana_sdk::signature::Signature::from_str(&sig_info.signature)?;
-            let tx = match fetch_transaction(rpc_url, &signature).await {
-                Ok(tx) => tx,
-                Err(e) => {
-                    error!("Failed to fetch transaction {}: {}", sig_info.signature, e);
-                    continue;
-                }
-            };
-
-            let slot = tx.slot;
-            if slot >= start_slot && slot <= end_slot {
-                let logs = tx
-                    .transaction
-                    .meta
-                    .as_ref()
-                    .and_then(|meta| {
-                        let log_messages: Option<Vec<String>> = meta.log_messages.clone().into();
-                        log_messages
-                    })
-                    .unwrap_or_default();
-                debug!(
-                    "Transaction {} in slot {} has {} logs",
-                    sig_info.signature,
-                    slot,
-                    logs.len()
-                );
-                if !logs.is_empty() {
-                    all_events.push((logs, Some(sig_info.signature)));
-                }
-            }
-        }
-
-        start_slot = end_slot + 1;
+        slot_signatures.extend(signatures);
     }
 
-    info!(
-        "Completed historical sync: fetched {} events across {} slots",
-        all_events.len(),
-        total_slots
+    // Sort and deduplicate signatures by slot and signature
+    slot_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
+    slot_signatures.dedup_by(|a, b| a.signature == b.signature);
+
+    debug!(
+        "Total {} unique signatures for slots {}-{}",
+        slot_signatures.len(),
+        start_slot,
+        end_slot
     );
-    Ok(all_events)
+
+    // Fetch transaction details for each signature and filter for CommitBatch and FinalizeBatch
+    for sig_info in slot_signatures {
+        let signature =
+            anchor_client::solana_sdk::signature::Signature::from_str(&sig_info.signature)
+                .map_err(|e| eyre!("Invalid signature {}: {}", sig_info.signature, e))?;
+        let tx = match fetch_transaction(rpc_url, &signature).await {
+            Ok(tx) => tx,
+            Err(e) => {
+                error!("Failed to fetch transaction {}: {}", sig_info.signature, e);
+                commit_batch_events.push(Err(e));
+                continue;
+            }
+        };
+
+        let slot = tx.slot;
+        if slot >= start_slot && slot <= end_slot {
+            let logs = tx
+                .transaction
+                .meta
+                .as_ref()
+                .and_then(|meta| {
+                    let log_messages: Option<Vec<String>> = meta.log_messages.clone().into();
+                    log_messages
+                })
+                .unwrap_or_default();
+            debug!(
+                "Transaction {} in slot {} has {} logs",
+                sig_info.signature,
+                slot,
+                logs.len()
+            );
+            if logs
+                .iter()
+                .any(|log| log.contains("Instruction: CommitBatch"))
+            {
+                info!(
+                    "Found CommitBatch event: signature={} in slot {}",
+                    sig_info.signature, slot
+                );
+                commit_batch_events.push(Ok((logs, Some(sig_info.signature))));
+            } else if logs
+                .iter()
+                .any(|log| log.contains("Instruction: FinalizeBatch"))
+            {
+                info!(
+                    "Found FinalizeBatch event: signature={} in slot {}",
+                    sig_info.signature, slot
+                );
+                commit_batch_events.push(Ok((logs, Some(sig_info.signature))));
+            }
+        }
+    }
+
+    Ok(commit_batch_events)
 }
 
 async fn fetch_signatures_for_program(
@@ -287,8 +332,6 @@ async fn try_fetch_signatures(
                         "Excluding signature {} in slot {} (outside range {}-{})",
                         sig.signature, sig.slot, start_slot, end_slot
                     );
-                } else if sig.slot == 373475385 {
-                    info!("Found signature {} in target slot 373475385", sig.signature);
                 }
                 in_range
             })

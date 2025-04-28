@@ -1,9 +1,9 @@
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolEvent, SolType};
 use chrono::Utc;
-use common::entities::{
-    twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw, twine_transaction_batch,
-};
+use common::entities::{last_synced, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw};
+
+use common::blockscout_entities::twine_transaction_batch;
 use eyre::Report;
 use sea_orm::ActiveValue::Set;
 use tracing::{info, warn};

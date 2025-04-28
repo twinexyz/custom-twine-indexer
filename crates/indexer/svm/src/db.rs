@@ -11,11 +11,11 @@ use sea_query::OnConflict;
 use tracing::{error, info};
 
 use super::parser::{DbModel, ParsedEvent};
-use common::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, last_synced, twine_batch_l2_blocks,
-    twine_batch_l2_transactions, twine_lifecycle_l1_transactions, twine_transaction_batch,
-    twine_transaction_batch_detail,
+use common::blockscout_entities::{
+    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_lifecycle_l1_transactions,
+    twine_transaction_batch, twine_transaction_batch_detail,
 };
+use common::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
 
 pub async fn insert_model(
     parsed_event: ParsedEvent,
@@ -60,10 +60,11 @@ pub async fn insert_model(
             tx_hash,
             l2_blocks,
             l2_transactions,
+            batch_exists,
+            existing_batch,
         } => {
             let start_block = model.start_block.clone().unwrap();
             let end_block = model.end_block.clone().unwrap();
-
             info!(
                 "Processing TwineTransactionBatch with start_block: {}, end_block: {}",
                 start_block, end_block
@@ -76,17 +77,12 @@ pub async fn insert_model(
                 ));
             }
 
-            let l2_transaction_count = l2_transactions.len() as i64;
+            let l2_block_count = l2_blocks.len();
+            let l2_transaction_count = l2_transactions.len();
 
-            let existing_batch = twine_transaction_batch::Entity::find()
-                .filter(twine_transaction_batch::Column::StartBlock.eq(start_block))
-                .filter(twine_transaction_batch::Column::EndBlock.eq(end_block))
-                .one(blockscout_db)
-                .await?;
-
-            let batch = if let Some(batch) = existing_batch {
-                info!("Found existing batch: {:?}", batch);
-                batch
+            let batch = if batch_exists {
+                existing_batch
+                    .ok_or_else(|| eyre::eyre!("Batch exists flag set but no batch provided"))?
             } else {
                 let insert_result = twine_transaction_batch::Entity::insert(model.clone())
                     .exec_with_returning(blockscout_db)
@@ -99,7 +95,7 @@ pub async fn insert_model(
                 insert_result
             };
 
-            if !l2_blocks.is_empty() {
+            if l2_block_count > 0 {
                 for block in l2_blocks {
                     twine_batch_l2_blocks::Entity::insert(block)
                         .on_conflict(
@@ -116,7 +112,7 @@ pub async fn insert_model(
                 }
                 info!(
                     "Inserted {} L2 blocks for batch number {}",
-                    l2_transaction_count, batch.number
+                    l2_block_count, batch.number
                 );
             } else {
                 info!(
@@ -125,7 +121,7 @@ pub async fn insert_model(
                 );
             }
 
-            if !l2_transactions.is_empty() {
+            if l2_transaction_count > 0 {
                 for tx in l2_transactions {
                     twine_batch_l2_transactions::Entity::insert(tx)
                         .on_conflict(
@@ -212,69 +208,50 @@ pub async fn insert_model(
                     eyre::eyre!("Failed to insert TwineLifecycleL1Transactions: {:?}", e)
                 })?;
 
-            let detail_model = twine_transaction_batch_detail::ActiveModel {
-                id: NotSet,
-                batch_number: Set(batch.number.into()),
-                l2_transaction_count: Set(l2_transaction_count.try_into().unwrap()),
-                l2_fair_gas_price: Set(Decimal::from_i64(0).unwrap()),
-                chain_id: Set(chain_id),
-                l1_transaction_count: Set(0),
-                l1_gas_price: Set(Decimal::from_i64(0).unwrap()),
-                commit_id: Set(Some(inserted_lifecycle.id)),
-                execute_id: Set(None),
-                inserted_at: Set(batch.inserted_at),
-                updated_at: Set(batch.updated_at),
-            };
+            let mut detail = twine_transaction_batch_detail::Entity::find()
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch.number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
+                .one(blockscout_db)
+                .await?;
 
-            let insert_result =
-                twine_transaction_batch_detail::Entity::insert(detail_model.clone())
+            if let Some(existing) = detail {
+                let mut detail_to_update = existing.into_active_model();
+                detail_to_update.commit_id = Set(Some(inserted_lifecycle.id));
+                detail_to_update.updated_at = Set(Utc::now().naive_utc());
+                detail_to_update.update(blockscout_db).await.map_err(|e| {
+                    error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
+                    eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
+                })?;
+                info!(
+                    "Updated existing TwineTransactionBatchDetail with commit_id={} for batch number {}",
+                    inserted_lifecycle.id, batch.number
+                );
+            } else {
+                let detail_model = twine_transaction_batch_detail::ActiveModel {
+                    id: NotSet,
+                    batch_number: Set(batch.number.into()),
+                    l2_transaction_count: Set(l2_transaction_count.try_into().unwrap()),
+                    l2_fair_gas_price: Set(Decimal::from_i64(0).unwrap()),
+                    chain_id: Set(chain_id),
+                    l1_transaction_count: Set(0),
+                    l1_gas_price: Set(Decimal::from_i64(0).unwrap()),
+                    commit_id: Set(Some(inserted_lifecycle.id)),
+                    execute_id: Set(None),
+                    inserted_at: Set(batch.inserted_at),
+                    updated_at: Set(batch.updated_at),
+                };
+                twine_transaction_batch_detail::Entity::insert(detail_model)
                     .exec(blockscout_db)
-                    .await;
-
-            match insert_result {
-                Ok(_) => {
-                    info!(
-                        "Inserted new TwineTransactionBatchDetail for batch number {}",
-                        batch.number
-                    );
-                }
-                Err(e) => {
-                    let existing: Option<twine_transaction_batch_detail::Model> =
-                        twine_transaction_batch_detail::Entity::find()
-                            .filter(
-                                twine_transaction_batch_detail::Column::BatchNumber
-                                    .eq(batch.number),
-                            )
-                            .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                            .one(blockscout_db)
-                            .await?;
-
-                    if let Some(existing) = existing {
-                        let mut detail_to_update: twine_transaction_batch_detail::ActiveModel =
-                            existing.into();
-                        detail_to_update.commit_id = Set(Some(inserted_lifecycle.id));
-                        detail_to_update.updated_at = Set(Utc::now().naive_utc());
-                        detail_to_update.update(blockscout_db).await.map_err(|e| {
-                            error!("Failed to update TwineTransactionBatchDetail: {:?}", e);
-                            eyre::eyre!("Failed to update TwineTransactionBatchDetail: {:?}", e)
-                        })?;
-                        info!(
-                            "Updated existing TwineTransactionBatchDetail for batch number {}",
-                            batch.number
-                        );
-                    } else {
-                        return Err(eyre::eyre!(
-                            "Failed to insert TwineTransactionBatchDetail: {:?}",
-                            e
-                        ));
-                    }
-                }
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to insert TwineTransactionBatchDetail: {:?}", e);
+                        eyre::eyre!("Failed to insert TwineTransactionBatchDetail: {:?}", e)
+                    })?;
+                info!(
+                    "Inserted new TwineTransactionBatchDetail with commit_id={} for batch number {}",
+                    inserted_lifecycle.id, batch.number
+                );
             }
-
-            info!(
-                "Inserted CommitBatch into database: batch_number={}, start_block={}, end_block={}, tx_hash={}",
-                batch.number, start_block, end_block, tx_hash
-            );
         }
         DbModel::TwineLifecycleL1Transactions {
             model,

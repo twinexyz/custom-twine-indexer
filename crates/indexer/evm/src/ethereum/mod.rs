@@ -16,7 +16,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
@@ -81,6 +81,10 @@ impl ChainIndexer for EthereumIndexer {
     ) -> Result<Self> {
         let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Ethereum).await?;
         let http_provider = super::create_http_provider(http_rpc_url, EVMChain::Ethereum).await?;
+        info!(
+            "EthereumIndexer initialized with chain_id: {}, start_block: {}",
+            chain_id, start_block
+        );
         Ok(Self {
             ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
@@ -95,6 +99,8 @@ impl ChainIndexer for EthereumIndexer {
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
         let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
+        info!("Last synced block for chain_id {}: {}", id, last_synced);
+
         let current_block = with_retry(|| async {
             self.http_provider
                 .get_block_number()
@@ -102,6 +108,7 @@ impl ChainIndexer for EthereumIndexer {
                 .map_err(eyre::Report::from)
         })
         .await?;
+        info!("Current block number: {}", current_block);
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
@@ -112,7 +119,10 @@ impl ChainIndexer for EthereumIndexer {
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(100);
 
-            info!("Starting historical sync up to block {}", current_block);
+            info!(
+                "Starting historical sync from block {} to {}",
+                last_synced, current_block
+            );
             let logs = poll_missing_logs(
                 &*historical_indexer.http_provider,
                 last_synced as u64,
@@ -122,6 +132,7 @@ impl ChainIndexer for EthereumIndexer {
             )
             .await?;
 
+            info!("Received {} historical logs for processing", logs.len());
             historical_indexer.catchup_missing_blocks(logs).await
         });
 
@@ -135,6 +146,12 @@ impl ChainIndexer for EthereumIndexer {
             .await?;
 
             while let Some(log) = stream.next().await {
+                info!(
+                    "Received live log: block_number={:?}, tx_hash={:?}, topic0={:?}",
+                    log.block_number,
+                    log.transaction_hash,
+                    log.topic0()
+                );
                 match parser::parse_log(
                     log,
                     &live_indexer.db,
@@ -144,10 +161,12 @@ impl ChainIndexer for EthereumIndexer {
                 .await
                 {
                     Ok(parsed) => {
+                        debug!("Successfully parsed log at block {}", parsed.block_number);
                         let last_synced = last_synced::ActiveModel {
                             chain_id: Set(id as i64),
                             block_number: Set(parsed.block_number),
                         };
+                        info!("Inserting parsed model for block {}", parsed.block_number);
                         if let Err(e) = db::insert_model(
                             parsed.model,
                             last_synced,
@@ -156,10 +175,21 @@ impl ChainIndexer for EthereumIndexer {
                         )
                         .await
                         {
-                            error!("Failed to insert model: {:?}", e);
+                            error!(
+                                "Failed to insert model for block {}: {:?}",
+                                parsed.block_number, e
+                            );
+                        } else {
+                            info!(
+                                "Successfully inserted model for block {}",
+                                parsed.block_number
+                            );
                         }
                     }
-                    Err(e) => live_indexer.handle_error(e)?,
+                    Err(e) => {
+                        error!("Failed to parse log: {:?}", e);
+                        live_indexer.handle_error(e)?;
+                    }
                 }
             }
             Ok(())
@@ -168,6 +198,7 @@ impl ChainIndexer for EthereumIndexer {
         historical_res??;
         live_res??;
 
+        info!("Indexing completed for chain_id {}", id);
         Ok(())
     }
 
@@ -179,25 +210,75 @@ impl ChainIndexer for EthereumIndexer {
 impl EthereumIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
-        for log in logs {
-            match parser::parse_log(log, &self.db, &self.blockscout_db, self.chain_id).await {
+        info!(
+            "Processing {} historical logs for chain_id {}",
+            logs.len(),
+            id
+        );
+        for (index, log) in logs.iter().enumerate() {
+            info!(
+                "Processing historical log {}/{}: block_number={:?}, tx_hash={:?}, topic0={:?}",
+                index + 1,
+                logs.len(),
+                log.block_number,
+                log.transaction_hash,
+                log.topic0()
+            );
+            match parser::parse_log(log.clone(), &self.db, &self.blockscout_db, self.chain_id).await
+            {
                 Ok(parsed) => {
+                    debug!(
+                        "Successfully parsed historical log at block {}",
+                        parsed.block_number
+                    );
                     let last_synced = last_synced::ActiveModel {
                         chain_id: Set(id as i64),
                         block_number: Set(parsed.block_number),
                     };
-                    db::insert_model(parsed.model, last_synced, &self.db, &self.blockscout_db)
-                        .await?;
+                    info!(
+                        "Inserting parsed historical model for block {}",
+                        parsed.block_number
+                    );
+                    if let Err(e) =
+                        db::insert_model(parsed.model, last_synced, &self.db, &self.blockscout_db)
+                            .await
+                    {
+                        error!(
+                            "Failed to insert historical model for block {}: {:?}",
+                            parsed.block_number, e
+                        );
+                    } else {
+                        info!(
+                            "Successfully inserted historical model for block {}",
+                            parsed.block_number
+                        );
+                    }
                 }
-                Err(e) => self.handle_error(e)?,
+                Err(e) => {
+                    error!(
+                        "Failed to parse historical log {}/{}: {:?}",
+                        index + 1,
+                        logs.len(),
+                        e
+                    );
+                    self.handle_error(e)?;
+                }
             }
         }
+        info!(
+            "Completed processing {} historical logs for chain_id {}",
+            logs.len(),
+            id
+        );
         Ok(())
     }
 
     fn handle_error(&self, e: Report) -> Result<()> {
         match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()),
+            Some(parser::ParserError::UnknownEvent { signature }) => {
+                info!("Ignoring unknown event with signature: {}", signature);
+                Ok(())
+            }
             _ => {
                 error!("Error processing log: {:?}", e);
                 Err(e)

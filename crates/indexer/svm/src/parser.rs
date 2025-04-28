@@ -4,6 +4,11 @@ use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::Utc;
+use common::blockscout_entities::{
+    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_lifecycle_l1_transactions,
+    twine_transaction_batch, twine_transaction_batch_detail,
+};
+use common::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
 use eyre::Result;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
@@ -13,13 +18,10 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use std::env;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
-use common::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-    twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
-};
-
+// Struct definitions (unchanged)
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct DepositSuccessful {
     pub nonce: u64,
@@ -118,6 +120,8 @@ pub enum DbModel {
         tx_hash: String,
         l2_blocks: Vec<twine_batch_l2_blocks::ActiveModel>,
         l2_transactions: Vec<twine_batch_l2_transactions::ActiveModel>,
+        batch_exists: bool,
+        existing_batch: Option<twine_transaction_batch::Model>,
     },
     TwineLifecycleL1Transactions {
         model: twine_lifecycle_l1_transactions::ActiveModel,
@@ -229,42 +233,109 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     }
 }
 
+pub async fn parse_and_print_commit_batch(
+    logs: &[String],
+    signature: Option<String>,
+    _db: &DatabaseConnection,
+    _blockscout_db: &DatabaseConnection,
+) -> Result<()> {
+    debug!("Parsing CommitBatch event with signature {:?}", signature);
+
+    let mut encoded_data = None;
+    let mut is_commit_batch = false;
+
+    for log in logs {
+        debug!("Processing log: {}", log);
+        if log.contains("Instruction: CommitBatch") {
+            is_commit_batch = true;
+        }
+        if log.starts_with("Program data: ") {
+            encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+        }
+    }
+
+    if !is_commit_batch {
+        error!(
+            "No CommitBatch instruction found for signature {:?}",
+            signature
+        );
+        debug!("Logs: {:?}", logs);
+        return Ok(());
+    }
+
+    let Some(encoded_data) = encoded_data else {
+        error!(
+            "No encoded data found for CommitBatch event with signature {:?}",
+            signature
+        );
+        debug!("Logs: {:?}", logs);
+        return Ok(());
+    };
+
+    debug!("Parsing CommitBatch with encoded_data: {}", encoded_data);
+    let commit = match parse_borsh::<CommitBatch>(&encoded_data, signature.clone()) {
+        Ok(commit) => commit,
+        Err(e) => {
+            error!(
+                "Failed to parse CommitBatch, base64: {}, error: {}, signature: {:?}",
+                encoded_data, e, signature
+            );
+            debug!("Logs: {:?}", logs);
+            return Ok(());
+        }
+    };
+
+    info!(
+        "Parsed CommitBatch: signature={:?}, start_block={}, end_block={}, chain_id={}, slot_number={}",
+        signature, commit.start_block, commit.end_block, commit.chain_id, commit.slot_number
+    );
+
+    Ok(())
+}
+
 pub async fn parse_log(
     logs: &[String],
     signature: Option<String>,
     db: &DatabaseConnection,            // Local DB for deposits/withdrawals
     blockscout_db: &DatabaseConnection, // Blockscout DB for batch-related data
 ) -> Option<ParsedEvent> {
-    debug!("Parsing logs: {:?}", logs);
+    debug!("Parsing logs for signature {:?}: {:?}", signature, logs);
 
     let mut event_type = None;
     let mut encoded_data = None;
 
     for log in logs {
+        debug!("Processing log: {}", log);
         match log.as_str() {
-            "Program log: Instruction: NativeTokenDeposit" => event_type = Some("native_deposit"),
-            "Program log: Instruction: SplTokensDeposit" => event_type = Some("spl_deposit"),
-            "Program log: Instruction: ForcedNativeTokenWithdrawal" => {
+            log if log.contains("Instruction: NativeTokenDeposit") => {
+                event_type = Some("native_deposit")
+            }
+            log if log.contains("Instruction: SplTokensDeposit") => {
+                event_type = Some("spl_deposit")
+            }
+            log if log.contains("Instruction: ForcedNativeTokenWithdrawal") => {
                 event_type = Some("native_withdrawal")
             }
-            "Program log: Instruction: ForcedSplTokenWithdrawal" => {
+            log if log.contains("Instruction: ForcedSplTokenWithdrawal") => {
                 event_type = Some("spl_withdrawal")
             }
-            "Program log: Instruction: FinalizeNativeWithdrawal" => {
+            log if log.contains("Instruction: FinalizeNativeWithdrawal") => {
                 event_type = Some("finalize_native_withdrawal")
             }
-            "Program log: Instruction: FinalizeSplWithdrawal" => {
+            log if log.contains("Instruction: FinalizeSplWithdrawal") => {
                 event_type = Some("finalize_spl_withdrawal")
             }
-            "Program log: Instruction: CommitBatch" => event_type = Some("commit_batch"),
-            "Program log: Instruction: FinalizeBatch" => event_type = Some("finalize_batch"),
-            "Program log: Instruction: CommitAndFinalizeTransaction" => {
+            log if log.contains("Instruction: CommitBatch") => event_type = Some("commit_batch"),
+            log if log.contains("Instruction: FinalizeBatch") => {
+                event_type = Some("finalize_batch")
+            }
+            log if log.contains("Instruction: CommitAndFinalizeTransaction") => {
                 event_type = Some("commit_and_finalize_transaction")
             }
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
-            _ => continue,
+            _ => debug!("Unrecognized log: {}", log),
         }
     }
 
@@ -273,7 +344,7 @@ pub async fn parse_log(
         return None;
     };
     let Some(encoded_data) = encoded_data else {
-        debug!(
+        error!(
             "No encoded data found for event {} in logs: {:?}",
             event_type, logs
         );
@@ -290,8 +361,13 @@ pub async fn parse_log(
 
     match event_type {
         "native_deposit" | "spl_deposit" => {
-            let deposit =
-                parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone()).ok()?;
+            let deposit = match parse_borsh::<DepositSuccessful>(&encoded_data, signature.clone()) {
+                Ok(deposit) => deposit,
+                Err(e) => {
+                    error!("Failed to parse DepositSuccessful: {}", e);
+                    return None;
+                }
+            };
             let model = DbModel::L1Deposit(l1_deposit::ActiveModel {
                 nonce: Set(deposit.nonce as i64),
                 chain_id: Set(deposit.chain_id as i64),
@@ -312,7 +388,13 @@ pub async fn parse_log(
         }
         "native_withdrawal" | "spl_withdrawal" => {
             let withdrawal =
-                parse_borsh::<ForcedWithdrawSuccessful>(&encoded_data, signature.clone()).ok()?;
+                match parse_borsh::<ForcedWithdrawSuccessful>(&encoded_data, signature.clone()) {
+                    Ok(withdrawal) => withdrawal,
+                    Err(e) => {
+                        error!("Failed to parse ForcedWithdrawSuccessful: {}", e);
+                        return None;
+                    }
+                };
             let model = DbModel::L1Withdraw(l1_withdraw::ActiveModel {
                 nonce: Set(withdrawal.nonce as i64),
                 chain_id: Set(withdrawal.chain_id as i64),
@@ -333,7 +415,13 @@ pub async fn parse_log(
         }
         "finalize_native_withdrawal" => {
             let native =
-                parse_borsh::<FinalizeNativeWithdrawal>(&encoded_data, signature.clone()).ok()?;
+                match parse_borsh::<FinalizeNativeWithdrawal>(&encoded_data, signature.clone()) {
+                    Ok(native) => native,
+                    Err(e) => {
+                        error!("Failed to parse FinalizeNativeWithdrawal: {}", e);
+                        return None;
+                    }
+                };
             let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
                 nonce: Set(native.nonce as i64),
                 chain_id: Set(native.chain_id as i64),
@@ -348,8 +436,13 @@ pub async fn parse_log(
             })
         }
         "finalize_spl_withdrawal" => {
-            let spl =
-                parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone()).ok()?;
+            let spl = match parse_borsh::<FinalizeSplWithdrawal>(&encoded_data, signature.clone()) {
+                Ok(spl) => spl,
+                Err(e) => {
+                    error!("Failed to parse FinalizeSplWithdrawal: {}", e);
+                    return None;
+                }
+            };
             let model = DbModel::L2Withdraw(l2_withdraw::ActiveModel {
                 nonce: Set(spl.nonce as i64),
                 chain_id: Set(spl.chain_id as i64),
@@ -364,7 +457,16 @@ pub async fn parse_log(
             })
         }
         "commit_batch" => {
-            let commit = parse_borsh::<CommitBatch>(&encoded_data, signature.clone()).ok()?;
+            let commit = match parse_borsh::<CommitBatch>(&encoded_data, signature.clone()) {
+                Ok(commit) => commit,
+                Err(e) => {
+                    error!(
+                        "Failed to parse CommitBatch, base64: {}, error: {}",
+                        encoded_data, e
+                    );
+                    return None;
+                }
+            };
             let start_block: i32 = match commit.start_block.try_into() {
                 Ok(value) => value,
                 Err(_) => {
@@ -382,25 +484,52 @@ pub async fn parse_log(
                     return None;
                 }
             };
+            if commit.start_block > commit.end_block {
+                error!(
+                    "Invalid block range: start_block={} > end_block={}",
+                    commit.start_block, commit.end_block
+                );
+                return None;
+            }
             let chain_id = Decimal::from_i64(commit.chain_id as i64).unwrap();
 
             // Generate batch number
-            let batch_number = generate_number(commit.start_block, commit.end_block)
-                .expect("Failed to generate batch number");
+            let batch_number = match generate_number(commit.start_block, commit.end_block) {
+                Ok(number) => number,
+                Err(e) => {
+                    error!("Failed to generate batch number: {:?}", e);
+                    return None;
+                }
+            };
+            info!(
+                "Generated batch number {} for start_block={}, end_block={}",
+                batch_number, commit.start_block, commit.end_block
+            );
 
             // Check if batch already exists
-            let existing_batch = twine_transaction_batch::Entity::find()
+            let existing_batch = match twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::Number.eq(batch_number))
                 .one(blockscout_db)
                 .await
-                .ok()?;
-
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    error!(
+                        "Failed to query twine_transaction_batch for batch_number {}: {:?}",
+                        batch_number, e
+                    );
+                    return None;
+                }
+            };
             let batch_exists = existing_batch.is_some();
-            let batch_number = existing_batch.map(|b| b.number).unwrap_or(batch_number);
+            let batch_number = existing_batch
+                .clone()
+                .map(|b| b.number)
+                .unwrap_or(batch_number);
 
             let (l2_blocks, l2_transactions) = if batch_exists {
                 info!(
-                    "Batch number {} already exists in twine_transaction_batch, skipping L2 blocks and transactions generation",
+                    "Batch number {} already exists, skipping L2 blocks and transactions",
                     batch_number
                 );
                 (Vec::new(), Vec::new())
@@ -414,59 +543,76 @@ pub async fn parse_log(
                 let mut l2_transactions = Vec::new();
 
                 for block_num in commit.start_block..=commit.end_block {
-                    info!("Fetching block number: {}", block_num);
-                    let block_result = provider
-                        .get_block_by_number(block_num.into(), true.into())
-                        .await;
-
-                    let block = match block_result {
-                        Ok(Some(block)) => block,
-                        Ok(None) => {
-                            error!("Block {} not found", block_num);
-                            return None;
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch block {}: {:?}", block_num, e);
-                            return None;
-                        }
-                    };
-
-                    let block_hash = block.header.hash;
-
-                    let block_model = twine_batch_l2_blocks::ActiveModel {
-                        batch_number: Set(batch_number),
-                        hash: Set(block_hash.to_vec()),
-                        inserted_at: Set(timestamp.naive_utc()),
-                        updated_at: Set(timestamp.naive_utc()),
-                    };
-                    l2_blocks.push(block_model);
-
-                    match block.transactions {
-                        BlockTransactions::Full(transactions) => {
-                            for tx in transactions {
-                                let tx_hash = tx.inner.tx_hash().to_vec();
-                                let tx_model = twine_batch_l2_transactions::ActiveModel {
+                    for attempt in 1..=3 {
+                        info!(
+                            "Fetching block number: {} (attempt {}/{})",
+                            block_num, attempt, 3
+                        );
+                        match provider
+                            .get_block_by_number(block_num.into(), true.into())
+                            .await
+                        {
+                            Ok(Some(block)) => {
+                                let block_hash = block.header.hash;
+                                let block_model = twine_batch_l2_blocks::ActiveModel {
                                     batch_number: Set(batch_number),
-                                    hash: Set(tx_hash),
+                                    hash: Set(block_hash.to_vec()),
                                     inserted_at: Set(timestamp.naive_utc()),
                                     updated_at: Set(timestamp.naive_utc()),
                                 };
-                                l2_transactions.push(tx_model);
+                                l2_blocks.push(block_model);
+
+                                match block.transactions {
+                                    BlockTransactions::Full(transactions) => {
+                                        for tx in transactions {
+                                            let tx_hash = tx.inner.tx_hash().to_vec();
+                                            let tx_model =
+                                                twine_batch_l2_transactions::ActiveModel {
+                                                    batch_number: Set(batch_number),
+                                                    hash: Set(tx_hash),
+                                                    inserted_at: Set(timestamp.naive_utc()),
+                                                    updated_at: Set(timestamp.naive_utc()),
+                                                };
+                                            l2_transactions.push(tx_model);
+                                        }
+                                    }
+                                    BlockTransactions::Hashes(hashes) => {
+                                        for tx_hash in hashes {
+                                            let tx_model =
+                                                twine_batch_l2_transactions::ActiveModel {
+                                                    batch_number: Set(batch_number),
+                                                    hash: Set(tx_hash.to_vec()),
+                                                    inserted_at: Set(timestamp.naive_utc()),
+                                                    updated_at: Set(timestamp.naive_utc()),
+                                                };
+                                            l2_transactions.push(tx_model);
+                                        }
+                                    }
+                                    BlockTransactions::Uncle => {
+                                        info!(
+                                            "Block {} is an uncle block, no transactions",
+                                            block_num
+                                        );
+                                    }
+                                }
+                                break;
                             }
-                        }
-                        BlockTransactions::Hashes(hashes) => {
-                            for tx_hash in hashes {
-                                let tx_model = twine_batch_l2_transactions::ActiveModel {
-                                    batch_number: Set(batch_number),
-                                    hash: Set(tx_hash.to_vec()),
-                                    inserted_at: Set(timestamp.naive_utc()),
-                                    updated_at: Set(timestamp.naive_utc()),
-                                };
-                                l2_transactions.push(tx_model);
+                            Ok(None) => {
+                                error!("Block {} not found", block_num);
+                                return None;
                             }
-                        }
-                        BlockTransactions::Uncle => {
-                            info!("Block {} is an uncle block, no transactions", block_num);
+                            Err(e) if attempt < 3 => {
+                                error!("Failed to fetch block {}: {:?}", block_num, e);
+                                sleep(Duration::from_secs(1)).await;
+                                continue;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to fetch block {} after retries: {:?}",
+                                    block_num, e
+                                );
+                                return None;
+                            }
                         }
                     }
                 }
@@ -493,6 +639,8 @@ pub async fn parse_log(
                 tx_hash,
                 l2_blocks,
                 l2_transactions,
+                batch_exists,
+                existing_batch,
             };
 
             let parsed_event = ParsedEvent {
@@ -508,7 +656,13 @@ pub async fn parse_log(
             Some(parsed_event)
         }
         "finalize_batch" => {
-            let finalize = parse_borsh::<FinalizedBatch>(&encoded_data, signature.clone()).ok()?;
+            let finalize = match parse_borsh::<FinalizedBatch>(&encoded_data, signature.clone()) {
+                Ok(finalize) => finalize,
+                Err(e) => {
+                    error!("Failed to parse FinalizedBatch: {}", e);
+                    return None;
+                }
+            };
             let start_block: i32 = match finalize.start_block.try_into() {
                 Ok(value) => value,
                 Err(_) => {
@@ -529,28 +683,45 @@ pub async fn parse_log(
                     return None;
                 }
             };
+            if finalize.start_block > finalize.end_block {
+                error!(
+                    "Invalid block range: start_block={} > end_block={}",
+                    finalize.start_block, finalize.end_block
+                );
+                return None;
+            }
 
             // Generate batch number
-            let batch_number = generate_number(finalize.start_block, finalize.end_block)
-                .expect("Failed to generate batch number");
+            let batch_number = match generate_number(finalize.start_block, finalize.end_block) {
+                Ok(number) => number,
+                Err(e) => {
+                    error!("Failed to generate batch number: {:?}", e);
+                    return None;
+                }
+            };
 
             // Check if batch exists
-            let batch = twine_transaction_batch::Entity::find()
+            let batch = match twine_transaction_batch::Entity::find()
                 .filter(twine_transaction_batch::Column::Number.eq(batch_number))
                 .one(blockscout_db)
                 .await
-                .ok()?
-                .ok_or_else(|| {
+            {
+                Ok(Some(batch)) => batch,
+                Ok(None) => {
                     error!(
                         "Finalized event indexed before commit for start_block: {}, end_block: {}, batch_hash: {:?}",
                         finalize.start_block, finalize.end_block, finalize.batch_hash
                     );
-                    eyre::eyre!(
-                        "Finalized event indexed before commit for start_block: {}, end_block: {}",
-                        finalize.start_block, finalize.end_block
-                    )
-                })
-                .ok()?;
+                    return None;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to query twine_transaction_batch for batch_number {}: {:?}",
+                        batch_number, e
+                    );
+                    return None;
+                }
+            };
 
             let decoded_hash = match bs58::decode(&tx_hash).into_vec() {
                 Ok(hash) => {
