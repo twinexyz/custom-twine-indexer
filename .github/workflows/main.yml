@@ -3,9 +3,11 @@ name: Pipelines
 on:
   push:
     branches:
-      - '**'  # This will trigger on all tags
+      - 'main'
+      - 'staging'
+      - 'develop'
     tags:
-      - '**'  # This will trigger on all tags
+      - '**'
   pull_request:
 
 concurrency:
@@ -13,16 +15,55 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Disable incremental compilation for faster from-scratch builds
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+  CARGO_PROFILE_RELEASE_LTO: true
 
 jobs:
+  pre-notify:
+    uses: twinexyz/workflows/.github/workflows/notify.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      commit_message: ${{ github.event.head_commit.message }}
+      commit_url: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+      commit_actor: ${{ github.actor }}
+      event_name: ${{ github.event_name }}
+      workflow_name: ${{ github.workflow }}
+      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      job_status: started
   precommit:
+    needs: ["pre-notify"]
     uses: twinexyz/workflows/.github/workflows/precommit.yml@main
     secrets: inherit
+  dependency-check:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
+    secrets: inherit
+    with:
+      branch_slug: ${{ github.ref_name }}
+  semgrep:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
+    secrets: inherit
+  test:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/test.yml@main
+    secrets: inherit
+  audit:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/audit.yml@main
+    secrets: inherit
+  file-scan:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+    secrets: inherit
   build:
-    needs: ["precommit"]
+    needs: ["pre-notify", "precommit"]
     uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
@@ -30,7 +71,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan:
-    needs: ["build"]
+    needs: ["pre-notify", "precommit", "build"]
     uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
@@ -38,7 +79,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   deploy:
-    needs: ["build", "container-scan"]
+    needs: ["pre-notify", "precommit", "build"]
     uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
@@ -46,3 +87,26 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
       app_name: "api,indexer"
+  post-notify:
+    if: always()
+    needs: ["pre-notify", "precommit", "build", "deploy"]
+    uses: twinexyz/workflows/.github/workflows/notify.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      commit_message: ${{ github.event.head_commit.message }}
+      commit_url: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+      commit_actor: ${{ github.actor }}
+      event_name: ${{ github.event_name }}
+      workflow_name: ${{ github.workflow }}
+      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      job_status: ${{ needs.build.result }}
+      precommit_duration: ${{ needs.precommit.outputs.duration }}
+      build_duration: ${{ needs.build.outputs.duration }}
+      anchore_scan_duration: ${{ needs.container-scan.outputs.anchore_scan_duration }}
+      anchore_sbom_scan_duration: ${{ needs.container-scan.outputs.anchore_sbom_scan_duration }}
+      trivy_scan_duration: ${{ needs.container-scan.outputs.trivy_scan_duration }}
+      docker_scout_scan_duration: ${{ needs.container-scan.outputs.docker_scout_scan_duration }}
+      deploy_duration: ${{ needs.deploy.outputs.duration }}

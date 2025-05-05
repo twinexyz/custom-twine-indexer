@@ -16,4 +16,17 @@ repos:
 - repo: https://github.com/gitleaks/gitleaks
   rev: v8.24.2
   hooks:
-  - id: gitleaks
+    - id: gitleaks
+- repo: https://github.com/trufflesecurity/truffleHog
+  rev: v3.88.26
+  hooks:
+    - id: trufflehog
+      name: TruffleHog
+      description: Detect secrets in your data with TruffleHog.
+      entry: trufflehog git file://. --since-commit HEAD --results=verified --fail
+      language: golang
+      pass_filenames: false
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.10.0.1
+  hooks:
+    - id: shellcheck
