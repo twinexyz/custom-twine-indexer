@@ -3,13 +3,14 @@ use alloy::rpc::types::BlockTransactions;
 use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common::blockscout_entities::{
     twine_batch_l2_blocks, twine_batch_l2_transactions, twine_lifecycle_l1_transactions,
     twine_transaction_batch, twine_transaction_batch_detail,
 };
 use common::entities::{l1_deposit, l1_withdraw, l2_withdraw, last_synced};
-use eyre::Result;
+use eyre::Report;
+use eyre::{Error, Result};
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::{
@@ -218,6 +219,132 @@ pub fn parse_borsh<T: BorshDeserialize + HasSignature>(
     Ok(event)
 }
 
+async fn fetch_l2_blocks_and_transactions(
+    start_block: u64,
+    end_block: u64,
+    batch_number: i32,
+    timestamp: DateTime<Utc>,
+) -> Result<
+    (
+        Vec<twine_batch_l2_blocks::ActiveModel>,
+        Vec<twine_batch_l2_transactions::ActiveModel>,
+    ),
+    Report,
+> {
+    let rpc_url = env::var("TWINE__HTTP_RPC_URL")
+        .unwrap_or_else(|_| "https://rpc1.twine.limited".to_string());
+    info!(
+        "Fetching L2 blocks and transactions from RPC: {} for batch_number: {}",
+        rpc_url, batch_number
+    );
+    let provider = ProviderBuilder::new().on_http(rpc_url.parse().unwrap());
+
+    let mut l2_blocks = Vec::new();
+    let mut l2_transactions = Vec::new();
+
+    for block_num in start_block..=end_block {
+        info!(
+            "Fetching block number: {} for batch_number: {}",
+            block_num, batch_number
+        );
+        let block = provider
+            .get_block_by_number(block_num.into(), true.into())
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed to fetch block {} for batch_number {}: {:?}",
+                    block_num, batch_number, e
+                );
+                eyre::eyre!("Failed to fetch block {}: {:?}", block_num, e)
+            })?;
+
+        let block = block.ok_or_else(|| {
+            error!(
+                "Block {} not found for batch_number {}",
+                block_num, batch_number
+            );
+            eyre::eyre!("Block {} not found", block_num)
+        })?;
+        let block_hash = block.header.hash;
+        debug!("Fetched block {} with hash: {:?}", block_num, block_hash);
+
+        let block_model = twine_batch_l2_blocks::ActiveModel {
+            batch_number: Set(batch_number),
+            hash: Set(block_hash.to_vec()),
+            inserted_at: Set(timestamp.naive_utc()),
+            updated_at: Set(timestamp.naive_utc()),
+        };
+        l2_blocks.push(block_model);
+        debug!(
+            "Created twine_batch_l2_blocks model for block {}",
+            block_num
+        );
+
+        match &block.transactions {
+            BlockTransactions::Full(transactions) => {
+                info!(
+                    "Processing {} full transactions in block {}",
+                    transactions.len(),
+                    block_num
+                );
+                for (index, tx) in transactions.iter().enumerate() {
+                    let tx_hash = tx.inner.tx_hash().to_vec();
+                    debug!(
+                        "Processing transaction {}/{} in block {}: hash={:?}",
+                        index + 1,
+                        transactions.len(),
+                        block_num,
+                        tx_hash
+                    );
+                    let tx_model = twine_batch_l2_transactions::ActiveModel {
+                        batch_number: Set(batch_number),
+                        hash: Set(tx_hash),
+                        inserted_at: Set(timestamp.naive_utc()),
+                        updated_at: Set(timestamp.naive_utc()),
+                    };
+                    l2_transactions.push(tx_model);
+                }
+            }
+            BlockTransactions::Hashes(hashes) => {
+                info!(
+                    "Processing {} transaction hashes in block {}",
+                    hashes.len(),
+                    block_num
+                );
+                for (index, tx_hash) in hashes.iter().enumerate() {
+                    debug!(
+                        "Processing transaction hash {}/{} in block {}: hash={:?}",
+                        index + 1,
+                        hashes.len(),
+                        block_num,
+                        tx_hash
+                    );
+                    let tx_model = twine_batch_l2_transactions::ActiveModel {
+                        batch_number: Set(batch_number),
+                        hash: Set(tx_hash.to_vec()),
+                        inserted_at: Set(timestamp.naive_utc()),
+                        updated_at: Set(timestamp.naive_utc()),
+                    };
+                    l2_transactions.push(tx_model);
+                }
+            }
+            BlockTransactions::Uncle => {
+                info!(
+                    "Block {} is an uncle block, no transactions for batch_number {}",
+                    block_num, batch_number
+                );
+            }
+        }
+    }
+    info!(
+        "Successfully collected {} blocks and {} transactions for batch_number {}",
+        l2_blocks.len(),
+        l2_transactions.len(),
+        batch_number
+    );
+    Ok((l2_blocks, l2_transactions))
+}
+
 pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     let input = format!("{}:{}", start_block, end_block);
     let digest = blake3::hash(input.as_bytes());
@@ -231,66 +358,6 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     } else {
         Ok(masked_value as i32)
     }
-}
-
-pub async fn parse_and_print_commit_batch(
-    logs: &[String],
-    signature: Option<String>,
-    _db: &DatabaseConnection,
-    _blockscout_db: &DatabaseConnection,
-) -> Result<()> {
-    debug!("Parsing CommitBatch event with signature {:?}", signature);
-
-    let mut encoded_data = None;
-    let mut is_commit_batch = false;
-
-    for log in logs {
-        debug!("Processing log: {}", log);
-        if log.contains("Instruction: CommitBatch") {
-            is_commit_batch = true;
-        }
-        if log.starts_with("Program data: ") {
-            encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
-        }
-    }
-
-    if !is_commit_batch {
-        error!(
-            "No CommitBatch instruction found for signature {:?}",
-            signature
-        );
-        debug!("Logs: {:?}", logs);
-        return Ok(());
-    }
-
-    let Some(encoded_data) = encoded_data else {
-        error!(
-            "No encoded data found for CommitBatch event with signature {:?}",
-            signature
-        );
-        debug!("Logs: {:?}", logs);
-        return Ok(());
-    };
-
-    debug!("Parsing CommitBatch with encoded_data: {}", encoded_data);
-    let commit = match parse_borsh::<CommitBatch>(&encoded_data, signature.clone()) {
-        Ok(commit) => commit,
-        Err(e) => {
-            error!(
-                "Failed to parse CommitBatch, base64: {}, error: {}, signature: {:?}",
-                encoded_data, e, signature
-            );
-            debug!("Logs: {:?}", logs);
-            return Ok(());
-        }
-    };
-
-    info!(
-        "Parsed CommitBatch: signature={:?}, start_block={}, end_block={}, chain_id={}, slot_number={}",
-        signature, commit.start_block, commit.end_block, commit.chain_id, commit.slot_number
-    );
-
-    Ok(())
 }
 
 pub async fn parse_log(
@@ -534,95 +601,20 @@ pub async fn parse_log(
                 );
                 (Vec::new(), Vec::new())
             } else {
-                let rpc_url = env::var("TWINE__HTTP_RPC_URL")
-                    .unwrap_or_else(|_| "https://rpc1.twine.limited".to_string());
-                info!("Fetching blocks from EVM RPC: {}", rpc_url);
-                let provider = ProviderBuilder::new().on_http(rpc_url.parse().unwrap());
-
-                let mut l2_blocks = Vec::new();
-                let mut l2_transactions = Vec::new();
-
-                for block_num in commit.start_block..=commit.end_block {
-                    for attempt in 1..=3 {
-                        info!(
-                            "Fetching block number: {} (attempt {}/{})",
-                            block_num, attempt, 3
-                        );
-                        match provider
-                            .get_block_by_number(block_num.into(), true.into())
-                            .await
-                        {
-                            Ok(Some(block)) => {
-                                let block_hash = block.header.hash;
-                                let block_model = twine_batch_l2_blocks::ActiveModel {
-                                    batch_number: Set(batch_number),
-                                    hash: Set(block_hash.to_vec()),
-                                    inserted_at: Set(timestamp.naive_utc()),
-                                    updated_at: Set(timestamp.naive_utc()),
-                                };
-                                l2_blocks.push(block_model);
-
-                                match block.transactions {
-                                    BlockTransactions::Full(transactions) => {
-                                        for tx in transactions {
-                                            let tx_hash = tx.inner.tx_hash().to_vec();
-                                            let tx_model =
-                                                twine_batch_l2_transactions::ActiveModel {
-                                                    batch_number: Set(batch_number),
-                                                    hash: Set(tx_hash),
-                                                    inserted_at: Set(timestamp.naive_utc()),
-                                                    updated_at: Set(timestamp.naive_utc()),
-                                                };
-                                            l2_transactions.push(tx_model);
-                                        }
-                                    }
-                                    BlockTransactions::Hashes(hashes) => {
-                                        for tx_hash in hashes {
-                                            let tx_model =
-                                                twine_batch_l2_transactions::ActiveModel {
-                                                    batch_number: Set(batch_number),
-                                                    hash: Set(tx_hash.to_vec()),
-                                                    inserted_at: Set(timestamp.naive_utc()),
-                                                    updated_at: Set(timestamp.naive_utc()),
-                                                };
-                                            l2_transactions.push(tx_model);
-                                        }
-                                    }
-                                    BlockTransactions::Uncle => {
-                                        info!(
-                                            "Block {} is an uncle block, no transactions",
-                                            block_num
-                                        );
-                                    }
-                                }
-                                break;
-                            }
-                            Ok(None) => {
-                                error!("Block {} not found", block_num);
-                                return None;
-                            }
-                            Err(e) if attempt < 3 => {
-                                error!("Failed to fetch block {}: {:?}", block_num, e);
-                                sleep(Duration::from_secs(1)).await;
-                                continue;
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to fetch block {} after retries: {:?}",
-                                    block_num, e
-                                );
-                                return None;
-                            }
-                        }
+                match fetch_l2_blocks_and_transactions(
+                    commit.start_block,
+                    commit.end_block,
+                    batch_number,
+                    timestamp,
+                )
+                .await
+                {
+                    Ok((blocks, transactions)) => (blocks, transactions),
+                    Err(e) => {
+                        error!("Failed to fetch L2 blocks and transactions: {:?}", e);
+                        return None;
                     }
                 }
-                info!(
-                    "Collected {} blocks and {} transactions for batch {}",
-                    l2_blocks.len(),
-                    l2_transactions.len(),
-                    batch_number
-                );
-                (l2_blocks, l2_transactions)
             };
 
             let model = DbModel::TwineTransactionBatch {

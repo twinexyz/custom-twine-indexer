@@ -92,7 +92,7 @@ pub fn poll_missing_slots(
                     }
 
                     let batch_end = (start_slot + max_slots - 1).min(end_slot);
-                    let events = match fetch_commit_batch_events(
+                    let events = match fetch_batch_events(
                         &rpc_url,
                         &twine_chain_id,
                         &tokens_gateway_id,
@@ -119,7 +119,7 @@ pub fn poll_missing_slots(
     )
 }
 
-async fn fetch_commit_batch_events(
+async fn fetch_batch_events(
     rpc_url: &str,
     twine_chain_id: &str,
     tokens_gateway_id: &str,
@@ -132,7 +132,7 @@ async fn fetch_commit_batch_events(
     );
 
     let program_ids = vec![twine_chain_id, tokens_gateway_id];
-    let mut commit_batch_events = Vec::new();
+    let mut batch_events = Vec::new();
 
     // Fetch signatures for the current slot range
     let mut slot_signatures = Vec::new();
@@ -169,7 +169,7 @@ async fn fetch_commit_batch_events(
             Ok(tx) => tx,
             Err(e) => {
                 error!("Failed to fetch transaction {}: {}", sig_info.signature, e);
-                commit_batch_events.push(Err(e));
+                batch_events.push(Err(e));
                 continue;
             }
         };
@@ -199,7 +199,7 @@ async fn fetch_commit_batch_events(
                     "Found CommitBatch event: signature={} in slot {}",
                     sig_info.signature, slot
                 );
-                commit_batch_events.push(Ok((logs, Some(sig_info.signature))));
+                batch_events.push(Ok((logs, Some(sig_info.signature))));
             } else if logs
                 .iter()
                 .any(|log| log.contains("Instruction: FinalizeBatch"))
@@ -208,12 +208,12 @@ async fn fetch_commit_batch_events(
                     "Found FinalizeBatch event: signature={} in slot {}",
                     sig_info.signature, slot
                 );
-                commit_batch_events.push(Ok((logs, Some(sig_info.signature))));
+                batch_events.push(Ok((logs, Some(sig_info.signature))));
             }
         }
     }
 
-    Ok(commit_batch_events)
+    Ok(batch_events)
 }
 
 async fn fetch_signatures_for_program(

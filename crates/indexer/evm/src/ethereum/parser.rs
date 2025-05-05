@@ -114,26 +114,6 @@ pub struct ParsedLog {
     pub block_number: i64,
 }
 
-fn generate_batch_number(start_block: u64, end_block: u64) -> Result<i32, ParserError> {
-    debug!(
-        "Generating batch number for start_block: {}, end_block: {}",
-        start_block, end_block
-    );
-    let input = format!("{}:{}", start_block, end_block);
-    let digest = hash(input.as_bytes());
-    let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
-    let masked_value = value & 0x7FFF_FFFF; // Ensures it fits in i32 positive range
-    if masked_value > i32::MAX as u64 {
-        error!("Batch number generation overflow: value={}", masked_value);
-        Err(ParserError::NumberOverflow {
-            value: masked_value,
-        })
-    } else {
-        debug!("Generated batch number: {}", masked_value);
-        Ok(masked_value as i32)
-    }
-}
-
 async fn fetch_l2_blocks_and_transactions(
     start_block: u64,
     end_block: u64,
@@ -258,6 +238,26 @@ async fn fetch_l2_blocks_and_transactions(
         batch_number
     );
     Ok((l2_blocks, l2_transactions))
+}
+
+fn generate_batch_number(start_block: u64, end_block: u64) -> Result<i32, ParserError> {
+    debug!(
+        "Generating batch number for start_block: {}, end_block: {}",
+        start_block, end_block
+    );
+    let input = format!("{}:{}", start_block, end_block);
+    let digest = hash(input.as_bytes());
+    let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
+    let masked_value = value & 0x7FFF_FFFF; // Ensures it fits in i32 positive range
+    if masked_value > i32::MAX as u64 {
+        error!("Batch number generation overflow: value={}", masked_value);
+        Err(ParserError::NumberOverflow {
+            value: masked_value,
+        })
+    } else {
+        debug!("Generated batch number: {}", masked_value);
+        Ok(masked_value as i32)
+    }
 }
 
 pub async fn parse_log(
