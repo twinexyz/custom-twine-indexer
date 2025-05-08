@@ -1,7 +1,27 @@
 use config::Config;
 use dotenv::dotenv;
 use eyre::Result;
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
+
+fn config_from_env<T: DeserializeOwned>() -> Result<T> {
+    dotenv().ok();
+
+    Config::builder()
+        .add_source(
+            config::Environment::default()
+                .separator("__")
+                .list_separator(","),
+        )
+        .build()?
+        .try_deserialize()
+        .map_err(eyre::Report::from)
+}
+
+pub trait LoadFromEnv: Sized + DeserializeOwned {
+    fn from_env() -> Result<Self> {
+        config_from_env()
+    }
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiConfig {
@@ -19,6 +39,16 @@ pub struct ChainConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+
+pub struct CelestiaConfig {
+    pub rpc_url: String,
+    pub wss_url: String,
+    pub start_height: u64,
+    pub namespace: String,
+    pub rpc_auth_token: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct IndexerConfig {
     pub database_url: String,
     pub blockscout_database_url: String,
@@ -32,33 +62,12 @@ pub struct IndexerConfig {
     pub tokens_gateway_program_address: String,
     pub twine_chain_program_address: String,
 }
-
-impl ApiConfig {
-    pub fn from_env() -> Result<Self> {
-        dotenv().ok(); // Load environment variables from .env file if present
-        Config::builder()
-            .add_source(
-                config::Environment::default()
-                    .separator("__")
-                    .list_separator(","),
-            )
-            .build()?
-            .try_deserialize()
-            .map_err(eyre::Report::from)
-    }
+#[derive(Deserialize, Debug, Clone)]
+pub struct DAConfig {
+    pub celestia: CelestiaConfig,
+    pub blockscout_database_url: String,
 }
 
-impl IndexerConfig {
-    pub fn from_env() -> Result<Self> {
-        dotenv().ok(); // Load environment variables from .env file if present
-        Config::builder()
-            .add_source(
-                config::Environment::default()
-                    .separator("__")
-                    .list_separator(","),
-            )
-            .build()?
-            .try_deserialize()
-            .map_err(eyre::Report::from)
-    }
-}
+impl LoadFromEnv for ApiConfig {}
+impl LoadFromEnv for IndexerConfig {}
+impl LoadFromEnv for DAConfig {}

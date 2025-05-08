@@ -1,4 +1,7 @@
-use common::{config, db};
+use common::{
+    config::{self, LoadFromEnv as _},
+    db,
+};
 use eyre::Result;
 use tracing::info;
 

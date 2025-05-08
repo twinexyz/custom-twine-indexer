@@ -3,15 +3,14 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "twine_l1_deposit")]
+#[sea_orm(table_name = "celestia_blobs")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub l1_nonce: i64,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub chain_id: i64,
-    pub status: i16,
-    pub slot_number: i64,
-    pub tx_hash: String,
+    #[sea_orm(primary_key)]
+    pub id: i32,
+    pub commitment_hash: String,
+    pub transaction_hash: String,
+    pub twine_block_hash: String,
+    pub height: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

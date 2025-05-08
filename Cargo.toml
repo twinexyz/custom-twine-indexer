@@ -3,13 +3,14 @@ resolver = "2"
 members = [
     "bin/api",
     "bin/indexer",
+    "bin/da-indexer",
     "crates/api",
     "crates/common",
     "crates/indexer/evm",
     "crates/indexer/svm",
-    "migration",
+    "migration", "crates/da",
 ]
-default-members = ["bin/indexer", "bin/api"]
+default-members = ["bin/indexer", "bin/api", "bin/da-indexer"]
 
 
 [workspace.dependencies]
@@ -17,6 +18,7 @@ evm = { path = "crates/indexer/evm" }
 svm = { path = "crates/indexer/svm" }
 common = { path = "crates/common" }
 api-lib = { path = "crates/api" }
+da = {path = "crates/da"}
 
 anyhow = "1.0.97"
 async-trait = "0.1.87"

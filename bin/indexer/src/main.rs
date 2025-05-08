@@ -1,4 +1,4 @@
-use common::{config, db, indexer::ChainIndexer};
+use common::{config::{self, LoadFromEnv}, db, indexer::ChainIndexer};
 use eyre::{Result, WrapErr};
 use sea_orm::DatabaseConnection;
 use tokio::task::JoinHandle;
