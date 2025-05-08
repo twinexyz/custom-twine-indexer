@@ -1,0 +1,16 @@
+[package]
+name = "da"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+celestia-rpc = "0.10.0"
+celestia-types = "0.11.0"
+common = { workspace = true }
+eyre = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+base64.workspace = true
