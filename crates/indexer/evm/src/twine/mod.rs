@@ -7,8 +7,8 @@ use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
-use common::entities::last_synced;
-use common::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
+use common::indexer::{MAX_RETRIES, RETRY_DELAY};
+use database::entities::last_synced;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
 use sea_orm::ActiveValue::Set;
@@ -17,6 +17,8 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 use twine_evm_contracts::evm::twine::l2_messenger::{L2Messenger, PrecompileReturn};
+
+pub mod handlers;
 
 pub const TWINE_EVENT_SIGNATURES: &[&str] = &[
     L2Messenger::EthereumTransactionsHandled::SIGNATURE,
@@ -35,8 +37,7 @@ pub struct TwineIndexer {
     contract_addrs: Vec<String>,
 }
 
-#[async_trait]
-impl ChainIndexer for TwineIndexer {
+impl TwineIndexer {
     async fn new(
         http_rpc_url: String,
         ws_rpc_url: String,

@@ -1,0 +1,54 @@
+db_indexer: &db_indexer
+  url: "postgresql://db_user:password@localhost:5432/indexer"
+
+db_blockscout: &db_blockscout
+  url: "postgres://blockscout:password@localhost:5432/blockscout"
+
+
+api:
+  database: &db_indexer
+  port: 7777
+
+indexer:
+  database: &db_indexer
+  blockscout: &db_blockscout
+
+  l1s:
+    ethereum:
+      http_rpc_url:
+      ws_rpc_url:
+      chain_id: 
+      start_block:
+      batch_size:
+      l1_message_queue_address:
+      l1_erc20_gateway_address: 
+      eth_twine_chain_address:
+      chain: "evm" 
+
+    solana:
+      http_rpc_url: "http://0.0.0.0:8899"
+      ws_rpc_url:   "ws://0.0.0.0:8900"
+      chain_id:     103
+      start_block:  371456865
+      batch_size:   1000
+      tokens_gateway_program_address: "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
+      twine_chain_program_address:  "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
+      chain: "svm"
+
+  twine: 
+    http_rpc_url: "http://0.0.0.0:8545"
+    ws_rpc_url:   "ws://0.0.0.0:8546"
+    chain_id:     1337
+    start_block:  34054
+    batch_size:   1000
+    l2_twine_messenger_address: "0x4A79814ccC04479451A5ACE33c855385B73BA5dA"
+
+da-indexer:
+  database:     *db_indexer
+  blockscout:   *db_blockscout
+  celestia:
+    rpc_url:      "https://celestia-rpc.example.com"
+    wss_url:      "wss://celestia-wss.example.com"
+    start_height: 0
+    namespace:    ""
+    auth_token:   ""

@@ -8,7 +8,7 @@ members = [
     "crates/common",
     "crates/indexer/evm",
     "crates/indexer/svm",
-    "migration", "crates/da",
+    "migration", "crates/da", "crates/database", "crates/providers",
 ]
 default-members = ["bin/indexer", "bin/api", "bin/da-indexer"]
 
@@ -19,6 +19,8 @@ svm = { path = "crates/indexer/svm" }
 common = { path = "crates/common" }
 api-lib = { path = "crates/api" }
 da = {path = "crates/da"}
+database = {path = "crates/database"}
+providers = {path = "crates/providers"}
 
 anyhow = "1.0.97"
 async-trait = "0.1.87"

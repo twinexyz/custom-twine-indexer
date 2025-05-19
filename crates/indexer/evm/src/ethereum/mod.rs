@@ -1,17 +1,24 @@
-mod db;
 mod parser;
 
 use super::EVMChain;
-use crate::common::{poll_missing_logs, subscribe_stream, with_retry};
+use crate::common::{
+    create_http_provider, create_ws_provider, poll_missing_logs, subscribe_stream, with_retry,
+};
+use crate::error::ParserError;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
-use common::entities::last_synced;
-use common::indexer::{ChainIndexer, MAX_RETRIES, RETRY_DELAY};
+use common::config::EvmConfig;
+use common::indexer::{MAX_RETRIES, RETRY_DELAY};
+use database::client::DbClient;
+use database::entities::last_synced;
+use event_handlers::EthereumEventHandler;
 use eyre::{Report, Result};
 use futures_util::{future, StreamExt};
+use providers::evm::EVMProvider;
+use providers::ChainProvider;
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -22,79 +29,41 @@ use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
 };
 
-sol! {
-    #[derive(Debug)]
-    event FinalizeWithdrawETH(
-        string l1Token,
-        string l2Token,
-        string indexed to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber
-    );
-
-    #[derive(Debug)]
-    event FinalizeWithdrawERC20(
-        string indexed l1Token,
-        string indexed l2Token,
-        string to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber,
-    );
-}
-
-pub const ETHEREUM_EVENT_SIGNATURES: &[&str] = &[
-    L1MessageQueue::QueueDepositTransaction::SIGNATURE,
-    L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
-    FinalizeWithdrawERC20::SIGNATURE,
-    FinalizeWithdrawETH::SIGNATURE,
-    CommitBatch::SIGNATURE,
-    FinalizedBatch::SIGNATURE,
-    FinalizedTransaction::SIGNATURE,
-];
+pub mod event_handlers;
 
 pub struct EthereumIndexer {
+    chain_id: u64,
+    start_block: u64,
+    contract_addrs: Vec<String>,
+    db_client: Arc<DbClient>,
     /// WS provider for live subscription.
     ws_provider: Arc<dyn Provider + Send + Sync>,
     /// HTTP provider for polling missing blocks.
     http_provider: Arc<dyn Provider + Send + Sync>,
-    db: DatabaseConnection,
-    blockscout_db: DatabaseConnection,
-    chain_id: u64,
-    start_block: u64,
-    contract_addrs: Vec<String>,
 }
 
-#[async_trait]
-impl ChainIndexer for EthereumIndexer {
-    async fn new(
-        http_rpc_url: String,
-        ws_rpc_url: String,
-        chain_id: u64,
-        start_block: u64,
-        db: &DatabaseConnection,
-        blockscout_db: Option<&DatabaseConnection>,
-        contract_addrs: Vec<String>,
-    ) -> Result<Self> {
-        let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Ethereum).await?;
-        let http_provider = super::create_http_provider(http_rpc_url, EVMChain::Ethereum).await?;
+impl EthereumIndexer {
+    pub async fn new(config: EvmConfig, db_client: Arc<DbClient>) -> Result<Self> {
+        let http_provider =
+            create_http_provider(config.common.http_rpc_url, EVMChain::Ethereum).await?;
+        let ws_provider = create_ws_provider(config.common.ws_rpc_url, EVMChain::Ethereum).await?;
+
         Ok(Self {
-            ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
-            db: db.clone(),
-            blockscout_db: blockscout_db.unwrap().clone(),
-            chain_id,
-            start_block,
-            contract_addrs,
+            ws_provider: Arc::new(ws_provider),
+            chain_id: config.common.chain_id,
+            start_block: config.common.start_block,
+            contract_addrs: vec![],
+            db_client,
         })
     }
 
-    async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
-        let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
+        let last_synced = self
+            .db_client
+            .get_last_synced_height(self.chain_id as i64, self.start_block)
+            .await?;
         let current_block = with_retry(|| async {
             self.http_provider
                 .get_block_number()
@@ -105,6 +74,9 @@ impl ChainIndexer for EthereumIndexer {
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
+
+        let event_handler =
+            EthereumEventHandler::new(self.db_client.clone(), self.chain_id.clone());
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             let max_blocks_per_request = std::env::var("ETHEREUM__BLOCK_SYNC_BATCH_SIZE")
@@ -135,32 +107,11 @@ impl ChainIndexer for EthereumIndexer {
             .await?;
 
             while let Some(log) = stream.next().await {
-                match parser::parse_log(
-                    log,
-                    &live_indexer.db,
-                    &live_indexer.blockscout_db,
-                    live_indexer.chain_id,
-                )
-                .await
-                {
-                    Ok(parsed) => {
-                        let last_synced = last_synced::ActiveModel {
-                            chain_id: Set(id as i64),
-                            block_number: Set(parsed.block_number),
-                        };
-                        if let Err(e) = db::insert_model(
-                            parsed.model,
-                            last_synced,
-                            &live_indexer.db,
-                            &live_indexer.blockscout_db,
-                        )
-                        .await
-                        {
-                            error!("Failed to insert model: {:?}", e);
-                        }
-                    }
-                    Err(e) => live_indexer.handle_error(e)?,
-                }
+                let _ = event_handler.handle_event(log.clone()).await;
+
+                // let _ = self
+                //     .db_client
+                //     .upsert_last_synced(self.chain_id as i64, log.block_number.unwrap() as i64);
             }
             Ok(())
         });
@@ -180,24 +131,25 @@ impl EthereumIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
         for log in logs {
-            match parser::parse_log(log, &self.db, &self.blockscout_db, self.chain_id).await {
-                Ok(parsed) => {
-                    let last_synced = last_synced::ActiveModel {
-                        chain_id: Set(id as i64),
-                        block_number: Set(parsed.block_number),
-                    };
-                    db::insert_model(parsed.model, last_synced, &self.db, &self.blockscout_db)
-                        .await?;
-                }
-                Err(e) => self.handle_error(e)?,
-            }
+
+            // match parser::parse_log(log, self.chain_id).await {
+            //     Ok(parsed) => {
+            //         // let last_synced = last_synced::ActiveModel {
+            //         //     chain_id: Set(id as i64),
+            //         //     block_number: Set(parsed.block_number),
+            //         // };
+            //         // db::insert_model(parsed.model, last_synced, &self.db, &self.blockscout_db)
+            //         //     .await?;
+            //     }
+            //     Err(e) => self.handle_error(e)?,
+            // }
         }
         Ok(())
     }
 
     fn handle_error(&self, e: Report) -> Result<()> {
-        match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) => Ok(()),
+        match e.downcast_ref::<ParserError>() {
+            Some(ParserError::UnknownEvent { .. }) => Ok(()),
             _ => {
                 error!("Error processing log: {:?}", e);
                 Err(e)
@@ -211,8 +163,7 @@ impl Clone for EthereumIndexer {
         Self {
             ws_provider: Arc::clone(&self.ws_provider),
             http_provider: Arc::clone(&self.http_provider),
-            db: self.db.clone(),
-            blockscout_db: self.blockscout_db.clone(),
+            db_client: self.db_client.clone(),
             start_block: self.start_block,
             chain_id: self.chain_id,
             contract_addrs: self.contract_addrs.clone(),

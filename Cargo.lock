@@ -1138,6 +1138,7 @@ version = "0.0.0"
 dependencies = [
  "api-lib",
  "common",
+ "database",
  "eyre",
  "pre-commit-hooks",
  "sea-orm-cli",
@@ -1153,6 +1154,7 @@ dependencies = [
  "axum",
  "chrono",
  "common",
+ "database",
  "eyre",
  "sea-orm",
  "sea-query",
@@ -2340,6 +2342,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "config",
+ "database",
  "dotenv",
  "eyre",
  "sea-orm",
@@ -2705,6 +2708,7 @@ dependencies = [
  "celestia-rpc",
  "celestia-types",
  "common",
+ "database",
  "eyre",
  "sea-orm",
  "serde",
@@ -2814,6 +2818,18 @@ checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "database"
+version = "0.1.0"
+dependencies = [
+ "config",
+ "dotenv",
+ "eyre",
+ "sea-orm",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -3227,10 +3243,12 @@ dependencies = [
  "blake3",
  "chrono",
  "common",
+ "database",
  "eyre",
  "futures-util",
  "hex",
  "num-traits",
+ "providers",
  "sea-orm",
  "sea-query",
  "serde",
@@ -4255,6 +4273,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "common",
+ "database",
  "evm",
  "eyre",
  "pre-commit-hooks",
@@ -5903,6 +5922,15 @@ dependencies = [
  "miette",
  "prost-types",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "providers"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "common",
+ "eyre",
 ]
 
 [[package]]
@@ -10127,6 +10155,7 @@ dependencies = [
  "borsh 1.5.7",
  "chrono",
  "common",
+ "database",
  "eyre",
  "futures-util",
  "hex",

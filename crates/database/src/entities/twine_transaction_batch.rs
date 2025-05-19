@@ -5,11 +5,11 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "twine_transaction_batch")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub number: i32,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub number: i64,
     pub timestamp: DateTime,
-    pub start_block: i32,
-    pub end_block: i32,
+    pub start_block: i64,
+    pub end_block: i64,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub root_hash: Vec<u8>,
     pub inserted_at: DateTime,

@@ -8,7 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     #[sea_orm(unique)]
-    pub batch_number: i32,
+    pub batch_number: i64,
     pub l1_transaction_count: i32,
     pub l2_transaction_count: i32,
     pub l1_gas_price: Decimal,

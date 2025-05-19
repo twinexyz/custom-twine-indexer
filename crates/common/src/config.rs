@@ -1,4 +1,4 @@
-use config::Config;
+use config::{Config, File};
 use dotenv::dotenv;
 use eyre::Result;
 use serde::{de::DeserializeOwned, Deserialize};
@@ -7,6 +7,7 @@ fn config_from_env<T: DeserializeOwned>() -> Result<T> {
     dotenv().ok();
 
     Config::builder()
+        .add_source(File::with_name("config.yaml").required(true))
         .add_source(
             config::Environment::default()
                 .separator("__")
@@ -24,9 +25,14 @@ pub trait LoadFromEnv: Sized + DeserializeOwned {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct DatabaseConfig {
+    pub url: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ApiConfig {
-    pub database_url: String,
-    pub api_port: u16,
+    pub database: DatabaseConfig,
+    pub port: u16,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -39,7 +45,25 @@ pub struct ChainConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct EvmConfig {
+    #[serde(flatten)]
+    pub common: ChainConfig,
+    pub l1_message_queue_address: String,
+    pub l1_erc20_gateway_address: String,
+    pub eth_twine_chain_address: String,
+    pub chain: String,
+}
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct SvmConfig {
+    #[serde(flatten)]
+    pub common: ChainConfig,
+    pub tokens_gateway_program_address: String,
+    pub twine_chain_program_address: String,
+    pub chain: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct CelestiaConfig {
     pub rpc_url: String,
     pub wss_url: String,
@@ -49,25 +73,32 @@ pub struct CelestiaConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct IndexerConfig {
-    pub database_url: String,
-    pub blockscout_database_url: String,
-    pub ethereum: ChainConfig,
-    pub solana: ChainConfig,
-    pub twine: ChainConfig,
-    pub l1_message_queue_address: String,
+pub struct TwineConfig {
+    #[serde(flatten)]
+    pub common: ChainConfig,
     pub l2_twine_messenger_address: String,
-    pub l1_erc20_gateway_address: String,
-    pub eth_twine_chain_address: String,
-    pub tokens_gateway_program_address: String,
-    pub twine_chain_program_address: String,
 }
 #[derive(Deserialize, Debug, Clone)]
-pub struct DAConfig {
+pub struct L1sConfig {
+    pub ethereum: EvmConfig,
+    pub solana: SvmConfig,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct IndexerConfig {
+    pub database: DatabaseConfig,
+    pub blockscout: DatabaseConfig,
+    pub l1s: L1sConfig,
+    pub twine: TwineConfig,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DaIndexerConfig {
+    pub database: DatabaseConfig,
+    pub blockscout: DatabaseConfig,
     pub celestia: CelestiaConfig,
-    pub blockscout_database_url: String,
 }
 
 impl LoadFromEnv for ApiConfig {}
 impl LoadFromEnv for IndexerConfig {}
-impl LoadFromEnv for DAConfig {}
+impl LoadFromEnv for DaIndexerConfig {}

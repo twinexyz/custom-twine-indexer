@@ -1,4 +1,4 @@
-use common::entities::celestia_blobs;
+use database::entities::{celestia_blobs, last_synced};
 use eyre::Result;
 use sea_orm::{DatabaseConnection, EntityTrait, sea_query::OnConflict};
 use tracing::error;
@@ -63,5 +63,14 @@ impl DbClient {
             })?;
 
         Ok(())
+    }
+
+    pub async fn get_last_synced_block(&self, chain_id: i64, start_block: u64) -> Result<i64> {
+        let result = last_synced::Entity::find_by_id(chain_id)
+            .one(&self.db)
+            .await?;
+        Ok(result
+            .map(|record| record.block_number)
+            .unwrap_or(start_block as i64))
     }
 }

@@ -14,9 +14,8 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Number)
-                            .integer()
+                            .big_unsigned()
                             .not_null()
-                            .auto_increment(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Timestamp)
@@ -25,12 +24,12 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::StartBlock)
-                            .integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::EndBlock)
-                            .integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(
@@ -113,7 +112,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::BatchNumber)
-                            .integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(
@@ -217,7 +216,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(TwineBatchL2Blocks::BatchNumber)
-                            .integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(ColumnDef::new(TwineBatchL2Blocks::Hash).binary().not_null())
@@ -254,7 +253,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(TwineBatchL2Transactions::BatchNumber)
-                            .integer()
+                            .big_unsigned()
                             .not_null(),
                     )
                     .col(

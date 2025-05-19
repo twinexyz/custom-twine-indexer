@@ -1,7 +1,5 @@
-use common::{
-    config::{self, LoadFromEnv as _},
-    db,
-};
+use common::config::{self, LoadFromEnv as _};
+use database::connect::connect;
 use eyre::Result;
 use tracing::info;
 
@@ -9,7 +7,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = config::ApiConfig::from_env()?;
-    let db_conn = db::connect(&cfg.database_url).await?;
+    let db_conn = connect(&cfg.database.url).await?;
     info!("Connected to Database");
-    api_lib::start_api(db_conn, cfg.api_port).await
+    api_lib::start_api(db_conn, cfg.port).await
 }

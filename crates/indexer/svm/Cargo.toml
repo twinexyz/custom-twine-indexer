@@ -28,6 +28,8 @@ tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+database = {workspace = true}
+
 
 [lints.rust]
 unused = "allow"
