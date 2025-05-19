@@ -5,6 +5,7 @@ use crate::common::{
     create_http_provider, create_ws_provider, poll_missing_logs, subscribe_stream, with_retry,
 };
 use crate::error::ParserError;
+use crate::handler::EvmEventHandler;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Log;
 use alloy::sol;
@@ -14,7 +15,7 @@ use common::config::EvmConfig;
 use common::indexer::{MAX_RETRIES, RETRY_DELAY};
 use database::client::DbClient;
 use database::entities::last_synced;
-use event_handlers::EthereumEventHandler;
+use handlers::EthereumEventHandler;
 use eyre::{Report, Result};
 use futures_util::{future, StreamExt};
 use providers::evm::EVMProvider;
@@ -29,7 +30,7 @@ use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
 };
 
-pub mod event_handlers;
+pub mod handlers;
 
 pub struct EthereumIndexer {
     chain_id: u64,

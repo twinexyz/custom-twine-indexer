@@ -109,7 +109,9 @@ impl DbClient {
 
         let mut detail = batch_details_model;
         detail.execute_id = Set(Some(execute_id));
-        self.insert_twine_transaction_batch_detail(detail, &txn)
+
+        let _ = twine_transaction_batch_detail::Entity::update(detail)
+            .exec(&txn)
             .await?;
 
         txn.commit().await?;

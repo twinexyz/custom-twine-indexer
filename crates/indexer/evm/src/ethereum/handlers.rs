@@ -16,100 +16,58 @@ use database::{
 use eyre::Result;
 use num_traits::FromPrimitive;
 use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set};
-use tracing::info;
+use tracing::{info, warn};
 use twine_evm_contracts::evm::ethereum::{
-    l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch,
+    l1_message_queue::L1MessageQueue,
+    twine_chain::TwineChain::{CommitBatch, FinalizedBatch},
 };
 
-use crate::error::ParserError;
+use crate::{error::ParserError, handler::EvmEventHandler};
 
 use super::parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
 
-type AsyncEventHandler = Box<
-    dyn Fn(&EthereumEventHandler, Log) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
-        + Send
-        + Sync,
->;
-
 pub struct EthereumEventHandler {
     db_client: Arc<DbClient>,
-    handlers: HashMap<B256, AsyncEventHandler>,
     chain_id: u64,
 }
 
-pub struct LogContext<T> {
-    pub tx_hash_str: String,
-    pub block_number: i64,
-    pub timestamp: DateTime<Utc>,
-    pub data: T,
+impl EvmEventHandler for EthereumEventHandler {
+    fn handle_event<'a>(
+        &'a self,
+        log: Log,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+                signature: B256::ZERO,
+            })?;
+
+            match *sig {
+                L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
+                    self.handle_queue_deposit_txn(log).await
+                }
+                L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
+                    self.handle_queue_withdrawal_txn(log).await
+                }
+                FinalizeWithdrawERC20::SIGNATURE_HASH => self.handle_finalize_withdraw(log).await,
+
+                FinalizeWithdrawETH::SIGNATURE_HASH => self.handle_finalize_withdraw_eth(log).await,
+
+                CommitBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await,
+
+                FinalizedBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await,
+
+                other => Err(ParserError::UnknownEvent { signature: other }.into()),
+            }
+        })
+    }
 }
 
 impl EthereumEventHandler {
     pub fn new(db_client: Arc<DbClient>, chain_id: u64) -> Self {
         Self {
             db_client,
-            handlers: HashMap::new(),
             chain_id,
         }
-    }
-
-    pub fn initilize_handlers(&mut self) {
-        // self.handlers.insert(
-        //     L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH,
-        //     Box::new(|h, log| Box::pin(h.handle_queue_deposit_txn(log))),
-        // );
-    }
-
-    pub async fn handle_event(&self, log: Log) -> Result<()> {
-        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-            signature: B256::ZERO,
-        })?;
-
-        if let Some(handler_fn) = self.handlers.get(sig) {
-            handler_fn(self, log).await
-        } else {
-            Err(ParserError::UnknownEvent { signature: *sig }.into())
-        }
-    }
-
-    //Helper Method
-
-    fn extract_log<T: SolEvent>(
-        &self,
-        log: Log,
-        event_name: &'static str,
-    ) -> Result<LogContext<T>, ParserError> {
-        let tx_hash = log
-            .transaction_hash
-            .ok_or(ParserError::MissingTransactionHash)?;
-        let tx_hash_str = format!("{tx_hash:?}");
-
-        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
-
-        let timestamp = log
-            .block_timestamp
-            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
-            .unwrap_or_else(|| {
-                tracing::warn!(
-                    "Missing or invalid block timestamp in {}. Using now.",
-                    event_name
-                );
-                Utc::now()
-            });
-
-        let decoded = log
-            .log_decode::<T>()
-            .map_err(|e| ParserError::DecodeError {
-                event_type: event_name,
-                source: Box::new(e),
-            })?;
-
-        Ok(LogContext {
-            tx_hash_str,
-            block_number,
-            timestamp,
-            data: decoded.inner.data,
-        })
     }
 
     // All the logs handlers are here
@@ -258,6 +216,47 @@ impl EthereumEventHandler {
         let _ =
             self.db_client
                 .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs);
+
+        Ok(())
+    }
+
+    async fn handle_finalize_batch(&self, log: Log) -> Result<()> {
+        let decoded = self.extract_log::<CommitBatch>(log.clone(), "CommitBatch")?;
+        let start_block = decoded.data.startBlock as i64;
+        let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
+        let timestamp = decoded.timestamp.naive_utc();
+        let chain_id_dec = Decimal::from_i64(self.chain_id as i64).unwrap();
+
+        // Fetch existing batch details once
+        if let Some(existing) = self.db_client.get_batch_details(start_block).await? {
+            // Prepare lifecycle transaction model
+            let lifecycle_txn = twine_lifecycle_l1_transactions::ActiveModel {
+                hash: Set(tx_hash_bytes),
+                chain_id: Set(chain_id_dec.clone()),
+                timestamp: Set(timestamp),
+                ..Default::default()
+            };
+
+            // Prepare updated batch detail model using existing values
+            let detail_model = twine_transaction_batch_detail::ActiveModel {
+                batch_number: Set(start_block),
+                l1_transaction_count: Set(existing.l1_transaction_count),
+                l2_transaction_count: Set(existing.l2_transaction_count),
+                l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
+                l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
+                chain_id: Set(chain_id_dec),
+                commit_id: Set(existing.commit_id),
+                execute_id: Set(None), //will be set by db service
+                ..Default::default()
+            };
+
+            // Apply the finalize_batch update
+            self.db_client
+                .finalize_batch(detail_model, lifecycle_txn)
+                .await?;
+        } else {
+            warn!("Finalize Event indexed before commitment. Skipping");
+        }
 
         Ok(())
     }

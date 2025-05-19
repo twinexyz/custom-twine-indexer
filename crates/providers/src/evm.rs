@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use common::config::ChainConfig;
 

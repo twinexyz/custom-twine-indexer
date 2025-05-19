@@ -2,6 +2,7 @@ mod common;
 mod error;
 mod ethereum;
 mod twine;
+mod handler;
 
 pub use ethereum::EthereumIndexer;
 pub use twine::TwineIndexer;

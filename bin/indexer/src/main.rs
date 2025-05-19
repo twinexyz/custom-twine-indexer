@@ -1,19 +1,21 @@
 use common::{
     config::{self, LoadFromEnv},
-    db,
-    indexer::ChainIndexer,
 };
 use database::client::DbClient;
 use evm::EthereumIndexer;
-use eyre::{Result, WrapErr};
+use eyre::{Result};
 use svm::SVMIndexer;
-use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = config::IndexerConfig::from_env()?;
+
+
+
+
+
     let db_conn = db::connect(&cfg.database_url).await?;
     info!("Connected to Indexer's DB");
     let blockscout_db_conn = db::connect(&cfg.blockscout_database_url).await?;
@@ -26,7 +28,7 @@ async fn main() -> Result<()> {
     let solana_indexer = SVMIndexer::new(cfg.l1s.solana, db_client).await?;
     let eth_indexer = EthereumIndexer::new(cfg.l1s.ethereum, db_client).await?;
 
-    
+
 
 
 

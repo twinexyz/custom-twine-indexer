@@ -16,11 +16,11 @@ use sea_orm::{
     strum::{self},
     ActiveValue::Set,
 };
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::parser::{
     CommitBatch, DepositSuccessful, FinalizeNativeWithdrawal, FinalizeSplWithdrawal,
-    ForcedWithdrawSuccessful,
+    FinalizedBatch, ForcedWithdrawSuccessful,
 };
 
 pub struct SolanaEventHandler {
@@ -217,6 +217,42 @@ impl SolanaEventHandler {
             self.db_client
                 .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs);
 
+        Ok(())
+    }
+
+    async fn handle_finalize_batch(&self, parsed_log: LogContext) -> eyre::Result<()> {
+        let finalize = self.parse_borsh::<FinalizedBatch>(&parsed_log.encoded_data)?;
+
+        let start_block = finalize.start_block;
+        let end_block = finalize.end_block;
+        let root_hash = vec![0u8; 32];
+
+        if let Some(existing) = self.db_client.get_batch_details(start_block as i64).await? {
+            let lifecycle_txn = twine_lifecycle_l1_transactions::ActiveModel {
+                hash: Set(parsed_log.tx_hash_str.clone().into_bytes()),
+                chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+                timestamp: Set(parsed_log.timestamp.naive_utc()),
+                ..Default::default()
+            };
+
+            let detail_model = twine_transaction_batch_detail::ActiveModel {
+                batch_number: Set(start_block as i64),
+                l1_transaction_count: Set(existing.l1_transaction_count),
+                l2_transaction_count: Set(existing.l2_transaction_count),
+                l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
+                l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
+                chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+                commit_id: Set(existing.commit_id),
+                execute_id: Set(None), //will be set by db service
+                ..Default::default()
+            };
+
+            self.db_client
+                .finalize_batch(detail_model, lifecycle_txn)
+                .await?;
+        } else {
+            warn!("Finalize Event indexed before commitment. Skipping");
+        }
         Ok(())
     }
 

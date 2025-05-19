@@ -1,0 +1,66 @@
+use std::{collections::HashMap, future::Future, pin::Pin};
+
+use alloy::{primitives::B256, rpc::types::Log, sol_types::SolEvent};
+use chrono::{DateTime, Utc};
+use database::client::DbClient;
+use eyre::Result;
+
+use crate::error::ParserError;
+
+type AsyncEventHandler = Box<
+    dyn Fn(&dyn EvmEventHandler, Log) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+        + Send
+        + Sync,
+>;
+
+pub struct LogContext<T> {
+    pub tx_hash_str: String,
+    pub block_number: i64,
+    pub timestamp: DateTime<Utc>,
+    pub data: T,
+}
+
+pub trait EvmEventHandler {
+    fn extract_log<T: SolEvent>(
+        &self,
+        log: Log,
+        event_name: &'static str,
+    ) -> Result<LogContext<T>, ParserError> {
+        let tx_hash = log
+            .transaction_hash
+            .ok_or(ParserError::MissingTransactionHash)?;
+        let tx_hash_str = format!("{tx_hash:?}");
+
+        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
+
+        let timestamp = log
+            .block_timestamp
+            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "Missing or invalid block timestamp in {}. Using now.",
+                    event_name
+                );
+                Utc::now()
+            });
+
+        let decoded = log
+            .log_decode::<T>()
+            .map_err(|e| ParserError::DecodeError {
+                event_type: event_name,
+                source: Box::new(e),
+            })?;
+
+        Ok(LogContext {
+            tx_hash_str,
+            block_number,
+            timestamp,
+            data: decoded.inner.data,
+        })
+    }
+
+    fn handle_event<'a>(
+        &'a self,
+        log: Log,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}

@@ -1,119 +1,171 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use alloy::{
-    primitives::{map::HashMap, FixedBytes, B256},
+    primitives::{map::HashMap, Bytes, FixedBytes, B256},
     rpc::types::Log,
+    sol_types::{SolEvent, SolValue},
 };
 use chrono::{DateTime, Utc};
 use database::{
     client::DbClient,
     entities::{
-        l1_deposit, l1_withdraw, l2_withdraw, twine_lifecycle_l1_transactions,
-        twine_transaction_batch, twine_transaction_batch_detail,
+        l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw,
+        twine_l2_withdraw, twine_lifecycle_l1_transactions, twine_transaction_batch,
+        twine_transaction_batch_detail,
     },
 };
 use eyre::Result;
 use sea_orm::{sqlx::types::uuid::timestamp, ActiveValue::Set};
-use tracing::info;
-use twine_evm_contracts::evm::ethereum::{
-    l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch,
+use tracing::{info, warn};
+use twine_evm_contracts::evm::{
+    ethereum::{l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch},
+    twine::l2_messenger::{L2Messenger, PrecompileReturn},
 };
+
+use crate::handler::{EvmEventHandler, LogContext};
 
 use super::{
-    parser::{DbModel, ParserError}
+    parser::{DbModel, ParserError},
+    TWINE_EVENT_SIGNATURES,
 };
 
-type AsyncEventHandler = Box<
-    dyn Fn(&TwineEventHandler, Log) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
-        + Send
-        + Sync,
->;
-
 pub struct TwineEventHandler {
-    db_client: DbClient,
-    handlers: HashMap<B256, AsyncEventHandler>,
+    db_client: Arc<DbClient>,
     chain_id: u64,
 }
 
-pub struct LogContext<T> {
-    pub tx_hash_str: String,
-    pub block_number: i64,
-    pub timestamp: DateTime<Utc>,
-    pub data: T,
-}
-
 impl TwineEventHandler {
-    pub fn new(db_client: DbClient, chain_id: u64) -> Self {
+    pub fn new(db_client: Arc<DbClient>, chain_id: u64) -> Self {
         Self {
             db_client,
-            handlers: HashMap::new(),
             chain_id,
         }
     }
 
-    pub fn initilize_handlers(&mut self) {
-        // self.handlers.insert(
-        //     L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH,
-        //     Box::new(|h, log| Box::pin(h.handle_queue_deposit_txn(log))),
-        // );
-    }
-
-    pub async fn handle_event(&self, log: Log) -> Result<()> {
-        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-            signature: B256::ZERO,
-        })?;
-
-        if let Some(handler_fn) = self.handlers.get(sig) {
-            handler_fn(self, log).await
-        } else {
-            Err(ParserError::UnknownEvent { signature: *sig }.into())
+    async fn decode_precompile_return(
+        &self,
+        event: Bytes,
+    ) -> Result<PrecompileReturn, ParserError> {
+        match PrecompileReturn::abi_decode(&event, true) {
+            Ok(pr) => Ok(pr),
+            Err(e) => {
+                warn!(
+                    "Empty event found. skipping this log. Error: {}. Raw event: {}",
+                    e,
+                    hex::encode(&event)
+                );
+                Err(ParserError::SkipLog.into())
+            }
         }
     }
 
-    //Helper Method
-    fn extract_log<T>(
+    async fn process_precompile_return(
         &self,
-        log: Log,
-        event_name: &'static str,
-    ) -> eyre::Result<LogContext<T>, ParserError> {
-        let tx_hash = log
-            .transaction_hash
-            .ok_or(ParserError::MissingTransactionHash)?;
-        let tx_hash_str = format!("{tx_hash:?}");
+        pr: PrecompileReturn,
+        tx_hash: String,
+        block_number: i64,
+    ) -> eyre::Result<()> {
+        let mut parsed_deposits = Vec::new();
+        let mut parsed_withdraws = Vec::new();
 
-        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
-
-        let timestamp = log
-            .block_timestamp
-            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
-            .unwrap_or_else(|| {
-                tracing::warn!(
-                    "Missing or invalid block timestamp in {}. Using now.",
-                    event_name
-                );
-                Utc::now()
+        for deposit_txn in pr.deposit {
+            parsed_deposits.push(twine_l1_deposit::ActiveModel {
+                l1_nonce: Set(deposit_txn.l1_nonce as i64),
+                chain_id: Set(deposit_txn.detail.chain_id as i64),
+                status: Set(deposit_txn.detail.status as i16),
+                slot_number: Set(deposit_txn.detail.slot_number as i64),
+                tx_hash: Set(tx_hash.to_string()),
             });
+        }
 
-        let decoded = log
-            .log_decode::<T>()
-            .map_err(|e| ParserError::DecodeError {
-                event_type: event_name,
-                source: Box::new(e),
-            })?;
+        for withdraw_txn in pr.withdraws {
+            parsed_withdraws.push(twine_l1_withdraw::ActiveModel {
+                l1_nonce: Set(withdraw_txn.l1_nonce as i64),
+                chain_id: Set(withdraw_txn.detail.chain_id as i64),
+                status: Set(withdraw_txn.detail.status as i16),
+                slot_number: Set(withdraw_txn.detail.slot_number as i64),
+                tx_hash: Set(tx_hash.to_string()),
+            });
+        }
 
-        eyre::Ok(LogContext {
-            tx_hash_str,
-            block_number,
-            timestamp,
-            data: decoded.inner.data,
-        });
+        let (deposits, withdraws) = self
+            .db_client
+            .precompile_return(parsed_deposits, parsed_withdraws)
+            .await?;
+
+        Ok(())
     }
 
-
-
     //Handlers are here
-
     async fn handle_ethereum_transactions_handled(&self, log: Log) -> Result<()> {
+        let decoded = self.extract_log::<L2Messenger::EthereumTransactionsHandled>(log, "")?;
+
+        let pr = self
+            .decode_precompile_return(decoded.data.transactionOutput)
+            .await?;
+
+        let res = self
+            .process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number)
+            .await?;
+
         Ok(())
+    }
+
+    async fn handle_solana_transactions_handled(&self, log: Log) -> Result<()> {
+        let decoded = self.extract_log::<L2Messenger::SolanaTransactionsHandled>(log, "")?;
+
+        let pr = self
+            .decode_precompile_return(decoded.data.transactionOutput)
+            .await?;
+
+        let res = self
+            .process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn handle_sent_message(&self, log: Log) -> Result<()> {
+        let decoded = self.extract_log::<L2Messenger::SentMessage>(log, "event_name")?;
+        let data = decoded.data;
+
+        let model = twine_l2_withdraw::ActiveModel {
+            from: Set(format!("{:?}", data.from)),
+            l2_token: Set(format!("{:?}", data.l2Token)),
+            to: Set(format!("{:?}", data.to)),
+            l1_token: Set(format!("{:?}", data.l1Token)),
+            amount: Set(data.amount.to_string()),
+            nonce: Set(data.nonce.to_string()),
+            value: Set(data.value.to_string()),
+            chain_id: Set(data.chainId.to_string()),
+            block_number: Set(data.blockNumber.to_string()),
+            gas_limit: Set(data.gasLimit.to_string()),
+            tx_hash: Set(decoded.tx_hash_str.to_string()),
+        };
+
+        let _ = self.db_client.insert_twine_l2_withdraw(model).await;
+
+        Ok(())
+    }
+}
+
+impl EvmEventHandler for TwineEventHandler {
+    fn handle_event<'a>(
+        &'a self,
+        log: Log,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+                signature: B256::ZERO,
+            })?;
+
+            match *sig {
+                L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
+                    self.handle_ethereum_transactions_handled(log).await
+                }
+                L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
+                other => Err(ParserError::UnknownEvent { signature: other }.into()),
+            }
+        })
     }
 }
