@@ -1,6 +1,10 @@
 use std::{collections::HashMap, future::Future, pin::Pin};
 
-use alloy::{primitives::B256, rpc::types::Log, sol_types::SolEvent};
+use alloy::{
+    primitives::{Address, B256},
+    rpc::types::Log,
+    sol_types::SolEvent,
+};
 use chrono::{DateTime, Utc};
 use database::client::DbClient;
 use eyre::Result;
@@ -20,7 +24,13 @@ pub struct LogContext<T> {
     pub data: T,
 }
 
-pub trait EvmEventHandler {
+pub trait EvmEventHandler: Send + Sync + Clone + 'static {
+    fn chain_id(&self) -> u64;
+
+    fn relevant_addresses(&self) -> Vec<Address>;
+
+    fn relevant_topics(&self) -> Vec<&'static str>;
+
     fn extract_log<T: SolEvent>(
         &self,
         log: Log,

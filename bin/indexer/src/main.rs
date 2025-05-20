@@ -1,37 +1,35 @@
-use common::{
-    config::{self, LoadFromEnv},
-};
+use std::sync::Arc;
+
+use common::config::{self, LoadFromEnv};
 use database::client::DbClient;
-use evm::EthereumIndexer;
-use eyre::{Result};
+use evm::{ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer, twine::handlers::TwineEventHandler, EthereumIndexer, TwineIndexer};
+use eyre::Result;
 use svm::SVMIndexer;
-use tracing::{info};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = config::IndexerConfig::from_env()?;
 
-
-
-
-
-    let db_conn = db::connect(&cfg.database_url).await?;
+    let db_conn = database::connect::connect(&cfg.database.url).await?;
     info!("Connected to Indexer's DB");
-    let blockscout_db_conn = db::connect(&cfg.blockscout_database_url).await?;
+    let blockscout_db_conn = database::connect::connect(&cfg.blockscout.url).await?;
     info!("Connected to Blockscout's DB");
 
     let db_client = DbClient::new(db_conn.clone(), blockscout_db_conn.clone());
+    let arc_db = Arc::new(db_client);
+
+    let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine);
+    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum);
+
+
+    let eth_indexer = EvmIndexer::new(cfg.l1s.ethereum.common, l1_evm_handler, Arc::clone(&arc_db));
+    let twine_indexer = EvmIndexer::new(cfg.twine.common, twine_handler, Arc::clone(&arc_db));
+
 
     // Create Indexers here
-
-    let solana_indexer = SVMIndexer::new(cfg.l1s.solana, db_client).await?;
-    let eth_indexer = EthereumIndexer::new(cfg.l1s.ethereum, db_client).await?;
-
-
-
-
-
+    let solana_indexer = SVMIndexer::new(cfg.l1s.solana, Arc::clone(&arc_db)).await?;
 
     // let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
     //     .await

@@ -29,6 +29,9 @@ tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 database = {workspace = true}
+solana-client = "2.2.7"
+solana-sdk = "2.2.2"
+thiserror = "2.0.12"
 
 
 [lints.rust]

@@ -43,12 +43,6 @@ sol! {
     );
 }
 
-pub const ETHEREUM_EVENT_SIGNATURES: &[&str] = &[
-    L1MessageQueue::QueueDepositTransaction::SIGNATURE,
-    L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
-    FinalizeWithdrawERC20::SIGNATURE,
-    FinalizeWithdrawETH::SIGNATURE,
-    CommitBatch::SIGNATURE,
-    FinalizedBatch::SIGNATURE,
-    FinalizedTransaction::SIGNATURE,
-];
+
+
+

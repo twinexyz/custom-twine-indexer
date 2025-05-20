@@ -4,7 +4,6 @@ db_indexer: &db_indexer
 db_blockscout: &db_blockscout
   url: "postgres://blockscout:password@localhost:5432/blockscout"
 
-
 api:
   database: &db_indexer
   port: 7777
@@ -20,10 +19,11 @@ indexer:
       chain_id: 
       start_block:
       batch_size:
+      chain: "evm" 
+      contracts:
       l1_message_queue_address:
       l1_erc20_gateway_address: 
       eth_twine_chain_address:
-      chain: "evm" 
 
     solana:
       http_rpc_url: "http://0.0.0.0:8899"

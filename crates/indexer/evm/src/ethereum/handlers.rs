@@ -6,6 +6,7 @@ use alloy::{
     sol_types::SolEvent,
 };
 use chrono::{DateTime, Utc};
+use common::config::EvmConfig;
 use database::{
     client::DbClient,
     entities::{
@@ -24,11 +25,15 @@ use twine_evm_contracts::evm::ethereum::{
 
 use crate::{error::ParserError, handler::EvmEventHandler};
 
-use super::parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
+use super::{
+    parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH},
+    ETHEREUM_EVENT_SIGNATURES,
+};
 
 pub struct EthereumEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
+    config: EvmConfig,
 }
 
 impl EvmEventHandler for EthereumEventHandler {
@@ -60,13 +65,39 @@ impl EvmEventHandler for EthereumEventHandler {
             }
         })
     }
+
+    fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+        let addresss = [
+            self.config.l1_erc20_gateway_address.clone(),
+            self.config.eth_twine_chain_address.clone(),
+            self.config.l1_message_queue_address.clone(),
+        ];
+
+        let contract_addresss = addresss
+            .iter()
+            .map(|addr| addr.parse::<alloy::primitives::Address>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| eyre::eyre!("Invalid address format: {}", e))
+            .unwrap();
+
+        contract_addresss
+    }
+
+    fn relevant_topics(&self) -> Vec<&'static str> {
+        ETHEREUM_EVENT_SIGNATURES.to_vec()
+    }
 }
 
 impl EthereumEventHandler {
-    pub fn new(db_client: Arc<DbClient>, chain_id: u64) -> Self {
+    pub fn new(db_client: Arc<DbClient>, config: EvmConfig) -> Self {
         Self {
             db_client,
-            chain_id,
+            chain_id: config.common.chain_id,
+            config,
         }
     }
 
@@ -259,5 +290,15 @@ impl EthereumEventHandler {
         }
 
         Ok(())
+    }
+}
+
+impl Clone for EthereumEventHandler {
+    fn clone(&self) -> Self {
+        Self {
+            chain_id: self.chain_id,
+            config: self.config.clone(),
+            db_client: self.db_client.clone(),
+        }
     }
 }

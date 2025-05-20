@@ -1,6 +1,8 @@
 mod handler;
 mod parser;
 mod subscriber;
+mod provider;
+mod indexer;
 
 use std::{str::FromStr, sync::Arc};
 
@@ -17,6 +19,7 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use serde_json::{json, Value};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
+
 
 pub struct SVMIndexer {
     rpc_url: String,

@@ -23,6 +23,7 @@ pub enum ParserError {
     NumberOverflow {
         value: u64,
     },
+    SkipLog,
 }
 
 impl std::error::Error for ParserError {}
@@ -59,6 +60,7 @@ impl std::fmt::Display for ParserError {
                 "Generated batch number {} exceeds i32 maximum value",
                 value
             ),
+            ParserError::SkipLog => write!(f, "Missing event in log")
         }
     }
 }

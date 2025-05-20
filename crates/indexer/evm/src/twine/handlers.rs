@@ -6,6 +6,7 @@ use alloy::{
     sol_types::{SolEvent, SolValue},
 };
 use chrono::{DateTime, Utc};
+use common::config::TwineConfig;
 use database::{
     client::DbClient,
     entities::{
@@ -22,23 +23,26 @@ use twine_evm_contracts::evm::{
     twine::l2_messenger::{L2Messenger, PrecompileReturn},
 };
 
-use crate::handler::{EvmEventHandler, LogContext};
-
-use super::{
-    parser::{DbModel, ParserError},
-    TWINE_EVENT_SIGNATURES,
+use crate::{
+    error::ParserError,
+    handler::{EvmEventHandler, LogContext},
 };
 
+use super::TWINE_EVENT_SIGNATURES;
+
+#[derive(Clone)]
 pub struct TwineEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
+    config: TwineConfig,
 }
 
 impl TwineEventHandler {
-    pub fn new(db_client: Arc<DbClient>, chain_id: u64) -> Self {
+    pub fn new(db_client: Arc<DbClient>, config: TwineConfig) -> Self {
         Self {
             db_client,
-            chain_id,
+            chain_id: config.common.chain_id,
+            config,
         }
     }
 
@@ -167,5 +171,26 @@ impl EvmEventHandler for TwineEventHandler {
                 other => Err(ParserError::UnknownEvent { signature: other }.into()),
             }
         })
+    }
+
+    fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    fn relevant_topics(&self) -> Vec<&'static str> {
+        TWINE_EVENT_SIGNATURES.to_vec()
+    }
+
+    fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+        let addresss = [self.config.l2_twine_messenger_address.clone()];
+
+        let contract_addresss = addresss
+            .iter()
+            .map(|addr| addr.parse::<alloy::primitives::Address>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| eyre::eyre!("Invalid address format: {}", e))
+            .unwrap();
+
+        contract_addresss
     }
 }

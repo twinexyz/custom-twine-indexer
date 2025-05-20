@@ -4,6 +4,7 @@ pub mod connect;
 pub mod entities;
 pub mod deposits;
 
+
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }

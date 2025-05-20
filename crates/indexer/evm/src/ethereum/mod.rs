@@ -1,4 +1,4 @@
-mod parser;
+pub mod parser;
 
 use super::EVMChain;
 use crate::common::{
@@ -15,9 +15,10 @@ use common::config::EvmConfig;
 use common::indexer::{MAX_RETRIES, RETRY_DELAY};
 use database::client::DbClient;
 use database::entities::last_synced;
-use handlers::EthereumEventHandler;
 use eyre::{Report, Result};
 use futures_util::{future, StreamExt};
+use handlers::EthereumEventHandler;
+use parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
 use providers::evm::EVMProvider;
 use providers::ChainProvider;
 use sea_orm::ActiveValue::Set;
@@ -31,6 +32,15 @@ use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
 };
 
 pub mod handlers;
+pub const ETHEREUM_EVENT_SIGNATURES: &[&str] = &[
+    L1MessageQueue::QueueDepositTransaction::SIGNATURE,
+    L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
+    FinalizeWithdrawERC20::SIGNATURE,
+    FinalizeWithdrawETH::SIGNATURE,
+    CommitBatch::SIGNATURE,
+    FinalizedBatch::SIGNATURE,
+    FinalizedTransaction::SIGNATURE,
+];
 
 pub struct EthereumIndexer {
     chain_id: u64,

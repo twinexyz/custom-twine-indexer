@@ -1,8 +1,10 @@
 mod common;
 mod error;
-mod ethereum;
-mod twine;
-mod handler;
+pub mod ethereum;
+pub mod handler;
+pub mod indexer;
+mod provider;
+pub mod twine;
 
 pub use ethereum::EthereumIndexer;
 pub use twine::TwineIndexer;
@@ -17,7 +19,7 @@ pub enum EVMChain {
 impl EVMChain {
     pub fn get_event_signatures(&self) -> &'static [&'static str] {
         match self {
-            EVMChain::Ethereum => &twine::TWINE_EVENT_SIGNATURES,
+            EVMChain::Ethereum => &ethereum::ETHEREUM_EVENT_SIGNATURES,
             EVMChain::Twine => &twine::TWINE_EVENT_SIGNATURES,
         }
     }

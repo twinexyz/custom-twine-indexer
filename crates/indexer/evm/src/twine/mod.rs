@@ -1,16 +1,18 @@
-mod db;
-mod parser;
-
 use super::EVMChain;
 use crate::common::{poll_missing_logs, subscribe_stream, with_retry};
+use crate::error::ParserError;
+use crate::handler::EvmEventHandler;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
+use common::config::TwineConfig;
 use common::indexer::{MAX_RETRIES, RETRY_DELAY};
+use database::client::DbClient;
 use database::entities::last_synced;
 use eyre::{Report, Result};
 use futures_util::StreamExt;
+use handlers::TwineEventHandler;
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -31,37 +33,37 @@ pub struct TwineIndexer {
     ws_provider: Arc<dyn Provider + Send + Sync>,
     /// HTTP provider for polling missing blocks.
     http_provider: Arc<dyn Provider + Send + Sync>,
-    db: DatabaseConnection,
+    db_client: Arc<DbClient>,
     chain_id: u64,
     start_block: u64,
     contract_addrs: Vec<String>,
+    sync_batch_size: u64,
 }
 
 impl TwineIndexer {
-    async fn new(
-        http_rpc_url: String,
-        ws_rpc_url: String,
-        chain_id: u64,
-        start_block: u64,
-        db: &DatabaseConnection,
-        blockscout_db: Option<&DatabaseConnection>,
-        contract_addrs: Vec<String>,
-    ) -> Result<Self> {
-        let ws_provider = super::create_ws_provider(ws_rpc_url, EVMChain::Twine).await?;
-        let http_provider = super::create_http_provider(http_rpc_url, EVMChain::Twine).await?;
+    pub async fn new(config: TwineConfig, db_client: Arc<DbClient>) -> Result<Self> {
+        let ws_provider =
+            super::create_ws_provider(config.common.ws_rpc_url, EVMChain::Twine).await?;
+        let http_provider =
+            super::create_http_provider(config.common.http_rpc_url, EVMChain::Twine).await?;
         Ok(Self {
             ws_provider: Arc::new(ws_provider),
             http_provider: Arc::new(http_provider),
-            db: db.clone(),
-            chain_id,
-            start_block,
-            contract_addrs,
+            db_client,
+            start_block: config.common.start_block,
+            chain_id: config.common.chain_id,
+            contract_addrs: vec![],
+            sync_batch_size: config.common.block_sync_batch_size,
         })
     }
 
     async fn run(&mut self) -> Result<()> {
         let id = self.chain_id();
-        let last_synced = db::get_last_synced_block(&self.db, id as i64, self.start_block).await?;
+        let last_synced = self
+            .db_client
+            .get_last_synced_height(self.chain_id as i64, self.start_block)
+            .await?;
+
         let current_block = with_retry(|| async {
             self.http_provider
                 .get_block_number()
@@ -72,12 +74,11 @@ impl TwineIndexer {
 
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
+        let sync_batch_size = self.sync_batch_size;
+        let event_handler = TwineEventHandler::new(self.db_client.clone(), self.chain_id);
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
-            let max_blocks_per_request = std::env::var("TWINE__BLOCK_SYNC_BATCH_SIZE")
-                .ok()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(100);
+            let max_blocks_per_request = sync_batch_size;
             info!("Starting historical sync up to block {}", current_block);
             let logs = poll_missing_logs(
                 &*historical_indexer.http_provider,
@@ -101,18 +102,7 @@ impl TwineIndexer {
             .await?;
 
             while let Some(log) = stream.next().await {
-                match parser::parse_log(log) {
-                    Ok(parsed_logs) => {
-                        for parsed in parsed_logs {
-                            let last_synced = last_synced::ActiveModel {
-                                chain_id: Set(id as i64),
-                                block_number: Set(parsed.block_number),
-                            };
-                            db::insert_model(parsed.model, last_synced, &live_indexer.db).await;
-                        }
-                    }
-                    Err(e) => live_indexer.handle_error(e)?,
-                }
+                let _ = event_handler.handle_event(log).await?;
             }
             Ok(())
         });
@@ -133,28 +123,16 @@ impl TwineIndexer {
 impl TwineIndexer {
     async fn catchup_missing_blocks(&self, logs: Vec<Log>) -> Result<()> {
         let id = self.chain_id();
+        let event_handler = TwineEventHandler::new(self.db_client.clone(), self.chain_id);
         for log in logs {
-            match parser::parse_log(log) {
-                Ok(parsed_logs) => {
-                    for parsed in parsed_logs {
-                        let last_synced = last_synced::ActiveModel {
-                            chain_id: Set(id as i64),
-                            block_number: Set(parsed.block_number),
-                        };
-                        db::insert_model(parsed.model, last_synced, &self.db).await;
-                    }
-                }
-                Err(e) => self.handle_error(e)?,
-            }
+            let _ = event_handler.handle_event(log).await;
         }
         Ok(())
     }
 
     fn handle_error(&self, e: Report) -> Result<()> {
-        match e.downcast_ref::<parser::ParserError>() {
-            Some(parser::ParserError::UnknownEvent { .. }) | Some(parser::ParserError::SkipLog) => {
-                Ok(())
-            } // Skip unknown events
+        match e.downcast_ref::<ParserError>() {
+            Some(ParserError::UnknownEvent { .. }) => Ok(()), // Skip unknown events
             _ => {
                 tracing::error!("Error processing log: {:?}", e);
                 Err(e)
@@ -168,10 +146,11 @@ impl Clone for TwineIndexer {
         Self {
             ws_provider: Arc::clone(&self.ws_provider),
             http_provider: Arc::clone(&self.http_provider),
-            db: self.db.clone(),
+            db_client: Arc::clone(&self.db_client),
             start_block: self.start_block,
             chain_id: self.chain_id,
             contract_addrs: self.contract_addrs.clone(),
+            sync_batch_size: self.sync_batch_size,
         }
     }
 }
