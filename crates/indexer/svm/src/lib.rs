@@ -1,8 +1,8 @@
-mod handler;
+pub mod handler;
+pub mod indexer;
 mod parser;
-mod subscriber;
 mod provider;
-mod indexer;
+mod subscriber;
 
 use std::{str::FromStr, sync::Arc};
 
@@ -19,7 +19,6 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use serde_json::{json, Value};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
-
 
 pub struct SVMIndexer {
     rpc_url: String,
@@ -71,7 +70,7 @@ impl SVMIndexer {
         let historical_indexer = self.clone();
         let live_indexer = self.clone();
 
-        let event_handlers = SolanaEventHandler::new(self.db_client.clone(), self.chain_id);
+        // let event_handlers = SolanaEventHandler::new(self.db_client.clone(), );
 
         let historical_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             info!(
@@ -125,7 +124,7 @@ impl SVMIndexer {
             {
                 Ok(mut stream) => {
                     while let Some((logs, signature)) = stream.next().await {
-                        let _ = event_handlers.handle_event(&logs, signature.clone()).await;
+                        // let _ = event_handlers.handle_event(&logs, signature.clone()).await;
                     }
                     info!("Live indexing stream ended");
                 }
@@ -198,10 +197,10 @@ impl SVMIndexer {
     ) -> Result<()> {
         let chain_id = self.chain_id as i64;
         let mut parsed_count = 0;
-        let event_handlers = SolanaEventHandler::new(self.db_client.clone(), self.chain_id);
+        // let event_handlers = SolanaEventHandler::new(self.db_client.clone(), self.chain_id);
 
         for (logs, signature) in events {
-            let _ = event_handlers.handle_event(&logs, signature.clone()).await;
+            // let _ = event_handlers.handle_event(&logs, signature.clone()).await;
         }
         info!("Parsed and inserted {} historical events", parsed_count);
         Ok(())

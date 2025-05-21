@@ -6,6 +6,7 @@ use alloy::{
     sol_types::SolEvent,
 };
 use chrono::{DateTime, Utc};
+use common::config::ChainConfig;
 use database::client::DbClient;
 use eyre::Result;
 
@@ -26,6 +27,7 @@ pub struct LogContext<T> {
 
 pub trait EvmEventHandler: Send + Sync + Clone + 'static {
     fn chain_id(&self) -> u64;
+    fn get_chain_config(&self) -> ChainConfig;
 
     fn relevant_addresses(&self) -> Vec<Address>;
 

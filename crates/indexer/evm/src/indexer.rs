@@ -15,13 +15,14 @@ use crate::{handler::EvmEventHandler, provider::EvmProvider};
 pub struct EvmIndexer<H: EvmEventHandler> {
     provider: EvmProvider,
     handler: H,
-    db: DbClient,
+    db: Arc<DbClient>,
     config: ChainConfig,
     state: Arc<AtomicU64>,
 }
 
 impl<H: EvmEventHandler> EvmIndexer<H> {
-    pub async fn new(config: ChainConfig, handler: H, db: DbClient) -> Result<Self, Error> {
+    pub async fn new(handler: H, db: Arc<DbClient>) -> Result<Self, Error> {
+        let config = handler.get_chain_config();
         let provider =
             EvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await?;
 

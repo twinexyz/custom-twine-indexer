@@ -5,32 +5,34 @@ db_blockscout: &db_blockscout
   url: "postgres://blockscout:password@localhost:5432/blockscout"
 
 api:
-  database: &db_indexer
+  database: 
+    url: "postgres://blockscout:password@localhost:5432/indexer"
   port: 7777
 
 indexer:
-  database: &db_indexer
-  blockscout: &db_blockscout
+  database: 
+    url: "postgresql://db_user:password@localhost:5432/indexer"
+  blockscout: 
+    url: "postgres://blockscout:password@localhost:5432/blockscout"
 
   l1s:
     ethereum:
-      http_rpc_url:
-      ws_rpc_url:
-      chain_id: 
-      start_block:
-      batch_size:
+      http_rpc_url: "https://ethereum-holesky-rpc.publicnode.com"
+      ws_rpc_url: "https://rpc1.twine.limited"
+      chain_id: 17000
+      start_block: 3644217
+      block_sync_batch_size: 50
       chain: "evm" 
-      contracts:
-      l1_message_queue_address:
-      l1_erc20_gateway_address: 
-      eth_twine_chain_address:
+      l1_message_queue_address: "0x9a10C65D8C2069316bbF38ddccE0CB22401E5F93"
+      l1_erc20_gateway_address: "0x2c941A3b8f64A2467e35FFd4A22D54707cB81b4C"
+      eth_twine_chain_address: "0xAEA81eb8DeaC34C35AaA646962f337A86E383430"
 
     solana:
-      http_rpc_url: "http://0.0.0.0:8899"
-      ws_rpc_url:   "ws://0.0.0.0:8900"
+      http_rpc_url: "https://api.devnet.solana.com"
+      ws_rpc_url:   "wss://api.devnet.solana.com"
       chain_id:     103
-      start_block:  371456865
-      batch_size:   1000
+      start_block:  332505681
+      block_sync_batch_size:  1000
       tokens_gateway_program_address: "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
       twine_chain_program_address:  "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
       chain: "svm"
@@ -40,15 +42,17 @@ indexer:
     ws_rpc_url:   "ws://0.0.0.0:8546"
     chain_id:     1337
     start_block:  34054
-    batch_size:   1000
+    block_sync_batch_size:   1000
     l2_twine_messenger_address: "0x4A79814ccC04479451A5ACE33c855385B73BA5dA"
 
-da-indexer:
-  database:     *db_indexer
-  blockscout:   *db_blockscout
+da_indexer:
+  database:
+    url: "postgres://blockscout:password@localhost:5432/blockscout"
+  blockscout:
+    url: "postgres://blockscout:password@localhost:5432/blockscout"
   celestia:
     rpc_url:      "https://celestia-rpc.example.com"
     wss_url:      "wss://celestia-wss.example.com"
     start_height: 0
-    namespace:    ""
-    auth_token:   ""
+    namespace:    "fsdfsd"
+    rpc_auth_token:   "fdafadsfasd"

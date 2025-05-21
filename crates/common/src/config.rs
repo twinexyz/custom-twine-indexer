@@ -6,22 +6,40 @@ use serde::{de::DeserializeOwned, Deserialize};
 fn config_from_env<T: DeserializeOwned>() -> Result<T> {
     dotenv().ok();
 
-    Config::builder()
-        .add_source(File::with_name("config.yaml").required(true))
+    let config = Config::builder()
+        // .add_source(File::with_name("config.yaml").required(true))
         .add_source(
             config::Environment::default()
+                .prefix("INDEXER")
                 .separator("__")
                 .list_separator(","),
         )
-        .build()?
-        .try_deserialize()
-        .map_err(eyre::Report::from)
+        .build();
+
+    match config {
+        Ok(cfg) => {
+            println!("Loaded config: {:#?}", cfg);
+            let parsed= cfg.try_deserialize::<IndexerConfig>().unwrap();
+            panic!();
+        }
+        Err(e) => {
+            println!("Failed to load config: {}", e);
+            panic!();
+        }
+    }
 }
 
 pub trait LoadFromEnv: Sized + DeserializeOwned {
     fn from_env() -> Result<Self> {
         config_from_env()
     }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct AppConfig {
+    pub api: ApiConfig,
+    pub indexer: IndexerConfig,
+    pub da_indexer: DaIndexerConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]

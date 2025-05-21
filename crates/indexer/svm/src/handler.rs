@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use base64::{engine::general_purpose, Engine};
 use borsh::BorshDeserialize;
 use chrono::{DateTime, Utc};
+use common::config::{ChainConfig, SvmConfig};
 use database::{
     client::DbClient,
     entities::{
@@ -25,8 +26,7 @@ use crate::parser::{
 
 pub struct SolanaEventHandler {
     db_client: Arc<DbClient>,
-    handlers: HashMap<SolanaEvents, String>,
-    chain_id: u64,
+    config: SvmConfig,
 }
 
 pub struct LogContext {
@@ -67,21 +67,36 @@ impl SolanaEvents {
 }
 
 impl SolanaEventHandler {
-    pub fn new(db_client: Arc<DbClient>, chain_id: u64) -> Self {
-        Self {
-            db_client,
-            handlers: HashMap::new(),
-            chain_id,
-        }
+    pub fn new(db_client: Arc<DbClient>, config: SvmConfig) -> Self {
+        Self { db_client, config }
     }
 
-    pub fn initialize_handlers(&mut self) {
-        self.handlers
-            .insert(SolanaEvents::CommitBatch, "v".to_string());
+    pub fn chain_id(&self) -> u64 {
+        self.config.common.chain_id
     }
+
+    pub fn get_chain_config(&self) -> ChainConfig {
+        self.config.common.clone()
+    }
+
+    
 
     pub async fn handle_event(&self, logs: &[String], signature: Option<String>) {
-        let parsed = self.extract_log(logs, signature);
+        let parsed = self.extract_log(logs, signature).unwrap();
+
+        match parsed.event_type {
+            SolanaEvents::SplDeposit | SolanaEvents::NativeDeposit => {}
+
+            SolanaEvents::NativeWithdrawal | SolanaEvents::SplWithdrawal => {}
+
+            SolanaEvents::FinalizeSplWithdrawal | SolanaEvents::FinalizeNativeWithdrawal => {}
+
+            SolanaEvents::CommitBatch => {}
+
+            SolanaEvents::FinalizeBatch => {}
+
+            SolanaEvents::CommitAndFinalizeTransaction => {}
+        }
     }
 
     async fn handle_deposit(&self, parsed: LogContext) -> eyre::Result<()> {
@@ -180,7 +195,7 @@ impl SolanaEventHandler {
 
         let lifecyle_txn = twine_lifecycle_l1_transactions::ActiveModel {
             hash: Set(parsed_log.tx_hash_str.clone().into_bytes()),
-            chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+            chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
             timestamp: Set(parsed_log.timestamp.naive_utc()),
             ..Default::default()
         };
@@ -191,7 +206,7 @@ impl SolanaEventHandler {
             l2_transaction_count: Set(0),
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-            chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+            chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
             commit_id: Set(None),
             execute_id: Set(None),
             ..Default::default()
@@ -230,7 +245,7 @@ impl SolanaEventHandler {
         if let Some(existing) = self.db_client.get_batch_details(start_block as i64).await? {
             let lifecycle_txn = twine_lifecycle_l1_transactions::ActiveModel {
                 hash: Set(parsed_log.tx_hash_str.clone().into_bytes()),
-                chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+                chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
                 timestamp: Set(parsed_log.timestamp.naive_utc()),
                 ..Default::default()
             };
@@ -241,7 +256,7 @@ impl SolanaEventHandler {
                 l2_transaction_count: Set(existing.l2_transaction_count),
                 l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
                 l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-                chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
+                chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
                 commit_id: Set(existing.commit_id),
                 execute_id: Set(None), //will be set by db service
                 ..Default::default()

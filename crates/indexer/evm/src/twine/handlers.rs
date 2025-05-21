@@ -193,4 +193,8 @@ impl EvmEventHandler for TwineEventHandler {
 
         contract_addresss
     }
+
+    fn get_chain_config(&self) -> common::config::ChainConfig {
+        self.config.common.clone()
+    }
 }

@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use common::config::{self, LoadFromEnv};
 use database::client::DbClient;
-use evm::{ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer, twine::handlers::TwineEventHandler, EthereumIndexer, TwineIndexer};
+use evm::{
+    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer,
+    twine::handlers::TwineEventHandler,
+};
 use eyre::Result;
-use svm::SVMIndexer;
+use svm::{handler::SolanaEventHandler, indexer::SolanaIndexer, SVMIndexer};
 use tracing::info;
 
 #[tokio::main]
@@ -20,16 +23,17 @@ async fn main() -> Result<()> {
     let db_client = DbClient::new(db_conn.clone(), blockscout_db_conn.clone());
     let arc_db = Arc::new(db_client);
 
-    let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine);
-    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum);
+    let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
+    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
+    let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
 
-
-    let eth_indexer = EvmIndexer::new(cfg.l1s.ethereum.common, l1_evm_handler, Arc::clone(&arc_db));
-    let twine_indexer = EvmIndexer::new(cfg.twine.common, twine_handler, Arc::clone(&arc_db));
-
+    let eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db));
+    let twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db));
 
     // Create Indexers here
-    let solana_indexer = SVMIndexer::new(cfg.l1s.solana, Arc::clone(&arc_db)).await?;
+    let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await;
+
+    let _ = solana_indexer.run().await;
 
     // let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
     //     .await

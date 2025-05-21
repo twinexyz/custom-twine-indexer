@@ -18,7 +18,9 @@ pub struct SolanaIndexer {
 }
 
 impl SolanaIndexer {
-    pub async fn new(config: ChainConfig, db: Arc<DbClient>, handler: SolanaEventHandler) -> Self {
+    pub async fn new(db: Arc<DbClient>, handler: SolanaEventHandler) -> Self {
+        let config = handler.get_chain_config();
+
         let provider =
             SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await;
 

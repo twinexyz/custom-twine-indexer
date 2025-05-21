@@ -90,6 +90,9 @@ impl EvmEventHandler for EthereumEventHandler {
     fn relevant_topics(&self) -> Vec<&'static str> {
         ETHEREUM_EVENT_SIGNATURES.to_vec()
     }
+    fn get_chain_config(&self) -> common::config::ChainConfig {
+        self.config.common.clone()
+    }
 }
 
 impl EthereumEventHandler {
@@ -105,7 +108,7 @@ impl EthereumEventHandler {
     async fn handle_queue_deposit_txn(&self, log: Log) -> Result<()> {
         let decoded = self.extract_log::<L1MessageQueue::QueueDepositTransaction>(
             log.clone(),
-            "QueueDepositTransaction",
+            L1MessageQueue::QueueDepositTransaction::SIGNATURE,
         )?;
 
         let data = decoded.data;
@@ -131,7 +134,7 @@ impl EthereumEventHandler {
     async fn handle_queue_withdrawal_txn(&self, log: Log) -> Result<()> {
         let decoded = self.extract_log::<L1MessageQueue::QueueWithdrawalTransaction>(
             log.clone(),
-            "QueueWithdrawalTransaction",
+            L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
         )?;
 
         let model = l1_withdraw::ActiveModel {
@@ -154,8 +157,8 @@ impl EthereumEventHandler {
     }
 
     async fn handle_finalize_withdraw(&self, log: Log) -> Result<()> {
-        let decoded =
-            self.extract_log::<FinalizeWithdrawERC20>(log.clone(), "FinalizeWithdrawERC20")?;
+        let decoded = self
+            .extract_log::<FinalizeWithdrawERC20>(log.clone(), FinalizeWithdrawERC20::SIGNATURE)?;
         let data = decoded.data;
 
         let model = l2_withdraw::ActiveModel {
@@ -173,7 +176,7 @@ impl EthereumEventHandler {
 
     async fn handle_finalize_withdraw_eth(&self, log: Log) -> Result<()> {
         let decoded =
-            self.extract_log::<FinalizeWithdrawETH>(log.clone(), "FinalizeWithdrawETH")?;
+            self.extract_log::<FinalizeWithdrawETH>(log.clone(), FinalizeWithdrawETH::SIGNATURE)?;
         let data = decoded.data;
         let model = l2_withdraw::ActiveModel {
             chain_id: Set(data.chainId.try_into().unwrap()),
@@ -189,7 +192,7 @@ impl EthereumEventHandler {
     }
 
     async fn handle_commit_batch(&self, log: Log) -> Result<()> {
-        let decoded = self.extract_log::<CommitBatch>(log.clone(), "CommitBatch")?;
+        let decoded = self.extract_log::<CommitBatch>(log.clone(), CommitBatch::SIGNATURE)?;
 
         let data = decoded.data;
 
@@ -252,7 +255,7 @@ impl EthereumEventHandler {
     }
 
     async fn handle_finalize_batch(&self, log: Log) -> Result<()> {
-        let decoded = self.extract_log::<CommitBatch>(log.clone(), "CommitBatch")?;
+        let decoded = self.extract_log::<CommitBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
         let start_block = decoded.data.startBlock as i64;
         let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
         let timestamp = decoded.timestamp.naive_utc();
