@@ -9,7 +9,7 @@ use database::client::DbClient;
 use eyre::{eyre, Error};
 use futures_util::StreamExt;
 use tokio::{spawn, sync::watch};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use crate::{handler::EvmEventHandler, provider::EvmProvider};
 
@@ -74,6 +74,7 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
         Ok(last_synced as u64)
     }
 
+    #[instrument(skip_all, fields(CHAIN = %self.handler.chain_id()))]
     async fn sync_historical(&self, from: u64) -> Result<(), Error> {
         let current_block = self.provider.get_block_number().await?;
         let mut start_block = from;

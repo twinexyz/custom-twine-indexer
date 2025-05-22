@@ -44,14 +44,28 @@ async fn main() -> Result<()> {
     );
 
     let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db)).await?;
-    let _ = EvmIndexer::new(twine_handler, Arc::clone(&arc_db));
-
-    // Create Indexers here
+    let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db)).await?;
     let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await?;
 
-    // let _ = solana_indexer.run().await;
 
-    let _ = eth_indexer.run().await;
+
+    let twine_handle = tokio::spawn(async move {
+        info!("starting twine indexer");
+        twine_indexer.run().await
+    });
+
+    let eth_handle = tokio::spawn(async move {
+        info!("starting eth indexer");
+        eth_indexer.run().await
+    });
+    let solana_handle = tokio::spawn(async move {
+        info!("starting solana indexer");
+        solana_indexer.run().await
+    });
+
+    let _ = tokio::join!(eth_handle, twine_handle, solana_handle);
+
+    Ok(())
 
     // let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
     //     .await
@@ -73,6 +87,4 @@ async fn main() -> Result<()> {
     //         }
     //     }
     // }
-
-    Ok(())
 }

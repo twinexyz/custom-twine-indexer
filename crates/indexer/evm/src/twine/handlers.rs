@@ -156,6 +156,7 @@ impl TwineEventHandler {
 
 #[async_trait]
 impl EvmEventHandler for TwineEventHandler {
+    
     async fn handle_event(&self, log: Log) -> eyre::Result<()> {
         let sig = log.topic0().ok_or(ParserError::UnknownEvent {
             signature: B256::ZERO,
@@ -164,6 +165,9 @@ impl EvmEventHandler for TwineEventHandler {
         match *sig {
             L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
                 self.handle_ethereum_transactions_handled(log).await
+            }
+            L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
+                self.handle_solana_transactions_handled(log).await
             }
             L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
             other => Err(ParserError::UnknownEvent { signature: other }.into()),

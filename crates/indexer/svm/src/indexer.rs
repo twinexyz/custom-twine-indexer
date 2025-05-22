@@ -5,7 +5,7 @@ use database::client::DbClient;
 use futures_util::{stream::select_all, StreamExt};
 use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{handler::SolanaEventHandler, provider::SvmProvider};
 
@@ -48,6 +48,7 @@ impl SolanaIndexer {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(CHAIN = "Solana"))]
     async fn catchup_historical(&self, from: u64, to: u64) -> eyre::Result<()> {
         info!("Historical sync started from {} to {}", from, to);
 
