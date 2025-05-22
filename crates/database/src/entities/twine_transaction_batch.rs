@@ -22,7 +22,7 @@ pub enum Relation {
     TwineBatchL2Blocks,
     #[sea_orm(has_many = "super::twine_batch_l2_transactions::Entity")]
     TwineBatchL2Transactions,
-    #[sea_orm(has_one = "super::twine_transaction_batch_detail::Entity")]
+    #[sea_orm(has_many = "super::twine_transaction_batch_detail::Entity")]
     TwineTransactionBatchDetail,
 }
 

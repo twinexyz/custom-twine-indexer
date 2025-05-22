@@ -1,6 +1,9 @@
 use eyre::Result;
-use sea_orm::{Database, DatabaseConnection, DbErr};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 
 pub async fn connect(database_url: &str) -> Result<DatabaseConnection, DbErr> {
-    Database::connect(database_url).await
+    let mut opt = ConnectOptions::new(database_url.to_owned());
+    opt.sqlx_logging(false); // Disable SQLx log
+
+    Database::connect(opt).await
 }

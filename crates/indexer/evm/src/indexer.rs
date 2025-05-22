@@ -6,9 +6,10 @@ use std::sync::{
 use alloy::{primitives::U64, rpc::types::Log};
 use common::config::{ChainConfig, EvmConfig};
 use database::client::DbClient;
-use eyre::Error;
+use eyre::{eyre, Error};
 use futures_util::StreamExt;
 use tokio::{spawn, sync::watch};
+use tracing::{error, info};
 
 use crate::{handler::EvmEventHandler, provider::EvmProvider};
 
@@ -17,7 +18,6 @@ pub struct EvmIndexer<H: EvmEventHandler> {
     handler: H,
     db: Arc<DbClient>,
     config: ChainConfig,
-    state: Arc<AtomicU64>,
 }
 
 impl<H: EvmEventHandler> EvmIndexer<H> {
@@ -31,36 +31,33 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
             handler,
             db,
             config,
-            state: Arc::new(AtomicU64::new(1)),
+            // state: Arc::new(AtomicU64::new(1)),
         })
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
         let initial_block = self.initialize_state().await?;
 
-        let (tx, rx) = watch::channel(initial_block);
+        // let hist_indexer = self.clone();
+        // let live_indexer = self.clone();
 
-        let hist_indexer = self.clone();
-        let live_indexer = self.clone();
+        self.sync_historical(initial_block).await;
 
-        let historical_handle = tokio::spawn(async move {
-            hist_indexer
-                .sync_historical(hist_indexer.state.clone(), tx)
-                .await
-        });
+        // let historical_handle =
+        //     tokio::spawn(async move { hist_indexer.sync_historical(initial_block, tx).await });
 
-        let live_handle = tokio::spawn(async move {
-            let mut rx = rx.clone();
-            live_indexer
-                .sync_live(live_indexer.state.clone(), &mut rx)
-                .await
-        });
+        // let live_handle = tokio::spawn(async move {
+        //     let mut rx = rx.clone();
+        //     live_indexer
+        //         .sync_live(live_indexer.state.clone(), &mut rx)
+        //         .await
+        // });
 
-        // Wait for both tasks to complete
-        let (historical_res, live_res) = tokio::join!(historical_handle, live_handle);
+        // // Wait for both tasks to complete
+        // let (historical_res, live_res) = tokio::join!(historical_handle, live_handle);
 
-        historical_res??;
-        live_res??;
+        // historical_res??;
+        // live_res??;
 
         Ok(())
     }
@@ -72,42 +69,41 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
             .await
             .unwrap_or(self.config.start_block as i64);
 
-        self.state.store(last_synced as u64, Ordering::Release);
+        // self.state.store(last_synced as u64, Ordering::Release);
 
         Ok(last_synced as u64)
     }
 
-    async fn sync_historical(
-        &self,
-        state: Arc<AtomicU64>,
-        block_sender: watch::Sender<u64>,
-    ) -> Result<(), Error> {
-        let mut current_state_block = state.load(Ordering::Acquire);
+    async fn sync_historical(&self, from: u64) -> Result<(), Error> {
         let current_block = self.provider.get_block_number().await?;
+        let mut start_block = from;
 
-        while current_state_block < current_block {
-            let end_block =
-                (current_state_block + self.config.block_sync_batch_size).min(current_block);
+        while start_block < current_block {
+            let end_block = (start_block + self.config.block_sync_batch_size).min(current_block);
+
+            info!(
+                "Syncing historical blocks from {} to {}",
+                start_block, end_block
+            );
+
+            info!("Indexer lags by {} blocks", current_block - end_block);
 
             let logs = self
                 .provider
                 .get_logs(
                     &self.handler.relevant_addresses(),
                     &self.handler.relevant_topics(),
-                    current_state_block,
+                    start_block,
                     end_block,
                 )
                 .await?;
 
             self.process_logs(logs).await?;
 
-            current_state_block = end_block + 1;
-
-            state.store(current_state_block, Ordering::Release);
-            block_sender.send(current_block)?;
+            start_block = end_block + 1;
 
             self.db
-                .upsert_last_synced(self.handler.chain_id() as i64, current_state_block as i64)
+                .upsert_last_synced(self.handler.chain_id() as i64, start_block as i64)
                 .await?;
         }
         Ok(())
@@ -150,7 +146,10 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
 
     async fn process_logs(&self, logs: Vec<Log>) -> Result<(), Error> {
         for log in logs {
-            self.handler.handle_event(log.clone()).await?;
+            self.handler.handle_event(log.clone()).await.map_err(|e| {
+                error!("Error while handling event {:?}", e);
+                eyre::eyre!("Error while handling event {:?}", e)
+            });
         }
         Ok(())
     }
@@ -163,7 +162,6 @@ impl<H: EvmEventHandler> Clone for EvmIndexer<H> {
             handler: self.handler.clone(),
             db: self.db.clone(),
             config: self.config.clone(),
-            state: self.state.clone(),
         }
     }
 }

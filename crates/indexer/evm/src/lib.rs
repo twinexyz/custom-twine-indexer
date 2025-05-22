@@ -3,9 +3,8 @@ mod error;
 pub mod ethereum;
 pub mod handler;
 pub mod indexer;
-mod provider;
+pub mod provider;
 pub mod twine;
-
 
 use common::{create_http_provider, create_ws_provider, poll_missing_logs, subscribe_stream};
 

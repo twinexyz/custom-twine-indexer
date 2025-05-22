@@ -1,5 +1,6 @@
 use crate::entities::last_synced;
 use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, sea_query::OnConflict};
+use tracing::error;
 
 #[derive(Clone, Debug)]
 pub struct DbClient {
@@ -39,7 +40,12 @@ impl DbClient {
                     .to_owned(),
             )
             .exec(&self.primary)
-            .await?;
+            .await
+            .map_err(|e| {
+                error!("Failed to insert lifecycle txns: {:?}", e);
+                eyre::eyre!("Failed to insert lifecycle txns: {:?}", e)
+            })?;
+
         Ok(())
     }
 }

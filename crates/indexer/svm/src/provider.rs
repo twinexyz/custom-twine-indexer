@@ -21,6 +21,7 @@ use solana_transaction_status_client_types::{
 };
 use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::error;
 
 #[derive(Clone)]
 pub struct SvmProvider {
@@ -30,14 +31,14 @@ pub struct SvmProvider {
 }
 
 impl SvmProvider {
-    pub async fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
+    pub async fn new(http_url: &str, ws_url: &str, chain_id: u64) -> eyre::Result<Self> {
         let pubsub_client = Arc::new(
             PubsubClient::new(ws_url)
                 .await
-                .map_err(eyre::Error::from)
-                .unwrap(),
+                .map_err(|e| eyre::eyre!("Failed to connect to WebSocket: {}", e))?,
         );
-        Self {
+
+        Ok(Self {
             http: Arc::new(RpcClient::new_with_timeout(
                 http_url.to_string(),
                 Duration::from_secs(30),
@@ -45,7 +46,7 @@ impl SvmProvider {
             ws: pubsub_client,
 
             commitment: CommitmentConfig::finalized(),
-        }
+        })
     }
 
     pub async fn get_slot(&self) -> eyre::Result<u64> {
@@ -74,8 +75,6 @@ impl SvmProvider {
                 until: None,
             };
 
-            // let mut current_slot = self.get_slot()?;
-
             let mut signatures: Vec<RpcConfirmedTransactionStatusWithSignature> = self
                 .http
                 .send(
@@ -83,6 +82,9 @@ impl SvmProvider {
                     json!([address.to_string(), config]),
                 )
                 .await?;
+
+            let original_length = signatures.len();
+            let last_signature_before_filter = signatures.last().map(|sig| sig.signature.clone());
 
             let mut exit_loop = false;
             signatures.retain(|sig| {
@@ -99,12 +101,16 @@ impl SvmProvider {
             all_signatures.extend(signatures.clone());
 
             // Exit conditions
-            if exit_loop || signatures.len() < batch_size as usize {
+            if exit_loop || original_length < batch_size as usize {
                 break;
             }
 
-            before = all_signatures.last().map(|sig| sig.signature.clone());
+            before = last_signature_before_filter;
+            // before = all_signatures.last().map(|sig| sig.signature.clone());
         }
+
+        all_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
+        all_signatures.dedup_by(|a, b| a.signature == b.signature);
 
         Ok(all_signatures)
     }
@@ -143,13 +149,13 @@ impl SvmProvider {
                 Ok((mut subscription, _unsubscriber)) => {
                     while let Some(logs) = subscription.next().await {
                         if let Err(e) = tx.send(logs).await {
-                            eprintln!("Failed to send logs: {}", e);
+                            error!("Failed to send logs: {}", e);
                             break;
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to subscribe to logs: {}", e);
+                    error!("Failed to subscribe to logs: {}", e);
                 }
             }
         });

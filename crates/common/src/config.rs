@@ -5,8 +5,7 @@ use serde::{de::DeserializeOwned, Deserialize};
 
 fn config_from_env<T: DeserializeOwned>() -> Result<T> {
     dotenv().ok();
-
-    let config = Config::builder()
+    Config::builder()
         // .add_source(File::with_name("config.yaml").required(true))
         .add_source(
             config::Environment::default()
@@ -14,19 +13,9 @@ fn config_from_env<T: DeserializeOwned>() -> Result<T> {
                 .separator("__")
                 .list_separator(","),
         )
-        .build();
-
-    match config {
-        Ok(cfg) => {
-            println!("Loaded config: {:#?}", cfg);
-            let parsed= cfg.try_deserialize::<IndexerConfig>().unwrap();
-            panic!();
-        }
-        Err(e) => {
-            println!("Failed to load config: {}", e);
-            panic!();
-        }
-    }
+        .build()?
+        .try_deserialize()
+        .map_err(eyre::Error::from)
 }
 
 pub trait LoadFromEnv: Sized + DeserializeOwned {
@@ -64,7 +53,6 @@ pub struct ChainConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct EvmConfig {
-    #[serde(flatten)]
     pub common: ChainConfig,
     pub l1_message_queue_address: String,
     pub l1_erc20_gateway_address: String,
@@ -74,7 +62,6 @@ pub struct EvmConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SvmConfig {
-    #[serde(flatten)]
     pub common: ChainConfig,
     pub tokens_gateway_program_address: String,
     pub twine_chain_program_address: String,
@@ -92,7 +79,6 @@ pub struct CelestiaConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TwineConfig {
-    #[serde(flatten)]
     pub common: ChainConfig,
     pub l2_twine_messenger_address: String,
 }

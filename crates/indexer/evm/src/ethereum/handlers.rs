@@ -5,25 +5,26 @@ use alloy::{
     rpc::types::Log,
     sol_types::SolEvent,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use common::config::EvmConfig;
+use common::config::{ChainConfig, EvmConfig};
 use database::{
     client::DbClient,
     entities::{
-        l1_deposit, l1_withdraw, l2_withdraw, twine_lifecycle_l1_transactions,
-        twine_transaction_batch, twine_transaction_batch_detail,
+        l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
+        twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
     },
 };
 use eyre::Result;
 use num_traits::FromPrimitive;
 use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set};
-use tracing::{info, warn};
+use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::ethereum::{
     l1_message_queue::L1MessageQueue,
     twine_chain::TwineChain::{CommitBatch, FinalizedBatch},
 };
 
-use crate::{error::ParserError, handler::EvmEventHandler};
+use crate::{error::ParserError, handler::EvmEventHandler, provider::EvmProvider, EVMChain};
 
 use super::{
     parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH},
@@ -34,36 +35,54 @@ pub struct EthereumEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
     config: EvmConfig,
+    twine_provider: EvmProvider,
 }
 
+#[async_trait]
 impl EvmEventHandler for EthereumEventHandler {
-    fn handle_event<'a>(
-        &'a self,
-        log: Log,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move {
-            let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-                signature: B256::ZERO,
-            })?;
+    #[instrument(skip_all, fields(CHAIN = "Ethereum"))]
+    async fn handle_event(&self, log: Log) -> eyre::Result<()> {
+        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+            signature: B256::ZERO,
+        })?;
+        let block_number = log.block_number.unwrap();
 
-            match *sig {
-                L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
-                    self.handle_queue_deposit_txn(log).await
-                }
-                L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
-                    self.handle_queue_withdrawal_txn(log).await
-                }
-                FinalizeWithdrawERC20::SIGNATURE_HASH => self.handle_finalize_withdraw(log).await,
-
-                FinalizeWithdrawETH::SIGNATURE_HASH => self.handle_finalize_withdraw_eth(log).await,
-
-                CommitBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await,
-
-                FinalizedBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await,
-
-                other => Err(ParserError::UnknownEvent { signature: other }.into()),
+        match *sig {
+            L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
+                let processed = self.handle_queue_deposit_txn(log).await;
             }
-        })
+            L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
+                let processed = self.handle_queue_withdrawal_txn(log).await?;
+            }
+            FinalizeWithdrawERC20::SIGNATURE_HASH => {
+                let processed = self.handle_finalize_withdraw(log).await?;
+            }
+
+            FinalizeWithdrawETH::SIGNATURE_HASH => {
+                let processed = self.handle_finalize_withdraw_eth(log).await?;
+            }
+
+            CommitBatch::SIGNATURE_HASH => {
+                let procesesd = self.handle_commit_batch(log).await?;
+            }
+
+            FinalizedBatch::SIGNATURE_HASH => {
+                let processed = self.handle_finalize_batch(log).await?;
+            }
+            other => {
+                error!("Unknown event to handle")
+            }
+        }
+
+        //if proccessd block number exists or greater than 0, update last synced table
+
+        info!("Proccessed block: {}", block_number);
+
+        self.db_client
+            .upsert_last_synced(self.chain_id as i64, block_number as i64)
+            .await?;
+
+        Ok(())
     }
 
     fn chain_id(&self) -> u64 {
@@ -93,14 +112,53 @@ impl EvmEventHandler for EthereumEventHandler {
     fn get_chain_config(&self) -> common::config::ChainConfig {
         self.config.common.clone()
     }
+
+    fn extract_log<T: SolEvent>(
+        &self,
+        log: Log,
+        event_name: &'static str,
+    ) -> Result<crate::handler::LogContext<T>, ParserError> {
+        let tx_hash = log
+            .transaction_hash
+            .ok_or(ParserError::MissingTransactionHash)?;
+        let tx_hash_str = std::format!("{tx_hash:?}");
+
+        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
+
+        let timestamp = log
+            .block_timestamp
+            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "Missing or invalid block timestamp in {}. Using now.",
+                    event_name
+                );
+                Utc::now()
+            });
+
+        let decoded = log
+            .log_decode::<T>()
+            .map_err(|e| ParserError::DecodeError {
+                event_type: event_name,
+                source: Box::new(e),
+            })?;
+
+        Ok(crate::handler::LogContext {
+            tx_hash_str,
+            block_number,
+            timestamp,
+            data: decoded.inner.data,
+        })
+    }
 }
 
 impl EthereumEventHandler {
-    pub fn new(db_client: Arc<DbClient>, config: EvmConfig) -> Self {
+    pub fn new(db_client: Arc<DbClient>, config: EvmConfig, twine_provider: EvmProvider) -> Self {
         Self {
             db_client,
             chain_id: config.common.chain_id,
             config,
+            twine_provider,
         }
     }
 
@@ -244,18 +302,40 @@ impl EthereumEventHandler {
             }
             None => {
                 info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
+
+                let (blocks, transactions) = self
+                    .twine_provider
+                    .get_blocks_with_transactions(start_block, end_block)
+                    .await?;
+
+                for block in blocks {
+                    l2_blocks.push(twine_batch_l2_blocks::ActiveModel {
+                        batch_number: Set(start_block as i64),
+                        hash: Set(block.header.hash.to_vec()),
+                        ..Default::default()
+                    });
+                }
+
+                for transaction in transactions {
+                    l2_txs.push(twine_batch_l2_transactions::ActiveModel {
+                        batch_number: Set(start_block as i64),
+                        hash: Set(transaction.inner.tx_hash().to_vec()),
+                        ..Default::default()
+                    });
+                }
             }
         }
 
-        let _ =
-            self.db_client
-                .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs);
+        let _ = self
+            .db_client
+            .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs)
+            .await;
 
         Ok(())
     }
 
     async fn handle_finalize_batch(&self, log: Log) -> Result<()> {
-        let decoded = self.extract_log::<CommitBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
+        let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
         let start_block = decoded.data.startBlock as i64;
         let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
         let timestamp = decoded.timestamp.naive_utc();
@@ -280,6 +360,7 @@ impl EthereumEventHandler {
                 l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
                 chain_id: Set(chain_id_dec),
                 commit_id: Set(existing.commit_id),
+                id: Set(existing.id),
                 execute_id: Set(None), //will be set by db service
                 ..Default::default()
             };
@@ -302,6 +383,7 @@ impl Clone for EthereumEventHandler {
             chain_id: self.chain_id,
             config: self.config.clone(),
             db_client: self.db_client.clone(),
+            twine_provider: self.twine_provider.clone(),
         }
     }
 }

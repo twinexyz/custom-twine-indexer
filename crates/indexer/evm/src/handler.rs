@@ -5,6 +5,7 @@ use alloy::{
     rpc::types::Log,
     sol_types::SolEvent,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::ChainConfig;
 use database::client::DbClient;
@@ -25,6 +26,7 @@ pub struct LogContext<T> {
     pub data: T,
 }
 
+#[async_trait]
 pub trait EvmEventHandler: Send + Sync + Clone + 'static {
     fn chain_id(&self) -> u64;
     fn get_chain_config(&self) -> ChainConfig;
@@ -71,8 +73,5 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
         })
     }
 
-    fn handle_event<'a>(
-        &'a self,
-        log: Log,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+    async fn handle_event(&self, log: Log) -> Result<()>;
 }

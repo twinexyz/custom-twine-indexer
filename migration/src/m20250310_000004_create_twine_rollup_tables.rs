@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Number)
                             .big_unsigned()
-                            .not_null()
+                            .not_null(),
                     )
                     .col(
                         ColumnDef::new(TwineTransactionBatch::Timestamp)
@@ -93,6 +93,13 @@ impl MigrationTrait for Migration {
                             .timestamp()
                             .not_null()
                             .default(Expr::current_timestamp()),
+                    )
+                    .index(
+                        Index::create()
+                            .name("idx_lifecycle_chain_id_hash_unique")
+                            .col(TwineLifecycleL1Transactions::ChainId)
+                            .col(TwineLifecycleL1Transactions::Hash)
+                            .unique(),
                     )
                     .to_owned(),
             )
@@ -202,6 +209,7 @@ impl MigrationTrait for Migration {
                             .name("idx_batch_number_chain_id_unique")
                             .table(TwineTransactionBatchDetail::Table)
                             .col(TwineTransactionBatchDetail::BatchNumber)
+                            .col(TwineTransactionBatchDetail::ChainId)
                             .unique(),
                     )
                     .to_owned(),

@@ -1,6 +1,5 @@
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::BlockTransactions;
-use anchor_client::solana_sdk::bs58;
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::Utc;
@@ -102,7 +101,6 @@ pub struct FinalizedTransaction {
     pub slot_number: u64,
 }
 
-
 pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     let input = format!("{}:{}", start_block, end_block);
     let digest = blake3::hash(input.as_bytes());
@@ -115,5 +113,34 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
         ))
     } else {
         Ok(masked_value as i32)
+    }
+}
+
+#[derive(Hash, Eq, PartialEq)]
+pub enum SolanaEvents {
+    NativeDeposit,
+    SplDeposit,
+    NativeWithdrawal,
+    SplWithdrawal,
+    FinalizeNativeWithdrawal,
+    FinalizeSplWithdrawal,
+    CommitBatch,
+    FinalizeBatch,
+    CommitAndFinalizeTransaction,
+}
+
+impl SolanaEvents {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SolanaEvents::NativeDeposit => "native_deposit",
+            SolanaEvents::SplDeposit => "spl_deposit",
+            SolanaEvents::NativeWithdrawal => "native_withdrawal",
+            SolanaEvents::SplWithdrawal => "spl_withdrawal",
+            SolanaEvents::FinalizeNativeWithdrawal => "finalize_native_withdrawal",
+            SolanaEvents::FinalizeSplWithdrawal => "finalize_spl_withdrawal",
+            SolanaEvents::CommitBatch => "commit_batch",
+            SolanaEvents::FinalizeBatch => "finalize_batch",
+            SolanaEvents::CommitAndFinalizeTransaction => "commit_and_finalize_transaction",
+        }
     }
 }

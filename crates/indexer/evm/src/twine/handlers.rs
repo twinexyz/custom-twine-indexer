@@ -5,6 +5,7 @@ use alloy::{
     rpc::types::Log,
     sol_types::{SolEvent, SolValue},
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
 use database::{
@@ -153,24 +154,20 @@ impl TwineEventHandler {
     }
 }
 
+#[async_trait]
 impl EvmEventHandler for TwineEventHandler {
-    fn handle_event<'a>(
-        &'a self,
-        log: Log,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move {
-            let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-                signature: B256::ZERO,
-            })?;
+    async fn handle_event(&self, log: Log) -> eyre::Result<()> {
+        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+            signature: B256::ZERO,
+        })?;
 
-            match *sig {
-                L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
-                    self.handle_ethereum_transactions_handled(log).await
-                }
-                L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
-                other => Err(ParserError::UnknownEvent { signature: other }.into()),
+        match *sig {
+            L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
+                self.handle_ethereum_transactions_handled(log).await
             }
-        })
+            L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
+            other => Err(ParserError::UnknownEvent { signature: other }.into()),
+        }
     }
 
     fn chain_id(&self) -> u64 {
