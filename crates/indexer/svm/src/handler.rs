@@ -8,7 +8,7 @@ use database::{
     client::DbClient,
     entities::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-        twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
+        twine_transaction_batch, twine_transaction_batch_detail,
     },
 };
 use evm::provider::EvmProvider;
@@ -18,6 +18,7 @@ use sea_orm::{
     prelude::Decimal,
     strum::{self},
     ActiveValue::Set,
+    IntoActiveModel,
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::{
@@ -246,13 +247,6 @@ impl SolanaEventHandler {
             ..Default::default()
         };
 
-        let lifecyle_txn = twine_lifecycle_l1_transactions::ActiveModel {
-            hash: Set(parsed_log.tx_hash_str.clone().into_bytes()),
-            chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-            timestamp: Set(parsed_log.timestamp.naive_utc()),
-            ..Default::default()
-        };
-
         let detail_model = twine_transaction_batch_detail::ActiveModel {
             batch_number: Set(start_block as i64),
             l1_transaction_count: Set(0),
@@ -260,8 +254,8 @@ impl SolanaEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-            commit_id: Set(None),
-            execute_id: Set(None),
+            commit_transaction_hash: Set(Some(parsed_log.tx_hash_str.clone().into_bytes())),
+            finalize_transaction_hash: Set(None),
             ..Default::default()
         };
 
@@ -303,7 +297,7 @@ impl SolanaEventHandler {
 
         let _ = self
             .db_client
-            .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs)
+            .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
             .await;
 
         Ok(LogProcessed {
@@ -319,28 +313,12 @@ impl SolanaEventHandler {
         let root_hash = vec![0u8; 32];
 
         if let Some(existing) = self.db_client.get_batch_details(start_block as i64).await? {
-            let lifecycle_txn = twine_lifecycle_l1_transactions::ActiveModel {
-                hash: Set(parsed_log.tx_hash_str.clone().into_bytes()),
-                chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-                timestamp: Set(parsed_log.timestamp.naive_utc()),
-                ..Default::default()
-            };
+            let mut active_existing = existing.into_active_model();
 
-            let detail_model = twine_transaction_batch_detail::ActiveModel {
-                batch_number: Set(start_block as i64),
-                l1_transaction_count: Set(existing.l1_transaction_count),
-                l2_transaction_count: Set(existing.l2_transaction_count),
-                l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-                l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-                chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-                commit_id: Set(existing.commit_id),
-                execute_id: Set(None), //will be set by db service
-                ..Default::default()
-            };
+            active_existing.finalize_transaction_hash =
+                Set(Some(parsed_log.tx_hash_str.clone().into_bytes()));
 
-            self.db_client
-                .finalize_batch(detail_model, lifecycle_txn)
-                .await?;
+            self.db_client.finalize_batch(active_existing).await?;
         } else {
             warn!("Finalize Event indexed before commitment. Skipping");
         }

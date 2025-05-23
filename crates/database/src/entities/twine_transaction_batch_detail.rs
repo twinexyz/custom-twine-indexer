@@ -13,30 +13,16 @@ pub struct Model {
     pub l1_gas_price: Decimal,
     pub l2_fair_gas_price: Decimal,
     pub chain_id: Decimal,
-    pub commit_id: Option<i32>,
-    pub execute_id: Option<i32>,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
+    pub commit_transaction_hash: Option<Vec<u8>>,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
+    pub finalize_transaction_hash: Option<Vec<u8>>,
     pub inserted_at: DateTime,
     pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::twine_lifecycle_l1_transactions::Entity",
-        from = "Column::CommitId",
-        to = "super::twine_lifecycle_l1_transactions::Column::Id",
-        on_update = "Cascade",
-        on_delete = "SetNull"
-    )]
-    TwineLifecycleL1Transactions2,
-    #[sea_orm(
-        belongs_to = "super::twine_lifecycle_l1_transactions::Entity",
-        from = "Column::ExecuteId",
-        to = "super::twine_lifecycle_l1_transactions::Column::Id",
-        on_update = "Cascade",
-        on_delete = "SetNull"
-    )]
-    TwineLifecycleL1Transactions1,
     #[sea_orm(
         belongs_to = "super::twine_transaction_batch::Entity",
         from = "Column::BatchNumber",

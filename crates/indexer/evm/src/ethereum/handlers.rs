@@ -12,12 +12,12 @@ use database::{
     client::DbClient,
     entities::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-        twine_lifecycle_l1_transactions, twine_transaction_batch, twine_transaction_batch_detail,
+        twine_transaction_batch, twine_transaction_batch_detail,
     },
 };
 use eyre::Result;
 use num_traits::FromPrimitive;
-use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set};
+use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set, IntoActiveModel};
 use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::ethereum::{
     l1_message_queue::L1MessageQueue,
@@ -47,29 +47,20 @@ impl EvmEventHandler for EthereumEventHandler {
         })?;
         let block_number = log.block_number.unwrap();
 
-
         match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
-                let processed = self.handle_queue_deposit_txn(log).await;
+                self.handle_queue_deposit_txn(log).await?
             }
             L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
-                let processed = self.handle_queue_withdrawal_txn(log).await?;
+                self.handle_queue_withdrawal_txn(log).await?
             }
-            FinalizeWithdrawERC20::SIGNATURE_HASH => {
-                let processed = self.handle_finalize_withdraw(log).await?;
-            }
+            FinalizeWithdrawERC20::SIGNATURE_HASH => self.handle_finalize_withdraw(log).await?,
 
-            FinalizeWithdrawETH::SIGNATURE_HASH => {
-                let processed = self.handle_finalize_withdraw_eth(log).await?;
-            }
+            FinalizeWithdrawETH::SIGNATURE_HASH => self.handle_finalize_withdraw_eth(log).await?,
 
-            CommitBatch::SIGNATURE_HASH => {
-                let procesesd = self.handle_commit_batch(log).await?;
-            }
+            CommitBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await?,
 
-            FinalizedBatch::SIGNATURE_HASH => {
-                let processed = self.handle_finalize_batch(log).await?;
-            }
+            FinalizedBatch::SIGNATURE_HASH => self.handle_finalize_batch(log).await?,
             other => {
                 error!("Unknown event to handle")
             }
@@ -81,9 +72,7 @@ impl EvmEventHandler for EthereumEventHandler {
 
         self.db_client
             .upsert_last_synced(self.chain_id as i64, block_number as i64)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     fn chain_id(&self) -> u64 {
@@ -269,14 +258,6 @@ impl EthereumEventHandler {
             ..Default::default()
         };
 
-        // Build Lifecycle Transation Model
-        let lifecyle_txn = twine_lifecycle_l1_transactions::ActiveModel {
-            hash: Set(decoded.tx_hash_str.clone().into_bytes()),
-            chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
-            timestamp: Set(decoded.timestamp.naive_utc()),
-            ..Default::default()
-        };
-
         // Build Batch Details Table
         let detail_model = twine_transaction_batch_detail::ActiveModel {
             batch_number: Set(start_block as i64),
@@ -285,8 +266,8 @@ impl EthereumEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
-            commit_id: Set(None),
-            execute_id: Set(None),
+            commit_transaction_hash: Set(Some(decoded.tx_hash_str.clone().into_bytes())),
+            finalize_transaction_hash: Set(None),
             ..Default::default()
         };
 
@@ -329,7 +310,7 @@ impl EthereumEventHandler {
 
         let _ = self
             .db_client
-            .commit_batch(batch_model, detail_model, lifecyle_txn, l2_blocks, l2_txs)
+            .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
             .await;
 
         Ok(())
@@ -344,32 +325,13 @@ impl EthereumEventHandler {
 
         // Fetch existing batch details once
         if let Some(existing) = self.db_client.get_batch_details(start_block).await? {
-            // Prepare lifecycle transaction model
-            let lifecycle_txn = twine_lifecycle_l1_transactions::ActiveModel {
-                hash: Set(tx_hash_bytes),
-                chain_id: Set(chain_id_dec.clone()),
-                timestamp: Set(timestamp),
-                ..Default::default()
-            };
-
             // Prepare updated batch detail model using existing values
-            let detail_model = twine_transaction_batch_detail::ActiveModel {
-                batch_number: Set(start_block),
-                l1_transaction_count: Set(existing.l1_transaction_count),
-                l2_transaction_count: Set(existing.l2_transaction_count),
-                l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-                l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
-                chain_id: Set(chain_id_dec),
-                commit_id: Set(existing.commit_id),
-                id: Set(existing.id),
-                execute_id: Set(None), //will be set by db service
-                ..Default::default()
-            };
+
+            let mut active_existing = existing.into_active_model();
+            active_existing.finalize_transaction_hash = Set(Some(tx_hash_bytes));
 
             // Apply the finalize_batch update
-            self.db_client
-                .finalize_batch(detail_model, lifecycle_txn)
-                .await?;
+            self.db_client.finalize_batch(active_existing).await?;
         } else {
             warn!("Finalize Event indexed before commitment. Skipping");
         }

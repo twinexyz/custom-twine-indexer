@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");
-        twine_indexer.run().await
+        // twine_indexer.run().await
     });
 
     let eth_handle = tokio::spawn(async move {
@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     });
     let solana_handle = tokio::spawn(async move {
         info!("starting solana indexer");
-        solana_indexer.run().await
+        // solana_indexer.run().await
     });
 
     let _ = tokio::join!(eth_handle, twine_handle, solana_handle);

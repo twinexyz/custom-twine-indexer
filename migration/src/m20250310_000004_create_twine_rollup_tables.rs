@@ -54,57 +54,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // 2. Create twine_lifecycle_l1_transactions table
-        manager
-            .create_table(
-                Table::create()
-                    .table(TwineLifecycleL1Transactions::Table)
-                    .if_not_exists()
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::Id)
-                            .integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::Hash)
-                            .binary()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::ChainId)
-                            .decimal()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::Timestamp)
-                            .timestamp()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::InsertedAt)
-                            .timestamp()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        ColumnDef::new(TwineLifecycleL1Transactions::UpdatedAt)
-                            .timestamp()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .index(
-                        Index::create()
-                            .name("idx_lifecycle_chain_id_hash_unique")
-                            .col(TwineLifecycleL1Transactions::ChainId)
-                            .col(TwineLifecycleL1Transactions::Hash)
-                            .unique(),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
         // 3. Create twine_transaction_batch_detail table
         manager
             .create_table(
@@ -150,8 +99,13 @@ impl MigrationTrait for Migration {
                             .decimal()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::CommitId).integer())
-                    .col(ColumnDef::new(TwineTransactionBatchDetail::ExecuteId).integer())
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::CommitTransactionHash).binary(),
+                    )
+                    .col(
+                        ColumnDef::new(TwineTransactionBatchDetail::FinalizeTransactionHash)
+                            .binary(),
+                    )
                     .col(
                         ColumnDef::new(TwineTransactionBatchDetail::InsertedAt)
                             .timestamp()
@@ -174,34 +128,6 @@ impl MigrationTrait for Migration {
                             )
                             .to(TwineTransactionBatch::Table, TwineTransactionBatch::Number)
                             .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_batch_detail_commit_id")
-                            .from(
-                                TwineTransactionBatchDetail::Table,
-                                TwineTransactionBatchDetail::CommitId,
-                            )
-                            .to(
-                                TwineLifecycleL1Transactions::Table,
-                                TwineLifecycleL1Transactions::Id,
-                            )
-                            .on_delete(ForeignKeyAction::SetNull)
-                            .on_update(ForeignKeyAction::Cascade),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_batch_detail_execute_id")
-                            .from(
-                                TwineTransactionBatchDetail::Table,
-                                TwineTransactionBatchDetail::ExecuteId,
-                            )
-                            .to(
-                                TwineLifecycleL1Transactions::Table,
-                                TwineLifecycleL1Transactions::Id,
-                            )
-                            .on_delete(ForeignKeyAction::SetNull)
                             .on_update(ForeignKeyAction::Cascade),
                     )
                     .index(
@@ -301,14 +227,14 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_batch_number_chain_id_unique")
-                    .table(TwineTransactionBatchDetail::Table)
-                    .to_owned(),
-            )
-            .await?;
+        // manager
+        //     .drop_index(
+        //         Index::drop()
+        //             .name("idx_batch_number_chain_id_unique")
+        //             .table(TwineTransactionBatchDetail::Table)
+        //             .to_owned(),
+        //     )
+        //     .await?;
 
         manager
             .drop_table(
@@ -320,17 +246,11 @@ impl MigrationTrait for Migration {
         manager
             .drop_table(Table::drop().table(TwineBatchL2Blocks::Table).to_owned())
             .await?;
+    
         manager
             .drop_table(
                 Table::drop()
                     .table(TwineTransactionBatchDetail::Table)
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(TwineLifecycleL1Transactions::Table)
                     .to_owned(),
             )
             .await?;
@@ -364,19 +284,8 @@ enum TwineTransactionBatchDetail {
     ChainId,
     L1TransactionCount,
     L1GasPrice,
-    CommitId,
-    ExecuteId,
-    InsertedAt,
-    UpdatedAt,
-}
-
-#[derive(DeriveIden)]
-enum TwineLifecycleL1Transactions {
-    Table,
-    Id,
-    Hash,
-    ChainId,
-    Timestamp,
+    CommitTransactionHash,
+    FinalizeTransactionHash,
     InsertedAt,
     UpdatedAt,
 }

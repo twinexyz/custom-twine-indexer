@@ -1,14 +1,12 @@
 use crate::client::DbClient;
 use crate::entities::{
-    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_lifecycle_l1_transactions,
-    twine_transaction_batch, twine_transaction_batch_detail,
+    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_transaction_batch,
+    twine_transaction_batch_detail,
 };
 use eyre::{Context, Result};
-use sea_orm::ActiveValue::Set;
-use sea_orm::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
 };
 use tracing::error;
 
@@ -40,7 +38,6 @@ impl DbClient {
         &self,
         batch_model: twine_transaction_batch::ActiveModel,
         batch_details_model: twine_transaction_batch_detail::ActiveModel,
-        lifecyle_model: twine_lifecycle_l1_transactions::ActiveModel,
         l2_blocks_model: Vec<twine_batch_l2_blocks::ActiveModel>,
         l2_txns_model: Vec<twine_batch_l2_transactions::ActiveModel>,
     ) -> Result<()> {
@@ -66,33 +63,12 @@ impl DbClient {
                 .context("Failed to insert L2 transactions")?;
         }
 
-        //Insert Lifecycle Table anyway
-        let lifecycle_res = self
-            .insert_lifecycle_l1_transaction(lifecyle_model, &txn)
-            .await?;
-
-        let commit_id: i32 = lifecycle_res
-            .id
-            .try_into()
-            .expect("lifecycle id fits in i32");
-
         //Now it's time to insert batch details table
 
-        if !exists {
-            let mut detail = batch_details_model;
-            detail.commit_id = Set(Some(commit_id));
-            self.insert_twine_transaction_batch_detail(detail, &txn)
-                .await?;
-        } else {
-            twine_transaction_batch_detail::Entity::update_many()
-                .col_expr(
-                    twine_transaction_batch_detail::Column::CommitId,
-                    Expr::value(commit_id),
-                )
-                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
-                .exec(&txn)
-                .await?;
-        }
+        self.insert_twine_transaction_batch_detail(batch_details_model, &txn)
+            .await
+            .context("failed to batch details ")?;
+
         txn.commit().await.context("Failed to commit transaction")?;
         Ok(())
     }
@@ -100,27 +76,15 @@ impl DbClient {
     pub async fn finalize_batch(
         &self,
         batch_details_model: twine_transaction_batch_detail::ActiveModel,
-        lifecyle_model: twine_lifecycle_l1_transactions::ActiveModel,
     ) -> Result<()> {
-        let txn = self.blockscout.begin().await?;
+        let _ = batch_details_model
+            .update(&self.blockscout)
+            .await
+            .map_err(|e| {
+                error!("Failed to insert batch details: {:?}", e);
+                eyre::eyre!("Failed to insert batch details: {:?}", e)
+            });
 
-        let lifecycle_res = self
-            .insert_lifecycle_l1_transaction(lifecyle_model, &txn)
-            .await?;
-
-        let execute_id: i32 = lifecycle_res
-            .id
-            .try_into()
-            .expect("lifecycle id fits in i32");
-
-        let mut detail = batch_details_model;
-        detail.execute_id = Set(Some(execute_id));
-
-        let _ = twine_transaction_batch_detail::Entity::update(detail)
-            .exec(&txn)
-            .await?;
-
-        txn.commit().await?;
         Ok(())
     }
 
@@ -198,7 +162,10 @@ impl DbClient {
                     twine_transaction_batch_detail::Column::BatchNumber,
                     twine_transaction_batch_detail::Column::ChainId,
                 ])
-                .do_nothing()
+                .update_columns([
+                    twine_transaction_batch_detail::Column::CommitTransactionHash,
+                    twine_transaction_batch_detail::Column::FinalizeTransactionHash,
+                ])
                 .to_owned(),
             )
             .exec(txn)
@@ -208,29 +175,5 @@ impl DbClient {
                 eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
             })?;
         Ok(())
-    }
-
-    pub async fn insert_lifecycle_l1_transaction(
-        &self,
-        model: twine_lifecycle_l1_transactions::ActiveModel,
-        txn: &DatabaseTransaction,
-    ) -> Result<twine_lifecycle_l1_transactions::Model> {
-        let response = twine_lifecycle_l1_transactions::Entity::insert(model)
-            // .on_conflict(
-            //     OnConflict::columns([
-            //         twine_lifecycle_l1_transactions::Column::ChainId,
-            //         twine_lifecycle_l1_transactions::Column::Hash,
-            //     ])
-            //     .do_nothing()
-            //     .to_owned(),
-            // )
-            .exec_with_returning(txn)
-            .await
-            .map_err(|e| {
-                error!("Failed to insert lifecycle txns: {:?}", e);
-                eyre::eyre!("Failed to insert lifecycle txns: {:?}", e)
-            })?;
-
-        Ok(response)
     }
 }
