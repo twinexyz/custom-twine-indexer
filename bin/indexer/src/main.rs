@@ -13,7 +13,7 @@ use tracing::info;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::IndexerConfig::from_env()?;
+    let cfg = config::IndexerConfig::from_env("indexer".to_string())?;
 
     let db_conn = database::connect::connect(&cfg.database.url).await?;
     info!("Connected to Indexer's DB");
@@ -46,8 +46,6 @@ async fn main() -> Result<()> {
     let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db)).await?;
     let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db)).await?;
     let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await?;
-
-
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");

@@ -2419,6 +2419,7 @@ dependencies = [
  "api-lib",
  "common",
  "da",
+ "database",
  "eyre",
  "pre-commit-hooks",
  "sea-orm-cli",

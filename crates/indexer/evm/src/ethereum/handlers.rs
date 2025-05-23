@@ -47,6 +47,7 @@ impl EvmEventHandler for EthereumEventHandler {
         })?;
         let block_number = log.block_number.unwrap();
 
+
         match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
                 let processed = self.handle_queue_deposit_txn(log).await;
@@ -184,7 +185,7 @@ impl EthereumEventHandler {
             created_at: Set(decoded.timestamp.into()),
         };
 
-        let _ = self.db_client.insert_l1_deposits(model).await?;
+        // let _ = self.db_client.insert_l1_deposits(model).await?;
 
         Ok(())
     }

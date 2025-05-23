@@ -8,7 +8,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, DatabaseTransaction, EntityTrait, InsertResult, QueryFilter, TransactionTrait,
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
 };
 use tracing::error;
 

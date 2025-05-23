@@ -3,13 +3,13 @@ use dotenv::dotenv;
 use eyre::Result;
 use serde::{de::DeserializeOwned, Deserialize};
 
-fn config_from_env<T: DeserializeOwned>() -> Result<T> {
+fn config_from_env<T: DeserializeOwned>(service: String) -> Result<T> {
     dotenv().ok();
     Config::builder()
         // .add_source(File::with_name("config.yaml").required(true))
         .add_source(
             config::Environment::default()
-                .prefix("INDEXER")
+                .prefix(&service.to_uppercase())
                 .separator("__")
                 .list_separator(","),
         )
@@ -19,8 +19,8 @@ fn config_from_env<T: DeserializeOwned>() -> Result<T> {
 }
 
 pub trait LoadFromEnv: Sized + DeserializeOwned {
-    fn from_env() -> Result<Self> {
-        config_from_env()
+    fn from_env(service: String) -> Result<Self> {
+        config_from_env(service)
     }
 }
 

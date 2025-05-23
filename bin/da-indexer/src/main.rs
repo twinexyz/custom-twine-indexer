@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use common::{
-    config::{self, LoadFromEnv as _},
-    db,
-};
+use common::config::{self, LoadFromEnv as _};
 use da::{celestia::provider::CelestiaProvider, db::DbClient};
 use eyre::{Ok, Result};
 use tracing::info;
@@ -12,9 +9,9 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let cfg = config::DAConfig::from_env()?;
+    let cfg = config::DaIndexerConfig::from_env("da_indexer".to_string())?;
 
-    let db_conn = db::connect(&cfg.blockscout_database_url).await?;
+    let db_conn = database::connect::connect(&cfg.blockscout.url).await?;
     info!("Connected to Blockscout's DB");
 
     let db_client = DbClient::new(&db_conn);
