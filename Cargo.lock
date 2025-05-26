@@ -2525,6 +2525,7 @@ dependencies = [
  "eyre",
  "sea-orm",
  "serde",
+ "tokio",
  "tracing",
 ]
 

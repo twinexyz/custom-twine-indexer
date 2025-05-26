@@ -14,6 +14,7 @@ use database::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
         twine_transaction_batch, twine_transaction_batch_detail,
     },
+    DbOperations,
 };
 use eyre::Result;
 use num_traits::FromPrimitive;
@@ -41,38 +42,49 @@ pub struct EthereumEventHandler {
 #[async_trait]
 impl EvmEventHandler for EthereumEventHandler {
     #[instrument(skip_all, fields(CHAIN = "Ethereum"))]
-    async fn handle_event(&self, log: Log) -> eyre::Result<()> {
+    async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
         let sig = log.topic0().ok_or(ParserError::UnknownEvent {
             signature: B256::ZERO,
         })?;
         let block_number = log.block_number.unwrap();
 
+        let mut operations = Vec::new();
+
         match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
-                self.handle_queue_deposit_txn(log).await?
+                let operation = self.handle_queue_deposit_txn(log).await?;
+                operations.push(operation);
             }
             L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
-                self.handle_queue_withdrawal_txn(log).await?
+                let operation = self.handle_queue_withdrawal_txn(log).await?;
+                operations.push(operation);
             }
-            FinalizeWithdrawERC20::SIGNATURE_HASH => self.handle_finalize_withdraw(log).await?,
+            FinalizeWithdrawERC20::SIGNATURE_HASH => {
+                let operation = self.handle_finalize_withdraw(log).await?;
+                operations.push(operation);
+            }
 
-            FinalizeWithdrawETH::SIGNATURE_HASH => self.handle_finalize_withdraw_eth(log).await?,
+            FinalizeWithdrawETH::SIGNATURE_HASH => {
+                let operation = self.handle_finalize_withdraw_eth(log).await?;
+                operations.push(operation);
+            }
 
-            CommitBatch::SIGNATURE_HASH => self.handle_commit_batch(log).await?,
+            CommitBatch::SIGNATURE_HASH => {
+                let operation = self.handle_commit_batch(log).await?;
+                operations.push(operation);
+            }
 
-            FinalizedBatch::SIGNATURE_HASH => self.handle_finalize_batch(log).await?,
+            FinalizedBatch::SIGNATURE_HASH => {
+                if let Some(operation) = self.handle_finalize_batch(log).await? {
+                    operations.push(operation);
+                }
+            }
             other => {
                 error!("Unknown event to handle")
             }
         }
 
-        //if proccessd block number exists or greater than 0, update last synced table
-
-        info!("Proccessed block: {}", block_number);
-
-        self.db_client
-            .upsert_last_synced(self.chain_id as i64, block_number as i64)
-            .await
+        Ok(operations)
     }
 
     fn chain_id(&self) -> u64 {
@@ -153,7 +165,7 @@ impl EthereumEventHandler {
     }
 
     // All the logs handlers are here
-    async fn handle_queue_deposit_txn(&self, log: Log) -> Result<()> {
+    async fn handle_queue_deposit_txn(&self, log: Log) -> Result<DbOperations> {
         let decoded = self.extract_log::<L1MessageQueue::QueueDepositTransaction>(
             log.clone(),
             L1MessageQueue::QueueDepositTransaction::SIGNATURE,
@@ -174,12 +186,14 @@ impl EthereumEventHandler {
             created_at: Set(decoded.timestamp.into()),
         };
 
+        let operation = DbOperations::L1Deposits(model);
+
         // let _ = self.db_client.insert_l1_deposits(model).await?;
 
-        Ok(())
+        Ok(operation)
     }
 
-    async fn handle_queue_withdrawal_txn(&self, log: Log) -> Result<()> {
+    async fn handle_queue_withdrawal_txn(&self, log: Log) -> Result<DbOperations> {
         let decoded = self.extract_log::<L1MessageQueue::QueueWithdrawalTransaction>(
             log.clone(),
             L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
@@ -199,12 +213,14 @@ impl EthereumEventHandler {
             created_at: Set(decoded.timestamp.into()),
         };
 
-        let _ = self.db_client.insert_l1_withdraw(model).await?;
+        let operation = DbOperations::L1Withdraw(model);
 
-        Ok(())
+        // let _ = self.db_client.insert_l1_withdraw(model).await?;
+
+        Ok(operation)
     }
 
-    async fn handle_finalize_withdraw(&self, log: Log) -> Result<()> {
+    async fn handle_finalize_withdraw(&self, log: Log) -> Result<DbOperations> {
         let decoded = self
             .extract_log::<FinalizeWithdrawERC20>(log.clone(), FinalizeWithdrawERC20::SIGNATURE)?;
         let data = decoded.data;
@@ -217,12 +233,12 @@ impl EthereumEventHandler {
             tx_hash: Set(decoded.tx_hash_str.clone()),
             created_at: Set(decoded.timestamp.into()),
         };
-        let _ = self.db_client.insert_l2_withdraw(model).await?;
-
-        Ok(())
+        // let _ = self.db_client.insert_l2_withdraw(model).await?;
+        let operation = DbOperations::L2Withdraw(model);
+        Ok(operation)
     }
 
-    async fn handle_finalize_withdraw_eth(&self, log: Log) -> Result<()> {
+    async fn handle_finalize_withdraw_eth(&self, log: Log) -> Result<DbOperations> {
         let decoded =
             self.extract_log::<FinalizeWithdrawETH>(log.clone(), FinalizeWithdrawETH::SIGNATURE)?;
         let data = decoded.data;
@@ -234,12 +250,13 @@ impl EthereumEventHandler {
             tx_hash: Set(decoded.tx_hash_str.clone()),
             created_at: Set(decoded.timestamp.into()),
         };
-        let _ = self.db_client.insert_l2_withdraw(model).await?;
+        // let _ = self.db_client.insert_l2_withdraw(model).await?;
 
-        Ok(())
+        let operation = DbOperations::L2Withdraw(model);
+        Ok(operation)
     }
 
-    async fn handle_commit_batch(&self, log: Log) -> Result<()> {
+    async fn handle_commit_batch(&self, log: Log) -> Result<DbOperations> {
         let decoded = self.extract_log::<CommitBatch>(log.clone(), CommitBatch::SIGNATURE)?;
 
         let data = decoded.data;
@@ -308,15 +325,22 @@ impl EthereumEventHandler {
             }
         }
 
-        let _ = self
-            .db_client
-            .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
-            .await;
+        // let _ = self
+        //     .db_client
+        //     .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
+        //     .await;
 
-        Ok(())
+        let operation = DbOperations::CommitBatch {
+            batch: batch_model,
+            details: detail_model,
+            blocks: l2_blocks,
+            transactions: l2_txs,
+        };
+
+        Ok(operation)
     }
 
-    async fn handle_finalize_batch(&self, log: Log) -> Result<()> {
+    async fn handle_finalize_batch(&self, log: Log) -> Result<Option<DbOperations>> {
         let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
         let start_block = decoded.data.startBlock as i64;
         let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
@@ -331,12 +355,17 @@ impl EthereumEventHandler {
             active_existing.finalize_transaction_hash = Set(Some(tx_hash_bytes));
 
             // Apply the finalize_batch update
-            self.db_client.finalize_batch(active_existing).await?;
+            // self.db_client.finalize_batch(active_existing).await?;
+
+            let operation = DbOperations::FinalizeBatch {
+                details: active_existing,
+            };
+
+            Ok(Some(operation))
         } else {
             warn!("Finalize Event indexed before commitment. Skipping");
+            Ok(None)
         }
-
-        Ok(())
     }
 }
 

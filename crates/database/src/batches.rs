@@ -109,6 +109,27 @@ impl DbClient {
         Ok(())
     }
 
+    pub async fn bulk_insert_twine_transaction_batch(
+        &self,
+        models: Vec<twine_transaction_batch::ActiveModel>,
+        txn: &DatabaseTransaction,
+    ) -> Result<()> {
+        let _ = twine_transaction_batch::Entity::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([twine_transaction_batch::Column::Number])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec(txn)
+            .await
+            .map_err(|e| {
+                error!("Failed to insert batch: {:?}", e);
+                eyre::eyre!("Failed to insert batch: {:?}", e)
+            })?;
+
+        Ok(())
+    }
+
     pub async fn bulk_insert_twine_l2_blocks(
         &self,
         models: Vec<twine_batch_l2_blocks::ActiveModel>,
@@ -157,6 +178,32 @@ impl DbClient {
         txn: &DatabaseTransaction,
     ) -> Result<()> {
         let _ = twine_transaction_batch_detail::Entity::insert(model)
+            .on_conflict(
+                OnConflict::columns([
+                    twine_transaction_batch_detail::Column::BatchNumber,
+                    twine_transaction_batch_detail::Column::ChainId,
+                ])
+                .update_columns([
+                    twine_transaction_batch_detail::Column::CommitTransactionHash,
+                    twine_transaction_batch_detail::Column::FinalizeTransactionHash,
+                ])
+                .to_owned(),
+            )
+            .exec(txn)
+            .await
+            .map_err(|e| {
+                error!("Failed to insert twine txn batch details: {:?}", e);
+                eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
+            })?;
+        Ok(())
+    }
+
+    pub async fn bulk_insert_twine_transaction_batch_detail(
+        &self,
+        model: Vec<twine_transaction_batch_detail::ActiveModel>,
+        txn: &DatabaseTransaction,
+    ) -> Result<()> {
+        let _ = twine_transaction_batch_detail::Entity::insert_many(model)
             .on_conflict(
                 OnConflict::columns([
                     twine_transaction_batch_detail::Column::BatchNumber,

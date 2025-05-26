@@ -49,8 +49,16 @@ impl EvmProvider {
         &self,
         addresses: &[alloy::primitives::Address],
         topics: &[&str],
+        from_block: Option<u64>,
     ) -> eyre::Result<impl Stream<Item = Log>> {
-        let filter = Filter::new().address(addresses.to_vec()).events(topics);
+
+
+
+        let mut filter = Filter::new().address(addresses.to_vec()).events(topics);
+
+        if let Some(from_block) = from_block {
+            filter = filter.from_block(from_block);
+        }
 
         let stream = self
             .ws

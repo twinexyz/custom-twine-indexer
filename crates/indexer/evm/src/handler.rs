@@ -8,7 +8,7 @@ use alloy::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::ChainConfig;
-use database::client::DbClient;
+use database::{client::DbClient, DbOperations};
 use eyre::Result;
 
 use crate::error::ParserError;
@@ -73,5 +73,5 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
         })
     }
 
-    async fn handle_event(&self, log: Log) -> Result<()>;
+    async fn handle_event(&self, log: Log) -> Result<Vec<DbOperations>>;
 }

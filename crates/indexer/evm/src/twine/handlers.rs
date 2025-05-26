@@ -12,9 +12,9 @@ use database::{
     client::DbClient,
     entities::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw,
-        twine_l2_withdraw, twine_transaction_batch,
-        twine_transaction_batch_detail,
+        twine_l2_withdraw, twine_transaction_batch, twine_transaction_batch_detail,
     },
+    DbOperations,
 };
 use eyre::Result;
 use sea_orm::{sqlx::types::uuid::timestamp, ActiveValue::Set};
@@ -156,22 +156,25 @@ impl TwineEventHandler {
 
 #[async_trait]
 impl EvmEventHandler for TwineEventHandler {
-    
-    async fn handle_event(&self, log: Log) -> eyre::Result<()> {
-        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-            signature: B256::ZERO,
-        })?;
+    async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
+        // let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+        //     signature: B256::ZERO,
+        // })?;
 
-        match *sig {
-            L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
-                self.handle_ethereum_transactions_handled(log).await
-            }
-            L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
-                self.handle_solana_transactions_handled(log).await
-            }
-            L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
-            other => Err(ParserError::UnknownEvent { signature: other }.into()),
-        }
+        // match *sig {
+        //     L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
+        //         self.handle_ethereum_transactions_handled(log).await
+        //     }
+        //     L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
+        //         self.handle_solana_transactions_handled(log).await
+        //     }
+        //     L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
+        //     other => Err(ParserError::UnknownEvent { signature: other }.into()),
+        // }
+
+        let operations: Vec<DbOperations> = Vec::new();
+
+        Ok(operations)
     }
 
     fn chain_id(&self) -> u64 {
