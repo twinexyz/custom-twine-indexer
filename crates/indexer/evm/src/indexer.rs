@@ -48,7 +48,7 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
         let initial_block = self.initialize_state().await?;
 
         match self.sync_historical(initial_block).await {
-            Ok(current_block) => {
+            Ok(()) => {
                 info!("Historical sync completed successfully");
                 self.sync_live().await?;
             }
@@ -75,6 +75,8 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
         let current_block = self.provider.get_block_number().await?;
         let mut start_block = from;
 
+        let mut reconnect_attempt = 0;
+
         if start_block >= current_block {
             info!(
                 "Historical sync caught up to block {}. Switching to live or sleeping.",
@@ -91,7 +93,7 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
 
             info!("Indexer lags by {} blocks", current_block - end_block);
 
-            let logs = self
+            match self
                 .provider
                 .get_logs(
                     &self.handler.relevant_addresses(),
@@ -99,38 +101,55 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
                     start_block,
                     end_block,
                 )
-                .await?;
-
-            if logs.is_empty() {
-                info!(
-                    "No relevant logs found in blocks {} to {}",
-                    start_block, end_block
-                );
-            } else {
-                info!(
-                    "Processing {} logs from blocks {} to {}",
-                    logs.len(),
-                    start_block,
-                    end_block
-                );
-
-                match self.process_logs(logs, end_block).await {
-                    Ok(_) => {
+                .await
+            {
+                Ok(logs) => {
+                    if logs.is_empty() {
                         info!(
-                            "Successfully processed and persisted logs for blocks {} to {}",
+                            "No relevant logs found in blocks {} to {}",
                             start_block, end_block
                         );
+                    } else {
+                        info!(
+                            "Processing {} logs from blocks {} to {}",
+                            logs.len(),
+                            start_block,
+                            end_block
+                        );
+
+                        match self.process_logs(logs, end_block).await {
+                            Ok(_) => {
+                                info!(
+                                    "Successfully processed and persisted logs for blocks {} to {}",
+                                    start_block, end_block
+                                );
+                            }
+                            Err(e) => {
+                                error!("Error processing batch for blocks {} to {}: {:?}. Will retry this batch.", start_block, end_block, e);
+                                // Implement retry logic with backoff, or halt if unrecoverable
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                continue; // Retry the same batch
+                            }
+                        }
                     }
-                    Err(e) => {
-                        error!("Error processing batch for blocks {} to {}: {:?}. Will retry this batch.", start_block, end_block, e);
-                        // Implement retry logic with backoff, or halt if unrecoverable
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue; // Retry the same batch
-                    }
+
+                    start_block = end_block + 1;
+                }
+
+                Err(e) => {
+                    reconnect_attempt += 1;
+
+                    error!(
+                        "Error while getting logs from {:?} to {:?}",
+                        start_block, end_block
+                    );
+
+                    let delay = Duration::from_secs(5);
+
+                    tokio::time::sleep(delay * 2u32.pow(reconnect_attempt)).await;
+                    continue; // Retry the same batch
                 }
             }
-
-            start_block = end_block + 1;
         }
         Ok(())
     }
@@ -183,7 +202,6 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
                                         if buffer.len() >= MAX_BATCH_SIZE  {
                                             self.process_buffer(&mut buffer, max_seen_block).await?;
                                             last_flush = Instant::now();
-                                            max_seen_block = 0;
                                         }
 
                                     }
@@ -212,7 +230,7 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
                         "Error subscribing to logs: {:?}. Reconnect attemp:{:?}, Retrying in {:?}",
                         e, reconnect_attempts, delay
                     );
-                    tokio::time::sleep(delay).await;
+                    tokio::time::sleep(delay * 2u32.pow(reconnect_attempts)).await;
                 }
             }
         }
@@ -252,18 +270,19 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
         }
 
         let mut prepared_event_data_results = Vec::new();
+        let mut batch_had_errors = false;
         while let Some(task_result) = prepare_tasks.join_next().await {
             match task_result {
-                Ok(Ok(task)) => prepared_event_data_results.push(Ok(task)),
+                Ok(Ok(task)) => prepared_event_data_results.push(task),
 
                 Ok(Err(parser_error)) => {
                     // Log individual parser error, decide if it's critical
+
+                    batch_had_errors = true;
                     error!(
                         "Event parsing failed: {:?}. Storing as error.",
                         parser_error
                     );
-
-                    prepared_event_data_results.push(Err(parser_error));
                 }
 
                 Err(join_error) => {
@@ -280,30 +299,25 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
             }
         }
 
-        let successful_prepared_data: Vec<Vec<DbOperations>> = prepared_event_data_results
-            .into_iter()
-            .filter_map(|res| {
-                if res.is_err() {
-                    // Log and skip, or collect for dead-letter queue
-                    info!("Error preparing")
-                }
-                res.ok()
-            })
-            .collect();
+        if batch_had_errors {
+            return Err(eyre!(
+                "One or more events failed parsing in the batch. See logs for details."
+            ));
+        }
 
-        if successful_prepared_data.is_empty() {
-            info!("No successfully prepared event data to persist ");
+        if prepared_event_data_results.is_empty() {
+            info!("No successfully prepared event data to process ");
             return Ok(());
         }
 
         info!(
             "Successfully prepared events: {}",
-            successful_prepared_data.len()
+            prepared_event_data_results.len()
         );
 
         match self
             .db
-            .process_bulk_l1_database_operations(successful_prepared_data)
+            .process_bulk_l1_database_operations(prepared_event_data_results)
             .await
         {
             Ok(_) => {
