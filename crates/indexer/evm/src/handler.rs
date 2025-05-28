@@ -41,9 +41,6 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
         log: Log,
         event_name: &'static str,
     ) -> Result<LogContext<T>, ParserError> {
-
-        info!("Received log for {}: {:?}", event_name, log);
-
         let tx_hash = log
             .transaction_hash
             .ok_or(ParserError::MissingTransactionHash)?;
@@ -55,10 +52,10 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
             .block_timestamp
             .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
             .unwrap_or_else(|| {
-                tracing::warn!(
-                    "Missing or invalid block timestamp in {}. Using now.",
-                    event_name
-                );
+                // tracing::warn!(
+                //     "Missing or invalid block timestamp in {}. Using now.",
+                //     event_name
+                // );
                 Utc::now()
             });
 

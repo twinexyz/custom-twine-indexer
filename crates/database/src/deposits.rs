@@ -84,11 +84,11 @@ impl DbClient {
         }
 
         let response = l1_deposit::Entity::insert_many(models)
-            // .on_conflict(
-            //     OnConflict::columns([l1_deposit::Column::Nonce, l1_deposit::Column::ChainId])
-            //         .do_nothing()
-            //         .to_owned(),
-            // )
+            .on_conflict(
+                OnConflict::columns([l1_deposit::Column::Nonce, l1_deposit::Column::ChainId])
+                    .do_nothing()
+                    .to_owned(),
+            )
             .exec_with_returning_many(txn)
             .await?;
 

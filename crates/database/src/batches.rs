@@ -51,14 +51,6 @@ impl DbClient {
             self.insert_twine_transaction_batch(batch_model, &txn)
                 .await
                 .context("Failed to insert twine transaction batch")?;
-
-            // self.bulk_insert_twine_l2_blocks(l2_blocks_model, &txn)
-            //     .await
-            //     .context("Failed to insert L2 blocks")?;
-
-            // self.bulk_insert_twine_l2_transactions(l2_txns_model, &txn)
-            //     .await
-            //     .context("Failed to insert L2 transactions")?;
         }
 
         //Now it's time to insert batch details table
@@ -97,7 +89,7 @@ impl DbClient {
                     .do_nothing()
                     .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|e| {
                 error!("Failed to insert batch: {:?}", e);
@@ -118,7 +110,7 @@ impl DbClient {
                     .do_nothing()
                     .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|e| {
                 error!("Failed to insert batch: {:?}", e);
@@ -128,8 +120,6 @@ impl DbClient {
         Ok(())
     }
 
-
-    
     pub async fn insert_twine_transaction_batch_detail(
         &self,
         model: twine_transaction_batch_detail::ActiveModel,
@@ -147,7 +137,7 @@ impl DbClient {
                 ])
                 .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|e| {
                 error!("Failed to insert twine txn batch details: {:?}", e);
@@ -173,7 +163,7 @@ impl DbClient {
                 ])
                 .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|e| {
                 error!("Failed to insert twine txn batch details: {:?}", e);
@@ -194,7 +184,7 @@ impl DbClient {
                     Expr::value(tx_hash),
                 )
                 .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
-                .exec(txn)
+                .exec_with_returning(txn)
                 .await
                 .map_err(|e| {
                     error!("Failed to update twine txn batch details: {:?}", e);

@@ -89,9 +89,12 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
         while start_block < current_block {
             let end_block = (start_block + self.config.block_sync_batch_size).min(current_block);
 
-            info!("Fetching logs for blocks {} to {}", start_block, end_block);
-
-            info!("Indexer lags by {} blocks", current_block - end_block);
+            info!(
+                "Missing blocks: {} and Fetching logs for blocks {} to {}",
+                current_block - start_block,
+                start_block,
+                end_block
+            );
 
             match self
                 .provider
