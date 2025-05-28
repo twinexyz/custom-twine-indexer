@@ -3,6 +3,8 @@ use std::{
     time::Duration,
 };
 
+use chrono::{DateTime, Utc};
+use eyre::eyre;
 use futures_util::{Stream, StreamExt};
 use serde_json::json;
 use solana_client::{
@@ -21,7 +23,9 @@ use solana_transaction_status_client_types::{
 };
 use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::error;
+use tracing::{error, info};
+
+use crate::parser::{extract_log, FoundEvent};
 
 #[derive(Clone)]
 pub struct SvmProvider {
@@ -129,6 +133,82 @@ impl SvmProvider {
             .get_transaction_with_config(signature, config)
             .await
             .map_err(Into::into)
+    }
+
+    pub async fn get_logs(
+        &self,
+        programs: Vec<Pubkey>,
+        from: u64,
+        to: u64,
+    ) -> eyre::Result<Vec<FoundEvent>> {
+        let mut all_found_events = Vec::new();
+
+        for program in programs {
+            let signatures = self
+                .get_signature_for_address(&program, from, to, 1000)
+                .await?;
+
+            for sig in signatures {
+                let signature_str = &sig.signature;
+                let signature: Signature = match signature_str.parse() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!(
+                            "Failed to parse signature string '{}': {}",
+                            signature_str, e
+                        );
+                        continue; // Skip this signature
+                    }
+                };
+
+                match self.get_transaction(&signature).await {
+                    Ok(tx_with_meta) => {
+                        let current_slot = tx_with_meta.slot;
+                        let block_time = tx_with_meta.block_time;
+
+                        let timestamp = block_time
+                            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
+                            .unwrap_or_else(|| {
+                                // tracing::warn!(
+                                //     "Missing or invalid block timestamp in {}. Using now.",
+                                //     event_name
+                                // );
+                                Utc::now()
+                            });
+
+                        if let Some(meta) = tx_with_meta.transaction.meta {
+                            let logs_messages = meta.log_messages.ok_or_else(|| {
+                                eyre::eyre!(
+                                    "Log messages missing in transaction meta for slot {}",
+                                    current_slot
+                                )
+                            })?;
+
+                            if let Some(metadata) = extract_log(&logs_messages) {
+                                let found_event = FoundEvent {
+                                    event_type: metadata.event_type,
+                                    transaction_signature: signature_str.clone(),
+                                    slot: current_slot,
+                                    timestamp,
+                                    encoded_data: metadata.encoded_data,
+                                };
+                                all_found_events.push(found_event);
+                            }
+                        } else {
+                            info!("No meta in transaction for tx: {}", signature_str);
+                        }
+                    }
+
+                    Err(e) => {
+                        return Err(eyre!("Erorr while fetching the transaction from signature"))
+                    }
+                }
+            }
+        }
+
+        all_found_events.sort_by_key(|event| event.slot);
+
+        Ok(all_found_events)
     }
 
     pub async fn subscribe_logs(

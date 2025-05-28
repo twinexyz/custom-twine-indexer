@@ -27,21 +27,13 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
     CommitBatch, DepositSuccessful, FinalizeNativeWithdrawal, FinalizeSplWithdrawal,
-    FinalizedBatch, ForcedWithdrawSuccessful, SolanaEvents,
+    FinalizedBatch, ForcedWithdrawSuccessful, FoundEvent, SolanaEvents,
 };
 
 pub struct SolanaEventHandler {
     db_client: Arc<DbClient>,
     config: SvmConfig,
     twine_provider: EvmProvider,
-}
-
-pub struct LogContext {
-    pub tx_hash_str: String,
-    // pub block_number: i64,
-    pub timestamp: DateTime<Utc>,
-    pub event_type: SolanaEvents,
-    pub encoded_data: String,
 }
 
 pub struct LogProcessed {
@@ -74,52 +66,38 @@ impl SolanaEventHandler {
     }
 
     #[instrument(skip_all, fields(CHAIN = %self.chain_id()))]
-    pub async fn handle_event(
-        &self,
-        logs: &[String],
-        signature: Option<String>,
-    ) -> eyre::Result<Vec<DbOperations>> {
-        let Some(parsed) = self.extract_log(&logs, signature) else {
-            info!("No parsable event found in logs");
-            return Ok(vec![]);
-        };
 
-        info!(
-            "Event received: {} for slot: {}",
-            parsed.event_type.as_str(),
-            parsed.tx_hash_str
-        );
-
+    pub async fn handle_event(&self, log: FoundEvent) -> eyre::Result<Vec<DbOperations>> {
         let mut slot_number = 0;
         let mut operations = Vec::new();
 
-        match parsed.event_type {
+        match log.event_type {
             SolanaEvents::SplDeposit | SolanaEvents::NativeDeposit => {
-                let operation = self.handle_deposit(parsed).await?;
+                let operation = self.handle_deposit(log).await?;
                 operations.push(operation);
             }
 
             SolanaEvents::NativeWithdrawal | SolanaEvents::SplWithdrawal => {
-                let operation = self.handle_withdrawal(parsed).await?;
+                let operation = self.handle_withdrawal(log).await?;
                 operations.push(operation);
             }
             SolanaEvents::FinalizeSplWithdrawal => {
-                let operation = self.handle_finalize_spl_withdraw(parsed).await?;
+                let operation = self.handle_finalize_spl_withdraw(log).await?;
                 operations.push(operation);
             }
 
             SolanaEvents::FinalizeNativeWithdrawal => {
-                let operation = self.handle_finalize_native_withdraw(parsed).await?;
+                let operation = self.handle_finalize_native_withdraw(log).await?;
                 operations.push(operation);
             }
 
             SolanaEvents::CommitBatch => {
-                let operation = self.handle_commit_batch(parsed).await?;
+                let operation = self.handle_commit_batch(log).await?;
                 operations.push(operation);
             }
 
             SolanaEvents::FinalizeBatch => {
-                let operation = self.handle_finalize_batch(parsed).await?;
+                let operation = self.handle_finalize_batch(log).await?;
                 operations.push(operation);
             }
 
@@ -133,8 +111,8 @@ impl SolanaEventHandler {
         Ok(operations)
     }
 
-    async fn handle_deposit(&self, parsed: LogContext) -> eyre::Result<DbOperations> {
-        let deposit = self.parse_borsh::<DepositSuccessful>(&parsed.encoded_data)?;
+    async fn handle_deposit(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+        let deposit = parsed.parse_borsh::<DepositSuccessful>()?;
 
         let model = l1_deposit::ActiveModel {
             nonce: Set(deposit.nonce as i64),
@@ -145,7 +123,7 @@ impl SolanaEventHandler {
             to_twine_address: Set(deposit.to_twine_address),
             l1_token: Set(deposit.l1_token),
             l2_token: Set(deposit.l2_token),
-            tx_hash: Set(parsed.tx_hash_str),
+            tx_hash: Set(parsed.transaction_signature),
             amount: Set(deposit.amount),
             created_at: Set(parsed.timestamp.into()),
         };
@@ -157,8 +135,8 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_withdrawal(&self, parsed: LogContext) -> eyre::Result<DbOperations> {
-        let withdrawal = self.parse_borsh::<ForcedWithdrawSuccessful>(&parsed.encoded_data)?;
+    async fn handle_withdrawal(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+        let withdrawal = parsed.parse_borsh::<ForcedWithdrawSuccessful>()?;
         let model = l1_withdraw::ActiveModel {
             nonce: Set(withdrawal.nonce as i64),
             chain_id: Set(withdrawal.chain_id as i64),
@@ -168,7 +146,7 @@ impl SolanaEventHandler {
             to_twine_address: Set(withdrawal.to_l1_pub_key),
             l1_token: Set(withdrawal.l1_token),
             l2_token: Set(withdrawal.l2_token),
-            tx_hash: Set(parsed.tx_hash_str),
+            tx_hash: Set(parsed.transaction_signature),
             amount: Set(withdrawal.amount),
             created_at: Set(parsed.timestamp.into()),
         };
@@ -180,9 +158,9 @@ impl SolanaEventHandler {
 
     async fn handle_finalize_native_withdraw(
         &self,
-        parsed_log: LogContext,
+        parsed: FoundEvent,
     ) -> eyre::Result<DbOperations> {
-        let native = self.parse_borsh::<FinalizeNativeWithdrawal>(&parsed_log.encoded_data)?;
+        let native = parsed.parse_borsh::<FinalizeNativeWithdrawal>()?;
 
         let model = l2_withdraw::ActiveModel {
             nonce: Set(native.nonce as i64),
@@ -190,18 +168,15 @@ impl SolanaEventHandler {
             block_number: Set(None),
             slot_number: Set(Some(native.slot_number as i64)),
             tx_hash: Set(native.signature),
-            created_at: Set(parsed_log.timestamp.into()),
+            created_at: Set(parsed.timestamp.into()),
         };
 
         let operation = DbOperations::L2Withdraw(model);
         Ok(operation)
     }
 
-    async fn handle_finalize_spl_withdraw(
-        &self,
-        parsed_log: LogContext,
-    ) -> eyre::Result<DbOperations> {
-        let spl = self.parse_borsh::<FinalizeSplWithdrawal>(&parsed_log.encoded_data)?;
+    async fn handle_finalize_spl_withdraw(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+        let spl = parsed.parse_borsh::<FinalizeSplWithdrawal>()?;
 
         let model = l2_withdraw::ActiveModel {
             nonce: Set(spl.nonce as i64),
@@ -209,15 +184,15 @@ impl SolanaEventHandler {
             block_number: Set(None),
             slot_number: Set(Some(spl.slot_number as i64)),
             tx_hash: Set(spl.signature),
-            created_at: Set(parsed_log.timestamp.into()),
+            created_at: Set(parsed.timestamp.into()),
         };
 
         let operation = DbOperations::L2Withdraw(model);
         Ok(operation)
     }
 
-    async fn handle_commit_batch(&self, parsed_log: LogContext) -> eyre::Result<DbOperations> {
-        let commit = self.parse_borsh::<CommitBatch>(&parsed_log.encoded_data)?;
+    async fn handle_commit_batch(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+        let commit = parsed.parse_borsh::<CommitBatch>()?;
 
         let start_block = commit.start_block;
         let end_block = commit.end_block;
@@ -227,7 +202,7 @@ impl SolanaEventHandler {
         //Build batch model
         let batch_model = twine_transaction_batch::ActiveModel {
             number: Set(start_block as i64),
-            timestamp: Set(parsed_log.timestamp.naive_utc()),
+            timestamp: Set(parsed.timestamp.naive_utc()),
             start_block: Set(start_block as i64),
             end_block: Set(end_block as i64),
             root_hash: Set(root_hash),
@@ -241,7 +216,7 @@ impl SolanaEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-            commit_transaction_hash: Set(Some(parsed_log.tx_hash_str.clone().into_bytes())),
+            commit_transaction_hash: Set(Some(parsed.transaction_signature.clone().into_bytes())),
             finalize_transaction_hash: Set(None),
             ..Default::default()
         };
@@ -311,110 +286,27 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_finalize_batch(&self, parsed_log: LogContext) -> eyre::Result<DbOperations> {
-        let finalize = self.parse_borsh::<FinalizedBatch>(&parsed_log.encoded_data)?;
+    async fn handle_finalize_batch(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+        let finalize = parsed.parse_borsh::<FinalizedBatch>()?;
 
         let start_block = finalize.start_block;
         let end_block = finalize.end_block;
         let root_hash = vec![0u8; 32];
 
         Ok(DbOperations::FinalizeBatch {
-            finalize_hash: parsed_log.tx_hash_str.into_bytes(),
+            finalize_hash: parsed.transaction_signature.into_bytes(),
             batch_number: start_block as i64,
         })
     }
+}
 
-    fn parse_borsh<T: BorshDeserialize>(&self, encoded_data: &str) -> eyre::Result<T> {
-        debug!("Parsing Borsh data: encoded_data = {}", encoded_data);
-
-        let decoded_data = general_purpose::STANDARD
-            .decode(encoded_data)
-            .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
-
-        let data_with_discriminator = if decoded_data.len() >= 8 {
-            &decoded_data[8..]
-        } else {
-            &decoded_data[..]
-        };
-
-        let mut event = match T::try_from_slice(data_with_discriminator) {
-            Ok(event) => event,
-            Err(_) => T::try_from_slice(&decoded_data)
-                .map_err(|e| eyre::eyre!("Failed to deserialize Borsh data: {}", e))?,
-        };
-
-        Ok(event)
-    }
-
-    fn extract_log(&self, logs: &[String], signature: Option<String>) -> Option<LogContext> {
-        debug!("Parsing logs: {:?}", logs);
-
-        let mut event_type = None;
-        let mut encoded_data = None;
-
-        for log in logs {
-            match log.as_str() {
-                "Program log: Instruction: NativeTokenDeposit" => {
-                    event_type = Some(SolanaEvents::NativeDeposit)
-                }
-                "Program log: Instruction: SplTokensDeposit" => {
-                    event_type = Some(SolanaEvents::SplDeposit)
-                }
-                "Program log: Instruction: ForcedNativeTokenWithdrawal" => {
-                    event_type = Some(SolanaEvents::NativeWithdrawal)
-                }
-                "Program log: Instruction: ForcedSplTokenWithdrawal" => {
-                    event_type = Some(SolanaEvents::SplWithdrawal)
-                }
-                "Program log: Instruction: FinalizeNativeWithdrawal" => {
-                    event_type = Some(SolanaEvents::FinalizeNativeWithdrawal)
-                }
-                "Program log: Instruction: FinalizeSplWithdrawal" => {
-                    event_type = Some(SolanaEvents::FinalizeSplWithdrawal)
-                }
-                "Program log: Instruction: CommitBatch" => {
-                    event_type = Some(SolanaEvents::CommitBatch)
-                }
-                "Program log: Instruction: FinalizeBatch" => {
-                    event_type = Some(SolanaEvents::FinalizeBatch)
-                }
-                "Program log: Instruction: CommitAndFinalizeTransaction" => {
-                    event_type = Some(SolanaEvents::CommitAndFinalizeTransaction)
-                }
-                log if log.starts_with("Program data: ") => {
-                    encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
-                }
-                _ => continue,
-            }
+impl Clone for SolanaEventHandler {
+    fn clone(&self) -> Self {
+        Self {
+            // chain_id: self.chain_id,
+            config: self.config.clone(),
+            db_client: self.db_client.clone(),
+            twine_provider: self.twine_provider.clone(),
         }
-
-        let Some(event_type) = event_type else {
-            debug!("No recognized event type found in logs: {:?}", logs);
-            return None;
-        };
-        let Some(encoded_data) = encoded_data else {
-            debug!(
-                "No encoded data found for event {} in logs: {:?}",
-                event_type.as_str(),
-                logs
-            );
-            return None;
-        };
-
-        debug!(
-            "Identified event_type: {}, encoded_data: {}",
-            event_type.as_str(),
-            encoded_data
-        );
-
-        let timestamp = Utc::now();
-        let tx_hash = signature.clone().unwrap_or_default();
-
-        Some(LogContext {
-            tx_hash_str: tx_hash,
-            timestamp: timestamp,
-            event_type: event_type,
-            encoded_data,
-        })
     }
 }

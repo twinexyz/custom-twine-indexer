@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use borsh::{BorshDeserialize, BorshSerialize};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use eyre::Result;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
@@ -9,6 +9,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde::{Deserialize, Serialize};
+use solana_sdk::native_token::Sol;
 use std::env;
 use tracing::{debug, error, info};
 
@@ -114,7 +115,7 @@ pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
     }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug, Serialize, Clone)]
 pub enum SolanaEvents {
     NativeDeposit,
     SplDeposit,
@@ -140,5 +141,110 @@ impl SolanaEvents {
             SolanaEvents::FinalizeBatch => "finalize_batch",
             SolanaEvents::CommitAndFinalizeTransaction => "commit_and_finalize_transaction",
         }
+    }
+}
+
+pub struct LogMetadata {
+    pub event_type: SolanaEvents,
+    pub encoded_data: String,
+}
+
+pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
+    debug!("Parsing logs: {:?}", logs);
+
+    let mut event_type = None;
+    let mut encoded_data = None;
+
+    for log in logs {
+        match log.as_str() {
+            "Program log: Instruction: NativeTokenDeposit" => {
+                event_type = Some(SolanaEvents::NativeDeposit)
+            }
+            "Program log: Instruction: SplTokensDeposit" => {
+                event_type = Some(SolanaEvents::SplDeposit)
+            }
+            "Program log: Instruction: ForcedNativeTokenWithdrawal" => {
+                event_type = Some(SolanaEvents::NativeWithdrawal)
+            }
+            "Program log: Instruction: ForcedSplTokenWithdrawal" => {
+                event_type = Some(SolanaEvents::SplWithdrawal)
+            }
+            "Program log: Instruction: FinalizeNativeWithdrawal" => {
+                event_type = Some(SolanaEvents::FinalizeNativeWithdrawal)
+            }
+            "Program log: Instruction: FinalizeSplWithdrawal" => {
+                event_type = Some(SolanaEvents::FinalizeSplWithdrawal)
+            }
+            "Program log: Instruction: CommitBatch" => event_type = Some(SolanaEvents::CommitBatch),
+            "Program log: Instruction: FinalizeBatch" => {
+                event_type = Some(SolanaEvents::FinalizeBatch)
+            }
+            "Program log: Instruction: CommitAndFinalizeTransaction" => {
+                event_type = Some(SolanaEvents::CommitAndFinalizeTransaction)
+            }
+            log if log.starts_with("Program data: ") => {
+                encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
+            }
+            _ => continue,
+        }
+    }
+
+    let Some(event_type) = event_type else {
+        debug!("No recognized event type found in logs: {:?}", logs);
+        return None;
+    };
+    let Some(encoded_data) = encoded_data else {
+        debug!(
+            "No encoded data found for event {} in logs: {:?}",
+            event_type.as_str(),
+            logs
+        );
+        return None;
+    };
+
+    debug!(
+        "Identified event_type: {}, encoded_data: {}",
+        event_type.as_str(),
+        encoded_data
+    );
+
+    Some(LogMetadata {
+        event_type,
+        encoded_data,
+    })
+}
+
+#[derive(Debug, Serialize, Clone)] // Added Clone for convenience
+pub struct FoundEvent {
+    pub event_type: SolanaEvents, // Storing as string representation of the enum
+    pub transaction_signature: String,
+    pub slot: u64,
+    pub timestamp: DateTime<Utc>,
+    pub encoded_data: String,
+}
+
+impl FoundEvent {
+    pub fn parse_borsh<T: BorshDeserialize>(&self) -> eyre::Result<T> {
+        let encoded_data = &self.encoded_data;
+
+        debug!("Parsing Borsh data: encoded_data = {}", encoded_data);
+
+        let decoded_data = general_purpose::STANDARD
+            .decode(encoded_data)
+            .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
+
+        let data_with_discriminator = if decoded_data.len() >= 8 {
+            &decoded_data[8..]
+        } else {
+            &decoded_data[..]
+        };
+
+        let mut event = match T::try_from_slice(data_with_discriminator) {
+            Ok(event) => event,
+            Err(_) => T::try_from_slice(&decoded_data)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Borsh data: {}", e))?,
+        };
+
+        Ok(event)
     }
 }
