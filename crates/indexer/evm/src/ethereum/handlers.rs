@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::{ChainConfig, EvmConfig};
 use database::{
-    client::DbClient,
-    entities::{
-        l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-        twine_transaction_batch, twine_transaction_batch_detail,
+    blockscout_entities::{
+        blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
     },
+    client::DbClient,
+    entities::{l1_deposit, l1_withdraw, l2_withdraw},
     DbOperations,
 };
 use eyre::Result;
@@ -75,9 +75,8 @@ impl EvmEventHandler for EthereumEventHandler {
             }
 
             FinalizedBatch::SIGNATURE_HASH => {
-                if let Some(operation) = self.handle_finalize_batch(log).await? {
-                    operations.push(operation);
-                }
+                let operation = self.handle_finalize_batch(log).await?;
+                operations.push(operation);
             }
             other => {
                 error!("Unknown event to handle")
@@ -113,44 +112,6 @@ impl EvmEventHandler for EthereumEventHandler {
     }
     fn get_chain_config(&self) -> common::config::ChainConfig {
         self.config.common.clone()
-    }
-
-    fn extract_log<T: SolEvent>(
-        &self,
-        log: Log,
-        event_name: &'static str,
-    ) -> Result<crate::handler::LogContext<T>, ParserError> {
-        let tx_hash = log
-            .transaction_hash
-            .ok_or(ParserError::MissingTransactionHash)?;
-        let tx_hash_str = std::format!("{tx_hash:?}");
-
-        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
-
-        let timestamp = log
-            .block_timestamp
-            .and_then(|ts| DateTime::<Utc>::from_timestamp(ts as i64, 0))
-            .unwrap_or_else(|| {
-                tracing::warn!(
-                    "Missing or invalid block timestamp in {}. Using now.",
-                    event_name
-                );
-                Utc::now()
-            });
-
-        let decoded = log
-            .log_decode::<T>()
-            .map_err(|e| ParserError::DecodeError {
-                event_type: event_name,
-                source: Box::new(e),
-            })?;
-
-        Ok(crate::handler::LogContext {
-            tx_hash_str,
-            block_number,
-            timestamp,
-            data: decoded.inner.data,
-        })
     }
 }
 
@@ -263,6 +224,9 @@ impl EthereumEventHandler {
 
         let start_block = data.startBlock;
         let end_block = data.endBlock;
+
+        let batch_length = data.endBlock - data.startBlock + 1; // as both end block and start block is inclusive
+
         let root_hash = format!("{:?}", data.batchHash);
 
         //Build Batch Model
@@ -300,35 +264,48 @@ impl EthereumEventHandler {
                 info!("Batch already exists so don't need to fetch blocks and transactions");
             }
             None => {
-                info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
+                // info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
 
-                let (blocks, transactions) = self
-                    .twine_provider
-                    .get_blocks_with_transactions(start_block, end_block)
-                    .await?;
+                let blocks = self.db_client.get_blocks(start_block, end_block).await?;
 
-                for block in blocks {
-                    l2_blocks.push(twine_batch_l2_blocks::ActiveModel {
-                        batch_number: Set(start_block as i64),
-                        hash: Set(block.header.hash.to_vec()),
-                        ..Default::default()
-                    });
-                }
+                if blocks.len() != batch_length as usize {
+                    error!(
+                        "Fetched blocks length {:?} mismatched with batch length {:?}",
+                        blocks.len(),
+                        batch_length
+                    );
 
-                for transaction in transactions {
-                    l2_txs.push(twine_batch_l2_transactions::ActiveModel {
-                        batch_number: Set(start_block as i64),
-                        hash: Set(transaction.inner.tx_hash().to_vec()),
-                        ..Default::default()
-                    });
+                    return Err(eyre::eyre!(
+                        "Fetched blocks length {:?} mismatched with batch length {:?}",
+                        blocks.len(),
+                        batch_length
+                    ));
+                } else {
+                    let transactions = self
+                        .db_client
+                        .get_transactions(start_block, end_block)
+                        .await?;
+
+                    l2_blocks = blocks
+                        .into_iter()
+                        .map(|model| {
+                            let mut am = model.into_active_model();
+                            am.batch_number = Set(Some(start_block as i64));
+                            am
+                        })
+                        .collect();
+
+                    l2_txs = transactions
+                        .into_iter()
+                        .map(|model| {
+                            let mut am = model.into_active_model();
+                            am.batch_number = Set(Some(start_block as i64));
+                            am
+                        })
+                        .collect();
                 }
             }
         }
-
-        // let _ = self
-        //     .db_client
-        //     .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
-        //     .await;
 
         let operation = DbOperations::CommitBatch {
             batch: batch_model,
@@ -340,32 +317,19 @@ impl EthereumEventHandler {
         Ok(operation)
     }
 
-    async fn handle_finalize_batch(&self, log: Log) -> Result<Option<DbOperations>> {
+    async fn handle_finalize_batch(&self, log: Log) -> Result<DbOperations> {
         let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
         let start_block = decoded.data.startBlock as i64;
         let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
         let timestamp = decoded.timestamp.naive_utc();
         let chain_id_dec = Decimal::from_i64(self.chain_id as i64).unwrap();
 
-        // Fetch existing batch details once
-        if let Some(existing) = self.db_client.get_batch_details(start_block).await? {
-            // Prepare updated batch detail model using existing values
+        let operation = DbOperations::FinalizeBatch {
+            finalize_hash: tx_hash_bytes,
+            batch_number: start_block,
+        };
 
-            let mut active_existing = existing.into_active_model();
-            active_existing.finalize_transaction_hash = Set(Some(tx_hash_bytes));
-
-            // Apply the finalize_batch update
-            // self.db_client.finalize_batch(active_existing).await?;
-
-            let operation = DbOperations::FinalizeBatch {
-                details: active_existing,
-            };
-
-            Ok(Some(operation))
-        } else {
-            warn!("Finalize Event indexed before commitment. Skipping");
-            Ok(None)
-        }
+        Ok(operation)
     }
 }
 

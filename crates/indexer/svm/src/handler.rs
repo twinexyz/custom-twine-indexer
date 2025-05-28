@@ -5,11 +5,9 @@ use borsh::BorshDeserialize;
 use chrono::{DateTime, Utc};
 use common::config::{ChainConfig, SvmConfig};
 use database::{
-    client::DbClient,
-    entities::{
-        l1_deposit, l1_withdraw, l2_withdraw, twine_batch_l2_blocks, twine_batch_l2_transactions,
-        twine_transaction_batch, twine_transaction_batch_detail,
-    },
+    blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail}, client::DbClient, entities::{
+        l1_deposit, l1_withdraw, l2_withdraw
+    }
 };
 use evm::provider::EvmProvider;
 use eyre::Error;
@@ -259,8 +257,8 @@ impl SolanaEventHandler {
             ..Default::default()
         };
 
-        let mut l2_blocks = Vec::new();
-        let mut l2_txs = Vec::new();
+        // let mut l2_blocks = Vec::new();
+        // let mut l2_txs = Vec::new();
 
         //1. Check if batch already exists
         match self.db_client.get_batch_by_id(start_block as i64).await? {
@@ -277,27 +275,27 @@ impl SolanaEventHandler {
                     .get_blocks_with_transactions(start_block, end_block)
                     .await?;
 
-                for block in blocks {
-                    l2_blocks.push(twine_batch_l2_blocks::ActiveModel {
-                        batch_number: Set(start_block as i64),
-                        hash: Set(block.header.hash.to_vec()),
-                        ..Default::default()
-                    });
-                }
+                // for block in blocks {
+                //     l2_blocks.push(twine_batch_l2_blocks::ActiveModel {
+                //         batch_number: Set(start_block as i64),
+                //         hash: Set(block.header.hash.to_vec()),
+                //         ..Default::default()
+                //     });
+                // }
 
-                for transaction in transactions {
-                    l2_txs.push(twine_batch_l2_transactions::ActiveModel {
-                        batch_number: Set(start_block as i64),
-                        hash: Set(transaction.inner.tx_hash().to_vec()),
-                        ..Default::default()
-                    });
-                }
+                // for transaction in transactions {
+                //     l2_txs.push(twine_batch_l2_transactions::ActiveModel {
+                //         batch_number: Set(start_block as i64),
+                //         hash: Set(transaction.inner.tx_hash().to_vec()),
+                //         ..Default::default()
+                //     });
+                // }
             }
         }
 
         let _ = self
             .db_client
-            .commit_batch(batch_model, detail_model, l2_blocks, l2_txs)
+            .commit_batch(batch_model, detail_model)
             .await;
 
         Ok(LogProcessed {

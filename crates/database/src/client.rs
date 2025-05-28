@@ -84,7 +84,10 @@ impl DbClient {
                         l2_blocks.extend(blocks);
                         l2_txns.extend(transactions);
                     }
-                    DbOperations::FinalizeBatch { details } => update_details.push(details),
+                    DbOperations::FinalizeBatch {
+                        finalize_hash,
+                        batch_number,
+                    } => update_details.push((batch_number, finalize_hash)),
                 }
             }
         }
@@ -106,7 +109,7 @@ impl DbClient {
                     .await?;
             }
             primary_txn.commit().await?;
-            Ok::<(), eyre::Report>(()) // Ensure eyre::Report or your specific error type
+            Ok::<(), eyre::Report>(())
         };
 
         let blockscout_db_operations = async {
@@ -119,22 +122,17 @@ impl DbClient {
                     .await?;
             }
             if !l2_blocks.is_empty() {
-                self.bulk_insert_twine_l2_blocks(l2_blocks, &blockscout_txn)
+                self.bulk_update_blocks(l2_blocks, &blockscout_txn)
                     .await?;
             }
             if !l2_txns.is_empty() {
-                self.bulk_insert_twine_l2_transactions(l2_txns, &blockscout_txn)
+                self.bulk_update_transactions(l2_txns, &blockscout_txn)
                     .await?;
             }
             // IMPORTANT: Handle update_details here!
             if !update_details.is_empty() {
-                // You'll need a method like this:
-                // self.bulk_update_finalize_batch_details(update_details, &blockscout_txn).await?;
-                // For now, let's assume it's logged or handled appropriately if missing
-                info!(
-                    "Collected {} update_details, but no processing method is implemented in this snippet.",
-                    update_details.len()
-                );
+                self.bulk_finalize_batches(update_details, &blockscout_txn)
+                    .await?;
             }
             blockscout_txn.commit().await?;
             Ok::<(), eyre::Report>(())

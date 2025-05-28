@@ -328,7 +328,7 @@ impl<H: EvmEventHandler> EvmIndexer<H> {
             }
 
             Err(e) => {
-                error!("Error while bulking database operation {:?}", e)
+                return Err(eyre!("Error while bulking database operation {:?}", e));
             }
         }
 

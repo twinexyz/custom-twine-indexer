@@ -1,9 +1,7 @@
+use crate::blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail};
 use crate::client::DbClient;
-use crate::entities::{
-    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_transaction_batch,
-    twine_transaction_batch_detail,
-};
 use eyre::{Context, Result};
+use sea_orm::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
@@ -38,8 +36,8 @@ impl DbClient {
         &self,
         batch_model: twine_transaction_batch::ActiveModel,
         batch_details_model: twine_transaction_batch_detail::ActiveModel,
-        l2_blocks_model: Vec<twine_batch_l2_blocks::ActiveModel>,
-        l2_txns_model: Vec<twine_batch_l2_transactions::ActiveModel>,
+        // l2_blocks_model: Vec<twine_batch_l2_blocks::ActiveModel>,
+        // l2_txns_model: Vec<twine_batch_l2_transactions::ActiveModel>,
     ) -> Result<()> {
         let txn = self.blockscout.begin().await?;
         let batch_number = batch_model.number.clone().unwrap();
@@ -54,13 +52,13 @@ impl DbClient {
                 .await
                 .context("Failed to insert twine transaction batch")?;
 
-            self.bulk_insert_twine_l2_blocks(l2_blocks_model, &txn)
-                .await
-                .context("Failed to insert L2 blocks")?;
+            // self.bulk_insert_twine_l2_blocks(l2_blocks_model, &txn)
+            //     .await
+            //     .context("Failed to insert L2 blocks")?;
 
-            self.bulk_insert_twine_l2_transactions(l2_txns_model, &txn)
-                .await
-                .context("Failed to insert L2 transactions")?;
+            // self.bulk_insert_twine_l2_transactions(l2_txns_model, &txn)
+            //     .await
+            //     .context("Failed to insert L2 transactions")?;
         }
 
         //Now it's time to insert batch details table
@@ -130,48 +128,8 @@ impl DbClient {
         Ok(())
     }
 
-    pub async fn bulk_insert_twine_l2_blocks(
-        &self,
-        models: Vec<twine_batch_l2_blocks::ActiveModel>,
-        txn: &DatabaseTransaction,
-    ) -> Result<()> {
-        let _ = twine_batch_l2_blocks::Entity::insert_many(models)
-            .on_conflict(
-                OnConflict::column(twine_batch_l2_blocks::Column::Hash)
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec(txn)
-            .await
-            .map_err(|e| {
-                error!("Failed to insert twine l2 blocks: {:?}", e);
-                eyre::eyre!("Failed to insert twine l2 blocks: {:?}", e)
-            })?;
-        Ok(())
-    }
 
-    pub async fn bulk_insert_twine_l2_transactions(
-        &self,
-        models: Vec<twine_batch_l2_transactions::ActiveModel>,
-        txn: &DatabaseTransaction,
-    ) -> Result<()> {
-        if !models.is_empty() {
-            let _ = twine_batch_l2_transactions::Entity::insert_many(models)
-                .on_conflict(
-                    OnConflict::column(twine_batch_l2_transactions::Column::Hash)
-                        .do_nothing()
-                        .to_owned(),
-                )
-                .exec(txn)
-                .await
-                .map_err(|e| {
-                    error!("Failed to insert twine l2 txns: {:?}", e);
-                    eyre::eyre!("Failed to insert twine l2 txns: {:?}", e)
-                })?;
-        }
-        Ok(())
-    }
-
+    
     pub async fn insert_twine_transaction_batch_detail(
         &self,
         model: twine_transaction_batch_detail::ActiveModel,
@@ -221,6 +179,28 @@ impl DbClient {
                 error!("Failed to insert twine txn batch details: {:?}", e);
                 eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
             })?;
+        Ok(())
+    }
+
+    pub async fn bulk_finalize_batches(
+        &self,
+        finalizations: Vec<(i64, Vec<u8>)>,
+        txn: &DatabaseTransaction,
+    ) -> Result<()> {
+        for (batch_number, tx_hash) in finalizations {
+            twine_transaction_batch_detail::Entity::update_many()
+                .col_expr(
+                    twine_transaction_batch_detail::Column::FinalizeTransactionHash,
+                    Expr::value(tx_hash),
+                )
+                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
+                .exec(txn)
+                .await
+                .map_err(|e| {
+                    error!("Failed to update twine txn batch details: {:?}", e);
+                    eyre::eyre!("Failed to update twine txn batch details: {:?}", e)
+                })?;
+        }
         Ok(())
     }
 }

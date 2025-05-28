@@ -12,7 +12,7 @@ use database::{
     client::DbClient,
     entities::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw,
-        twine_l2_withdraw, twine_transaction_batch, twine_transaction_batch_detail,
+        twine_l2_withdraw,
     },
     DbOperations,
 };

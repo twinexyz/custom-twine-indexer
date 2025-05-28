@@ -77,14 +77,19 @@ impl DbClient {
         &self,
         models: Vec<l1_deposit::ActiveModel>,
         txn: &DatabaseTransaction,
-    ) -> Result<InsertResult<l1_deposit::ActiveModel>> {
+    ) -> Result<Vec<l1_deposit::Model>> {
+        println!("Going to insert {} records:", models.len());
+        for m in &models {
+            println!("{:#?}", m);
+        }
+
         let response = l1_deposit::Entity::insert_many(models)
-            .on_conflict(
-                OnConflict::columns([l1_deposit::Column::ChainId, l1_deposit::Column::Nonce])
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec(txn)
+            // .on_conflict(
+            //     OnConflict::columns([l1_deposit::Column::Nonce, l1_deposit::Column::ChainId])
+            //         .do_nothing()
+            //         .to_owned(),
+            // )
+            .exec_with_returning_many(txn)
             .await?;
 
         Ok(response)
@@ -94,14 +99,19 @@ impl DbClient {
         &self,
         models: Vec<l1_withdraw::ActiveModel>,
         txn: &DatabaseTransaction,
-    ) -> Result<InsertResult<l1_withdraw::ActiveModel>> {
+    ) -> Result<Vec<l1_withdraw::Model>> {
+        println!("Going to insert {} records:", models.len());
+        for m in &models {
+            println!("{:#?}", m);
+        }
+
         let response = l1_withdraw::Entity::insert_many(models)
             .on_conflict(
-                OnConflict::columns([l1_withdraw::Column::ChainId, l1_withdraw::Column::Nonce])
+                OnConflict::columns([l1_withdraw::Column::Nonce, l1_withdraw::Column::ChainId])
                     .do_nothing()
                     .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await?;
 
         Ok(response)
@@ -111,24 +121,23 @@ impl DbClient {
         &self,
         models: Vec<l2_withdraw::ActiveModel>,
         txn: &DatabaseTransaction,
-    ) -> Result<InsertResult<l2_withdraw::ActiveModel>> {
+    ) -> Result<Vec<l2_withdraw::Model>> {
+        println!("Going to insert {} records:", models.len());
+        for m in &models {
+            println!("{:#?}", m);
+        }
+
         let response = l2_withdraw::Entity::insert_many(models)
             .on_conflict(
-                OnConflict::columns([l2_withdraw::Column::ChainId, l2_withdraw::Column::Nonce])
+                OnConflict::columns([l2_withdraw::Column::Nonce, l2_withdraw::Column::ChainId])
                     .do_nothing()
                     .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await?;
 
         Ok(response)
     }
-
-
-
-
-
-
 
     pub async fn precompile_return(
         &self,

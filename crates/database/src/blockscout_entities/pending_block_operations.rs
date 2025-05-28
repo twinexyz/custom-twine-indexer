@@ -3,34 +3,34 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "twine_batch_l2_transactions")]
+#[sea_orm(table_name = "pending_block_operations")]
 pub struct Model {
-    pub batch_number: i64,
     #[sea_orm(
         primary_key,
         auto_increment = false,
         column_type = "VarBinary(StringLen::None)"
     )]
-    pub hash: Vec<u8>,
+    pub block_hash: Vec<u8>,
     pub inserted_at: DateTime,
     pub updated_at: DateTime,
+    pub block_number: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::twine_transaction_batch::Entity",
-        from = "Column::BatchNumber",
-        to = "super::twine_transaction_batch::Column::Number",
-        on_update = "Cascade",
+        belongs_to = "super::blocks::Entity",
+        from = "Column::BlockHash",
+        to = "super::blocks::Column::Hash",
+        on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    TwineTransactionBatch,
+    Blocks,
 }
 
-impl Related<super::twine_transaction_batch::Entity> for Entity {
+impl Related<super::blocks::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TwineTransactionBatch.def()
+        Relation::Blocks.def()
     }
 }
 

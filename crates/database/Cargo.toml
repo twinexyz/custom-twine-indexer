@@ -11,3 +11,5 @@ sea-orm = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 tokio = {workspace = true}
+bigdecimal = "0.4"
+

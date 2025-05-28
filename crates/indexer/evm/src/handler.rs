@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use common::config::ChainConfig;
 use database::{client::DbClient, DbOperations};
 use eyre::Result;
+use tracing::{debug, info};
 
 use crate::error::ParserError;
 
@@ -40,6 +41,9 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
         log: Log,
         event_name: &'static str,
     ) -> Result<LogContext<T>, ParserError> {
+
+        info!("Received log for {}: {:?}", event_name, log);
+
         let tx_hash = log
             .transaction_hash
             .ok_or(ParserError::MissingTransactionHash)?;

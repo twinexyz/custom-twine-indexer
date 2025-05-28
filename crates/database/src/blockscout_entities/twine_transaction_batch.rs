@@ -7,9 +7,9 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub number: i64,
-    pub timestamp: DateTime,
     pub start_block: i64,
     pub end_block: i64,
+    pub timestamp: DateTime,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub root_hash: Vec<u8>,
     pub inserted_at: DateTime,
@@ -18,23 +18,23 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::twine_batch_l2_blocks::Entity")]
-    TwineBatchL2Blocks,
-    #[sea_orm(has_many = "super::twine_batch_l2_transactions::Entity")]
-    TwineBatchL2Transactions,
+    #[sea_orm(has_many = "super::blocks::Entity")]
+    Blocks,
+    #[sea_orm(has_many = "super::transactions::Entity")]
+    Transactions,
     #[sea_orm(has_many = "super::twine_transaction_batch_detail::Entity")]
     TwineTransactionBatchDetail,
 }
 
-impl Related<super::twine_batch_l2_blocks::Entity> for Entity {
+impl Related<super::blocks::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TwineBatchL2Blocks.def()
+        Relation::Blocks.def()
     }
 }
 
-impl Related<super::twine_batch_l2_transactions::Entity> for Entity {
+impl Related<super::transactions::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TwineBatchL2Transactions.def()
+        Relation::Transactions.def()
     }
 }
 

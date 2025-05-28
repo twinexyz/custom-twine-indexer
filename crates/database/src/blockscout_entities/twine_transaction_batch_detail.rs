@@ -10,13 +10,18 @@ pub struct Model {
     pub batch_number: i64,
     pub l1_transaction_count: i32,
     pub l2_transaction_count: i32,
+    #[sea_orm(column_type = "Decimal(Some((100, 0)))")]
     pub l1_gas_price: Decimal,
+    #[sea_orm(column_type = "Decimal(Some((100, 0)))")]
     pub l2_fair_gas_price: Decimal,
+    #[sea_orm(column_type = "Decimal(Some((100, 0)))")]
     pub chain_id: Decimal,
     #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
     pub commit_transaction_hash: Option<Vec<u8>>,
     #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
     pub finalize_transaction_hash: Option<Vec<u8>>,
+    pub committed_at: Option<DateTime>,
+    pub finalized_at: Option<DateTime>,
     pub inserted_at: DateTime,
     pub updated_at: DateTime,
 }
