@@ -88,6 +88,10 @@ impl DbClient {
                         finalize_hash,
                         batch_number,
                     } => update_details.push((batch_number, finalize_hash)),
+
+                    DbOperations::TwineL1Deposits(active_model) => {}
+                    DbOperations::TwineL1Withdraw(active_model) => {}
+                    DbOperations::TwineL2Withdraw(active_model) => {}
                 }
             }
         }
@@ -122,8 +126,7 @@ impl DbClient {
                     .await?;
             }
             if !l2_blocks.is_empty() {
-                self.bulk_update_blocks(l2_blocks, &blockscout_txn)
-                    .await?;
+                self.bulk_update_blocks(l2_blocks, &blockscout_txn).await?;
             }
             if !l2_txns.is_empty() {
                 self.bulk_update_transactions(l2_txns, &blockscout_txn)
