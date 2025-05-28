@@ -5,9 +5,10 @@ use borsh::BorshDeserialize;
 use chrono::{DateTime, Utc};
 use common::config::{ChainConfig, SvmConfig};
 use database::{
-    blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail}, client::DbClient, entities::{
-        l1_deposit, l1_withdraw, l2_withdraw
-    }
+    blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail},
+    client::DbClient,
+    entities::{l1_deposit, l1_withdraw, l2_withdraw},
+    DbOperations,
 };
 use evm::provider::EvmProvider;
 use eyre::Error;
@@ -22,7 +23,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, EncodedTransactionWithStatusMeta,
 };
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
     CommitBatch, DepositSuccessful, FinalizeNativeWithdrawal, FinalizeSplWithdrawal,
@@ -77,10 +78,10 @@ impl SolanaEventHandler {
         &self,
         logs: &[String],
         signature: Option<String>,
-    ) -> eyre::Result<()> {
+    ) -> eyre::Result<Vec<DbOperations>> {
         let Some(parsed) = self.extract_log(&logs, signature) else {
             info!("No parsable event found in logs");
-            return Ok(());
+            return Ok(vec![]);
         };
 
         info!(
@@ -90,35 +91,36 @@ impl SolanaEventHandler {
         );
 
         let mut slot_number = 0;
+        let mut operations = Vec::new();
 
         match parsed.event_type {
             SolanaEvents::SplDeposit | SolanaEvents::NativeDeposit => {
-                let processed = self.handle_deposit(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_deposit(parsed).await?;
+                operations.push(operation);
             }
 
             SolanaEvents::NativeWithdrawal | SolanaEvents::SplWithdrawal => {
-                let processed = self.handle_withdrawal(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_withdrawal(parsed).await?;
+                operations.push(operation);
             }
             SolanaEvents::FinalizeSplWithdrawal => {
-                let processed = self.handle_finalize_spl_withdraw(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_finalize_spl_withdraw(parsed).await?;
+                operations.push(operation);
             }
 
             SolanaEvents::FinalizeNativeWithdrawal => {
-                let processed = self.handle_finalize_native_withdraw(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_finalize_native_withdraw(parsed).await?;
+                operations.push(operation);
             }
 
             SolanaEvents::CommitBatch => {
-                let processed = self.handle_commit_batch(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_commit_batch(parsed).await?;
+                operations.push(operation);
             }
 
             SolanaEvents::FinalizeBatch => {
-                let processed = self.handle_finalize_batch(parsed).await?;
-                slot_number = processed.slot;
+                let operation = self.handle_finalize_batch(parsed).await?;
+                operations.push(operation);
             }
 
             SolanaEvents::CommitAndFinalizeTransaction => {}
@@ -128,16 +130,10 @@ impl SolanaEventHandler {
             }
         }
 
-        if slot_number > 0 {
-            self.db_client
-                .upsert_last_synced(self.chain_id() as i64, slot_number as i64)
-                .await?;
-        }
-
-        Ok(())
+        Ok(operations)
     }
 
-    async fn handle_deposit(&self, parsed: LogContext) -> eyre::Result<LogProcessed> {
+    async fn handle_deposit(&self, parsed: LogContext) -> eyre::Result<DbOperations> {
         let deposit = self.parse_borsh::<DepositSuccessful>(&parsed.encoded_data)?;
 
         let model = l1_deposit::ActiveModel {
@@ -154,14 +150,14 @@ impl SolanaEventHandler {
             created_at: Set(parsed.timestamp.into()),
         };
 
-        self.db_client.insert_l1_deposits(model).await?;
+        let operation = DbOperations::L1Deposits(model);
 
-        Ok(LogProcessed {
-            slot: deposit.slot_number,
-        })
+        // let _ = self.db_client.insert_l1_deposits(model).await?;
+
+        Ok(operation)
     }
 
-    async fn handle_withdrawal(&self, parsed: LogContext) -> eyre::Result<LogProcessed> {
+    async fn handle_withdrawal(&self, parsed: LogContext) -> eyre::Result<DbOperations> {
         let withdrawal = self.parse_borsh::<ForcedWithdrawSuccessful>(&parsed.encoded_data)?;
         let model = l1_withdraw::ActiveModel {
             nonce: Set(withdrawal.nonce as i64),
@@ -177,17 +173,15 @@ impl SolanaEventHandler {
             created_at: Set(parsed.timestamp.into()),
         };
 
-        let _ = self.db_client.insert_l1_withdraw(model).await?;
+        let operation = DbOperations::L1Withdraw(model);
 
-        Ok(LogProcessed {
-            slot: withdrawal.slot_number,
-        })
+        Ok(operation)
     }
 
     async fn handle_finalize_native_withdraw(
         &self,
         parsed_log: LogContext,
-    ) -> eyre::Result<LogProcessed> {
+    ) -> eyre::Result<DbOperations> {
         let native = self.parse_borsh::<FinalizeNativeWithdrawal>(&parsed_log.encoded_data)?;
 
         let model = l2_withdraw::ActiveModel {
@@ -199,17 +193,14 @@ impl SolanaEventHandler {
             created_at: Set(parsed_log.timestamp.into()),
         };
 
-        let _ = self.db_client.insert_l2_withdraw(model).await?;
-
-        Ok(LogProcessed {
-            slot: native.slot_number,
-        })
+        let operation = DbOperations::L2Withdraw(model);
+        Ok(operation)
     }
 
     async fn handle_finalize_spl_withdraw(
         &self,
         parsed_log: LogContext,
-    ) -> eyre::Result<LogProcessed> {
+    ) -> eyre::Result<DbOperations> {
         let spl = self.parse_borsh::<FinalizeSplWithdrawal>(&parsed_log.encoded_data)?;
 
         let model = l2_withdraw::ActiveModel {
@@ -221,19 +212,17 @@ impl SolanaEventHandler {
             created_at: Set(parsed_log.timestamp.into()),
         };
 
-        let _ = self.db_client.insert_l2_withdraw(model).await?;
-
-        Ok(LogProcessed {
-            slot: spl.slot_number,
-        })
+        let operation = DbOperations::L2Withdraw(model);
+        Ok(operation)
     }
 
-    async fn handle_commit_batch(&self, parsed_log: LogContext) -> eyre::Result<LogProcessed> {
+    async fn handle_commit_batch(&self, parsed_log: LogContext) -> eyre::Result<DbOperations> {
         let commit = self.parse_borsh::<CommitBatch>(&parsed_log.encoded_data)?;
 
         let start_block = commit.start_block;
         let end_block = commit.end_block;
         let root_hash = vec![0u8; 32];
+        let batch_length = end_block - start_block + 1; // as both end block and start block is inclusive
 
         //Build batch model
         let batch_model = twine_transaction_batch::ActiveModel {
@@ -257,8 +246,8 @@ impl SolanaEventHandler {
             ..Default::default()
         };
 
-        // let mut l2_blocks = Vec::new();
-        // let mut l2_txs = Vec::new();
+        let mut l2_blocks = Vec::new();
+        let mut l2_txs = Vec::new();
 
         //1. Check if batch already exists
         match self.db_client.get_batch_by_id(start_block as i64).await? {
@@ -269,59 +258,69 @@ impl SolanaEventHandler {
                 info!("Batch already exists so don't need to fetch blocks and transactions");
             }
             None => {
-                info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
-                let (blocks, transactions) = self
-                    .twine_provider
-                    .get_blocks_with_transactions(start_block, end_block)
-                    .await?;
+                // info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
 
-                // for block in blocks {
-                //     l2_blocks.push(twine_batch_l2_blocks::ActiveModel {
-                //         batch_number: Set(start_block as i64),
-                //         hash: Set(block.header.hash.to_vec()),
-                //         ..Default::default()
-                //     });
-                // }
+                let blocks = self.db_client.get_blocks(start_block, end_block).await?;
 
-                // for transaction in transactions {
-                //     l2_txs.push(twine_batch_l2_transactions::ActiveModel {
-                //         batch_number: Set(start_block as i64),
-                //         hash: Set(transaction.inner.tx_hash().to_vec()),
-                //         ..Default::default()
-                //     });
-                // }
+                if blocks.len() != batch_length as usize {
+                    error!(
+                        "Fetched blocks length {:?} mismatched with batch length {:?}",
+                        blocks.len(),
+                        batch_length
+                    );
+
+                    return Err(eyre::eyre!(
+                        "Fetched blocks length {:?} mismatched with batch length {:?}",
+                        blocks.len(),
+                        batch_length
+                    ));
+                } else {
+                    let transactions = self
+                        .db_client
+                        .get_transactions(start_block, end_block)
+                        .await?;
+
+                    l2_blocks = blocks
+                        .into_iter()
+                        .map(|model| {
+                            let mut am = model.into_active_model();
+                            am.batch_number = Set(Some(start_block as i64));
+                            am
+                        })
+                        .collect();
+
+                    l2_txs = transactions
+                        .into_iter()
+                        .map(|model| {
+                            let mut am = model.into_active_model();
+                            am.batch_number = Set(Some(start_block as i64));
+                            am
+                        })
+                        .collect();
+                }
             }
         }
 
-        let _ = self
-            .db_client
-            .commit_batch(batch_model, detail_model)
-            .await;
+        let operation = DbOperations::CommitBatch {
+            batch: batch_model,
+            details: detail_model,
+            blocks: l2_blocks,
+            transactions: l2_txs,
+        };
 
-        Ok(LogProcessed {
-            slot: commit.slot_number,
-        })
+        Ok(operation)
     }
 
-    async fn handle_finalize_batch(&self, parsed_log: LogContext) -> eyre::Result<LogProcessed> {
+    async fn handle_finalize_batch(&self, parsed_log: LogContext) -> eyre::Result<DbOperations> {
         let finalize = self.parse_borsh::<FinalizedBatch>(&parsed_log.encoded_data)?;
 
         let start_block = finalize.start_block;
         let end_block = finalize.end_block;
         let root_hash = vec![0u8; 32];
 
-        if let Some(existing) = self.db_client.get_batch_details(start_block as i64).await? {
-            let mut active_existing = existing.into_active_model();
-
-            active_existing.finalize_transaction_hash =
-                Set(Some(parsed_log.tx_hash_str.clone().into_bytes()));
-
-            self.db_client.finalize_batch(active_existing).await?;
-        } else {
-            warn!("Finalize Event indexed before commitment. Skipping");
-        }
-        Ok(LogProcessed {
-            slot: finalize.slot_number,
+        Ok(DbOperations::FinalizeBatch {
+            finalize_hash: parsed_log.tx_hash_str.into_bytes(),
+            batch_number: start_block as i64,
         })
     }
 

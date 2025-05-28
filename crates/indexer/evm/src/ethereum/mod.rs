@@ -19,8 +19,6 @@ use eyre::{Report, Result};
 use futures_util::{future, StreamExt};
 use handlers::EthereumEventHandler;
 use parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH};
-use providers::evm::EVMProvider;
-use providers::ChainProvider;
 use sea_orm::ActiveValue::Set;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
