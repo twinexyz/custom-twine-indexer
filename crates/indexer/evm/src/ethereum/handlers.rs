@@ -17,6 +17,7 @@ use database::{
     DbOperations,
 };
 use eyre::Result;
+use generic_indexer::handler::ChainEventHandler;
 use num_traits::FromPrimitive;
 use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set, IntoActiveModel};
 use tracing::{error, info, instrument, warn};
@@ -32,6 +33,7 @@ use super::{
     ETHEREUM_EVENT_SIGNATURES,
 };
 
+#[derive(Clone)]
 pub struct EthereumEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
@@ -40,7 +42,9 @@ pub struct EthereumEventHandler {
 }
 
 #[async_trait]
-impl EvmEventHandler for EthereumEventHandler {
+impl ChainEventHandler for EthereumEventHandler {
+    type LogType = Log;
+
     #[instrument(skip_all, fields(CHAIN = "Ethereum"))]
     async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
         let sig = log.topic0().ok_or(ParserError::UnknownEvent {
@@ -86,10 +90,17 @@ impl EvmEventHandler for EthereumEventHandler {
         Ok(operations)
     }
 
-    fn chain_id(&self) -> u64 {
-        self.chain_id
+    fn get_chain_config(&self) -> common::config::ChainConfig {
+        self.config.common.clone()
     }
 
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
+    }
+}
+
+#[async_trait]
+impl EvmEventHandler for EthereumEventHandler {
     fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
         let addresss = [
             self.config.l1_erc20_gateway_address.clone(),
@@ -109,9 +120,6 @@ impl EvmEventHandler for EthereumEventHandler {
 
     fn relevant_topics(&self) -> Vec<&'static str> {
         ETHEREUM_EVENT_SIGNATURES.to_vec()
-    }
-    fn get_chain_config(&self) -> common::config::ChainConfig {
-        self.config.common.clone()
     }
 }
 
@@ -330,16 +338,5 @@ impl EthereumEventHandler {
         };
 
         Ok(operation)
-    }
-}
-
-impl Clone for EthereumEventHandler {
-    fn clone(&self) -> Self {
-        Self {
-            chain_id: self.chain_id,
-            config: self.config.clone(),
-            db_client: self.db_client.clone(),
-            twine_provider: self.twine_provider.clone(),
-        }
     }
 }

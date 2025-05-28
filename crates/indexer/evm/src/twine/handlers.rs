@@ -17,8 +17,9 @@ use database::{
     DbOperations,
 };
 use eyre::Result;
+use generic_indexer::handler::ChainEventHandler;
 use sea_orm::{sqlx::types::uuid::timestamp, ActiveValue::Set};
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use twine_evm_contracts::evm::{
     ethereum::{l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch},
     twine::l2_messenger::{L2Messenger, PrecompileReturn},
@@ -155,7 +156,10 @@ impl TwineEventHandler {
 }
 
 #[async_trait]
-impl EvmEventHandler for TwineEventHandler {
+impl ChainEventHandler for TwineEventHandler {
+    type LogType = Log;
+
+    #[instrument(skip_all, fields(CHAIN = "Twine"))]
     async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
         // let sig = log.topic0().ok_or(ParserError::UnknownEvent {
         //     signature: B256::ZERO,
@@ -177,10 +181,17 @@ impl EvmEventHandler for TwineEventHandler {
         Ok(operations)
     }
 
-    fn chain_id(&self) -> u64 {
-        self.chain_id
+    fn get_chain_config(&self) -> common::config::ChainConfig {
+        self.config.common.clone()
     }
 
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
+    }
+}
+
+#[async_trait]
+impl EvmEventHandler for TwineEventHandler {
     fn relevant_topics(&self) -> Vec<&'static str> {
         TWINE_EVENT_SIGNATURES.to_vec()
     }
@@ -196,9 +207,5 @@ impl EvmEventHandler for TwineEventHandler {
             .unwrap();
 
         contract_addresss
-    }
-
-    fn get_chain_config(&self) -> common::config::ChainConfig {
-        self.config.common.clone()
     }
 }

@@ -7,6 +7,7 @@ use evm::{
     twine::handlers::TwineEventHandler,
 };
 use eyre::Result;
+use generic_indexer::indexer::ChainIndexer;
 use svm::{handler::SolanaEventHandler, indexer::SolanaIndexer};
 use tracing::info;
 
@@ -43,8 +44,8 @@ async fn main() -> Result<()> {
         twine_provider.clone(),
     );
 
-    let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db)).await?;
-    let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db)).await?;
+    let mut eth_indexer = EvmIndexer::new(l1_evm_handler).await?;
+    let mut twine_indexer = EvmIndexer::new(twine_handler).await?;
     let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await?;
 
     let twine_handle = tokio::spawn(async move {

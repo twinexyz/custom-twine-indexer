@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine};
 use borsh::BorshDeserialize;
 use chrono::{DateTime, Utc};
@@ -12,6 +13,7 @@ use database::{
 };
 use evm::provider::EvmProvider;
 use eyre::Error;
+use generic_indexer::handler::ChainEventHandler;
 use num_traits::FromPrimitive;
 use sea_orm::{
     prelude::Decimal,
@@ -36,38 +38,20 @@ pub struct SolanaEventHandler {
     twine_provider: EvmProvider,
 }
 
-pub struct LogProcessed {
-    pub slot: u64,
-}
+#[async_trait]
+impl ChainEventHandler for SolanaEventHandler {
+    type LogType = FoundEvent;
 
-impl SolanaEventHandler {
-    pub fn new(db_client: Arc<DbClient>, config: SvmConfig, twine_provider: EvmProvider) -> Self {
-        Self {
-            db_client,
-            config,
-            twine_provider,
-        }
-    }
-
-    pub fn chain_id(&self) -> u64 {
-        self.config.common.chain_id
-    }
-
-    pub fn get_chain_config(&self) -> ChainConfig {
+    fn get_chain_config(&self) -> ChainConfig {
         self.config.common.clone()
     }
 
-    pub fn get_program_addresses(&self) -> Vec<Pubkey> {
-        let twine_chain_id =
-            Pubkey::from_str_const(&self.config.twine_chain_program_address.clone());
-        let gateway_id =
-            Pubkey::from_str_const(&self.config.tokens_gateway_program_address.clone());
-        return vec![twine_chain_id, gateway_id];
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
     }
 
     #[instrument(skip_all, fields(CHAIN = %self.chain_id()))]
-
-    pub async fn handle_event(&self, log: FoundEvent) -> eyre::Result<Vec<DbOperations>> {
+    async fn handle_event(&self, log: FoundEvent) -> eyre::Result<Vec<DbOperations>> {
         let mut slot_number = 0;
         let mut operations = Vec::new();
 
@@ -109,6 +93,24 @@ impl SolanaEventHandler {
         }
 
         Ok(operations)
+    }
+}
+
+impl SolanaEventHandler {
+    pub fn new(db_client: Arc<DbClient>, config: SvmConfig, twine_provider: EvmProvider) -> Self {
+        Self {
+            db_client,
+            config,
+            twine_provider,
+        }
+    }
+
+    pub fn get_program_addresses(&self) -> Vec<Pubkey> {
+        let twine_chain_id =
+            Pubkey::from_str_const(&self.config.twine_chain_program_address.clone());
+        let gateway_id =
+            Pubkey::from_str_const(&self.config.tokens_gateway_program_address.clone());
+        return vec![twine_chain_id, gateway_id];
     }
 
     async fn handle_deposit(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
@@ -194,8 +196,8 @@ impl SolanaEventHandler {
     async fn handle_commit_batch(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
         let commit = parsed.parse_borsh::<CommitBatch>()?;
 
-        let start_block = commit.start_block;
-        let end_block = commit.end_block;
+        let start_block = commit.start_block as u64;
+        let end_block = commit.end_block as u64;
         let root_hash = vec![0u8; 32];
         let batch_length = end_block - start_block + 1; // as both end block and start block is inclusive
 

@@ -27,7 +27,7 @@ impl EvmProvider {
 
     pub async fn get_logs(
         &self,
-        addresses: &[Address],
+        addresses: &Vec<Address>,
         topics: &[&str],
         from_block: u64,
         to_block: u64,
@@ -47,13 +47,10 @@ impl EvmProvider {
 
     pub async fn subscribe_logs(
         &self,
-        addresses: &[alloy::primitives::Address],
+        addresses: &Vec<alloy::primitives::Address>,
         topics: &[&str],
         from_block: Option<u64>,
     ) -> eyre::Result<impl Stream<Item = Log>> {
-
-
-
         let mut filter = Filter::new().address(addresses.to_vec()).events(topics);
 
         if let Some(from_block) = from_block {

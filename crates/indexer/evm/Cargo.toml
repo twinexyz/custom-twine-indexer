@@ -20,6 +20,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 twine-evm-contracts = { workspace = true }
 database = {workspace = true}
+generic-indexer = {workspace = true}
 
 [lints.rust]
 unused = "allow"

@@ -29,9 +29,6 @@ pub struct LogContext<T> {
 
 #[async_trait]
 pub trait EvmEventHandler: Send + Sync + Clone + 'static {
-    fn chain_id(&self) -> u64;
-    fn get_chain_config(&self) -> ChainConfig;
-
     fn relevant_addresses(&self) -> Vec<Address>;
 
     fn relevant_topics(&self) -> Vec<&'static str>;
@@ -73,6 +70,4 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
             data: decoded.inner.data,
         })
     }
-
-    async fn handle_event(&self, log: Log) -> Result<Vec<DbOperations>>;
 }

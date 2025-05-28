@@ -2919,6 +2919,7 @@ dependencies = [
  "database",
  "eyre",
  "futures-util",
+ "generic-indexer",
  "hex",
  "num-traits",
  "sea-orm",
@@ -3257,13 +3258,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
 
 [[package]]
-name = "generic"
-version = "0.1.0"
-dependencies = [
- "chrono",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3272,6 +3266,19 @@ dependencies = [
  "typenum",
  "version_check",
  "zeroize",
+]
+
+[[package]]
+name = "generic-indexer"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "common",
+ "database",
+ "eyre",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3922,6 +3929,7 @@ dependencies = [
  "database",
  "evm",
  "eyre",
+ "generic-indexer",
  "pre-commit-hooks",
  "sea-orm",
  "sea-orm-cli",
@@ -9258,6 +9266,7 @@ dependencies = [
  "evm",
  "eyre",
  "futures-util",
+ "generic-indexer",
  "hex",
  "num-traits",
  "reqwest 0.12.16",
