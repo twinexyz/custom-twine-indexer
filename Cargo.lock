@@ -2921,7 +2921,6 @@ dependencies = [
  "futures-util",
  "hex",
  "num-traits",
- "providers",
  "sea-orm",
  "sea-query",
  "serde",
@@ -5544,15 +5543,6 @@ dependencies = [
  "miette",
  "prost-types",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "providers"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "common",
- "eyre",
 ]
 
 [[package]]

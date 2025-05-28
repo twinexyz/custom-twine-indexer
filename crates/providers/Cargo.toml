@@ -1,9 +1,0 @@
-[package]
-name = "providers"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-alloy = { version = "0.11.0", features = ["full"] }
-eyre = {workspace = true}
-common = { workspace = true }
