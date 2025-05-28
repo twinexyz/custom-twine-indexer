@@ -13,13 +13,12 @@ use database::{
     entities::{
         l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw,
         twine_l2_withdraw,
-    },
-    DbOperations,
+    }, DbOperations,
 };
 use eyre::Result;
 use generic_indexer::handler::ChainEventHandler;
 use sea_orm::{sqlx::types::uuid::timestamp, ActiveValue::Set};
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::{
     ethereum::{l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch},
     twine::l2_messenger::{L2Messenger, PrecompileReturn},
@@ -37,6 +36,53 @@ pub struct TwineEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
     config: TwineConfig,
+}
+
+#[async_trait]
+impl ChainEventHandler for TwineEventHandler {
+    type LogType = Log;
+
+    fn get_chain_config(&self) -> common::config::ChainConfig {
+        self.config.common.clone()
+    }
+
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
+    }
+
+    #[instrument(skip_all, fields(CHAIN = "twine"))]
+    async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
+        let sig = log.topic0().ok_or(ParserError::UnknownEvent {
+            signature: B256::ZERO,
+        })?;
+        let block_number = log.block_number.unwrap();
+
+        let mut operations = Vec::new();
+
+        match *sig {
+            L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
+                let (deposits, withdraws) = self.handle_ethereum_transactions_handled(log).await?;
+                operations.extend(deposits);
+                operations.extend(withdraws);
+            }
+            L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
+                let (deposits, withdraws) = self.handle_solana_transactions_handled(log).await?;
+                operations.extend(deposits);
+                operations.extend(withdraws);
+            }
+
+            L2Messenger::SentMessage::SIGNATURE_HASH => {
+                let operation = self.handle_sent_message(log).await?;
+                operations.push(operation);
+            }
+
+            other => {
+                error!("Unknown event to handle")
+            }
+        }
+
+        Ok(operations)
+    }
 }
 
 impl TwineEventHandler {
@@ -65,73 +111,76 @@ impl TwineEventHandler {
         }
     }
 
-    async fn process_precompile_return(
+    fn process_precompile_return(
         &self,
         pr: PrecompileReturn,
         tx_hash: String,
         block_number: i64,
-    ) -> eyre::Result<()> {
+    ) -> (Vec<DbOperations>, Vec<DbOperations>) {
         let mut parsed_deposits = Vec::new();
         let mut parsed_withdraws = Vec::new();
 
         for deposit_txn in pr.deposit {
-            parsed_deposits.push(twine_l1_deposit::ActiveModel {
-                l1_nonce: Set(deposit_txn.l1_nonce as i64),
-                chain_id: Set(deposit_txn.detail.chain_id as i64),
-                status: Set(deposit_txn.detail.status as i16),
-                slot_number: Set(deposit_txn.detail.slot_number as i64),
-                tx_hash: Set(tx_hash.to_string()),
-            });
+            parsed_deposits.push(DbOperations::TwineL1Deposits(
+                twine_l1_deposit::ActiveModel {
+                    l1_nonce: Set(deposit_txn.l1_nonce as i64),
+                    chain_id: Set(deposit_txn.detail.chain_id as i64),
+                    status: Set(deposit_txn.detail.status as i16),
+                    slot_number: Set(deposit_txn.detail.slot_number as i64),
+                    tx_hash: Set(tx_hash.to_string()),
+                },
+            ));
         }
 
         for withdraw_txn in pr.withdraws {
-            parsed_withdraws.push(twine_l1_withdraw::ActiveModel {
-                l1_nonce: Set(withdraw_txn.l1_nonce as i64),
-                chain_id: Set(withdraw_txn.detail.chain_id as i64),
-                status: Set(withdraw_txn.detail.status as i16),
-                slot_number: Set(withdraw_txn.detail.slot_number as i64),
-                tx_hash: Set(tx_hash.to_string()),
-            });
+            parsed_withdraws.push(DbOperations::TwineL1Withdraw(
+                twine_l1_withdraw::ActiveModel {
+                    l1_nonce: Set(withdraw_txn.l1_nonce as i64),
+                    chain_id: Set(withdraw_txn.detail.chain_id as i64),
+                    status: Set(withdraw_txn.detail.status as i16),
+                    slot_number: Set(withdraw_txn.detail.slot_number as i64),
+                    tx_hash: Set(tx_hash.to_string()),
+                },
+            ));
         }
 
-        let (deposits, withdraws) = self
-            .db_client
-            .precompile_return(parsed_deposits, parsed_withdraws)
-            .await?;
-
-        Ok(())
+        (parsed_deposits, parsed_withdraws)
     }
 
     //Handlers are here
-    async fn handle_ethereum_transactions_handled(&self, log: Log) -> Result<()> {
+    async fn handle_ethereum_transactions_handled(
+        &self,
+        log: Log,
+    ) -> Result<(Vec<DbOperations>, Vec<DbOperations>)> {
         let decoded = self.extract_log::<L2Messenger::EthereumTransactionsHandled>(log, "")?;
 
         let pr = self
             .decode_precompile_return(decoded.data.transactionOutput)
             .await?;
 
-        let res = self
-            .process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number)
-            .await?;
+        let (deposits, withdraws) =
+            self.process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number);
 
-        Ok(())
+        Ok((deposits, withdraws))
     }
 
-    async fn handle_solana_transactions_handled(&self, log: Log) -> Result<()> {
+    async fn handle_solana_transactions_handled(
+        &self,
+        log: Log,
+    ) -> Result<(Vec<DbOperations>, Vec<DbOperations>)> {
         let decoded = self.extract_log::<L2Messenger::SolanaTransactionsHandled>(log, "")?;
 
         let pr = self
             .decode_precompile_return(decoded.data.transactionOutput)
             .await?;
 
-        let res = self
-            .process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number)
-            .await?;
+        let (deposits, withdraws) =
+            self.process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number);
 
-        Ok(())
+        Ok((deposits, withdraws))
     }
 
-    async fn handle_sent_message(&self, log: Log) -> Result<()> {
+    async fn handle_sent_message(&self, log: Log) -> Result<DbOperations> {
         let decoded = self.extract_log::<L2Messenger::SentMessage>(log, "event_name")?;
         let data = decoded.data;
 
@@ -149,44 +198,7 @@ impl TwineEventHandler {
             tx_hash: Set(decoded.tx_hash_str.to_string()),
         };
 
-        let _ = self.db_client.insert_twine_l2_withdraw(model).await;
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl ChainEventHandler for TwineEventHandler {
-    type LogType = Log;
-
-    #[instrument(skip_all, fields(CHAIN = "Twine"))]
-    async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
-        // let sig = log.topic0().ok_or(ParserError::UnknownEvent {
-        //     signature: B256::ZERO,
-        // })?;
-
-        // match *sig {
-        //     L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
-        //         self.handle_ethereum_transactions_handled(log).await
-        //     }
-        //     L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
-        //         self.handle_solana_transactions_handled(log).await
-        //     }
-        //     L2Messenger::SentMessage::SIGNATURE_HASH => self.handle_sent_message(log).await,
-        //     other => Err(ParserError::UnknownEvent { signature: other }.into()),
-        // }
-
-        let operations: Vec<DbOperations> = Vec::new();
-
-        Ok(operations)
-    }
-
-    fn get_chain_config(&self) -> common::config::ChainConfig {
-        self.config.common.clone()
-    }
-
-    fn get_db_client(&self) -> Arc<DbClient> {
-        self.db_client.clone()
+        Ok(DbOperations::TwineL2Withdraw(model))
     }
 }
 
