@@ -8,7 +8,10 @@ use common::config::{ChainConfig, SvmConfig};
 use database::{
     blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail},
     client::DbClient,
-    entities::{l1_deposit, l1_withdraw, l2_withdraw},
+    entities::{
+        bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
+        l2_withdraw,
+    },
     DbOperations,
 };
 use evm::provider::EvmProvider;
@@ -116,21 +119,21 @@ impl SolanaEventHandler {
     async fn handle_deposit(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
         let deposit = parsed.parse_borsh::<DepositSuccessful>()?;
 
-        let model = l1_deposit::ActiveModel {
-            nonce: Set(deposit.nonce as i64),
-            chain_id: Set(deposit.chain_id as i64),
-            block_number: Set(None),
-            slot_number: Set(Some(deposit.slot_number as i64)),
-            from: Set(deposit.from_l1_pubkey),
-            to_twine_address: Set(deposit.to_twine_address),
-            l1_token: Set(deposit.l1_token),
-            l2_token: Set(deposit.l2_token),
-            tx_hash: Set(parsed.transaction_signature),
-            amount: Set(deposit.amount),
-            created_at: Set(parsed.timestamp.into()),
+        let model = bridge_source_transactions::ActiveModel {
+            source_nonce: Set(deposit.nonce as i64),
+            source_chain_id: Set(deposit.chain_id as i64),
+            source_height: Set(Some(deposit.slot_number as i64)),
+            source_from_address: Set(deposit.from_l1_pubkey),
+            source_to_address: Set(deposit.to_twine_address),
+            destination_token_address: Set(Some(deposit.l2_token)),
+            source_token_address: Set(Some(deposit.l1_token)),
+            source_tx_hash: Set(parsed.transaction_signature),
+            source_event_timestamp: Set(parsed.timestamp.into()),
+            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Deposit),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L1Deposits(model);
+        let operation = DbOperations::BridgeSourceTransaction(model);
 
         // let _ = self.db_client.insert_l1_deposits(model).await?;
 
@@ -139,21 +142,23 @@ impl SolanaEventHandler {
 
     async fn handle_withdrawal(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
         let withdrawal = parsed.parse_borsh::<ForcedWithdrawSuccessful>()?;
-        let model = l1_withdraw::ActiveModel {
-            nonce: Set(withdrawal.nonce as i64),
-            chain_id: Set(withdrawal.chain_id as i64),
-            block_number: Set(None),
-            slot_number: Set(Some(withdrawal.slot_number as i64)),
-            from: Set(withdrawal.from_twine_address),
-            to_twine_address: Set(withdrawal.to_l1_pub_key),
-            l1_token: Set(withdrawal.l1_token),
-            l2_token: Set(withdrawal.l2_token),
-            tx_hash: Set(parsed.transaction_signature),
-            amount: Set(withdrawal.amount),
-            created_at: Set(parsed.timestamp.into()),
+        let model = bridge_source_transactions::ActiveModel {
+            source_nonce: Set(withdrawal.nonce as i64),
+            source_chain_id: Set(withdrawal.chain_id as i64),
+            source_height: Set(Some(withdrawal.slot_number as i64)),
+            source_from_address: Set(withdrawal.to_l1_pub_key),
+            source_to_address: Set(withdrawal.from_twine_address),
+            destination_token_address: Set(Some(withdrawal.l2_token)),
+            source_token_address: Set(Some(withdrawal.l1_token)),
+            source_tx_hash: Set(parsed.transaction_signature),
+            source_event_timestamp: Set(parsed.timestamp.into()),
+            event_type: Set(
+                database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw,
+            ),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L1Withdraw(model);
+        let operation = DbOperations::BridgeSourceTransaction(model);
 
         Ok(operation)
     }
@@ -164,32 +169,34 @@ impl SolanaEventHandler {
     ) -> eyre::Result<DbOperations> {
         let native = parsed.parse_borsh::<FinalizeNativeWithdrawal>()?;
 
-        let model = l2_withdraw::ActiveModel {
-            nonce: Set(native.nonce as i64),
-            chain_id: Set(native.chain_id as i64),
-            block_number: Set(None),
-            slot_number: Set(Some(native.slot_number as i64)),
-            tx_hash: Set(native.signature),
-            created_at: Set(parsed.timestamp.into()),
+        let model = bridge_destination_transactions::ActiveModel {
+            source_nonce: Set(native.nonce as i64),
+            source_chain_id: Set(native.chain_id as i64),
+            destination_chain_id: Set(self.chain_id() as i64),
+            destination_height: Set(Some(native.slot_number as i64)),
+            destination_tx_hash: Set(Some(native.signature)),
+            destination_processed_at: Set(Some(parsed.timestamp.into())),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L2Withdraw(model);
+        let operation = DbOperations::BridgeDestinationTransactions(model);
         Ok(operation)
     }
 
     async fn handle_finalize_spl_withdraw(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
         let spl = parsed.parse_borsh::<FinalizeSplWithdrawal>()?;
 
-        let model = l2_withdraw::ActiveModel {
-            nonce: Set(spl.nonce as i64),
-            chain_id: Set(spl.chain_id as i64),
-            block_number: Set(None),
-            slot_number: Set(Some(spl.slot_number as i64)),
-            tx_hash: Set(spl.signature),
-            created_at: Set(parsed.timestamp.into()),
+        let model = bridge_destination_transactions::ActiveModel {
+            source_nonce: Set(spl.nonce as i64),
+            source_chain_id: Set(spl.chain_id as i64),
+            destination_chain_id: Set(self.chain_id() as i64),
+            destination_height: Set(Some(spl.slot_number as i64)),
+            destination_tx_hash: Set(Some(spl.signature)),
+            destination_processed_at: Set(Some(parsed.timestamp.into())),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L2Withdraw(model);
+        let operation = DbOperations::BridgeDestinationTransactions(model);
         Ok(operation)
     }
 

@@ -2,11 +2,15 @@
 
 pub mod prelude;
 
+pub mod bridge_destination_transactions;
+pub mod bridge_source_transactions;
 pub mod celestia_blobs;
 pub mod l1_deposit;
 pub mod l1_withdraw;
 pub mod l2_withdraw;
 pub mod last_synced;
+pub mod sea_orm_active_enums;
 pub mod twine_l1_deposit;
 pub mod twine_l1_withdraw;
 pub mod twine_l2_withdraw;
+

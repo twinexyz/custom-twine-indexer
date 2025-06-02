@@ -56,9 +56,8 @@ impl DbClient {
         &self,
         ops: Vec<Vec<DbOperations>>,
     ) -> eyre::Result<()> {
-        let mut l1_deposits = Vec::new();
-        let mut l1_withdraws = Vec::new();
-        let mut l2_withdraws = Vec::new();
+        let mut bridge_transcations = Vec::new();
+        let mut bridge_destination_transactions = Vec::new();
 
         //Blockscout related tables
         let mut batches = Vec::new();
@@ -70,9 +69,12 @@ impl DbClient {
         for data_item in ops {
             for op in data_item {
                 match op {
-                    DbOperations::L1Deposits(active_model) => l1_deposits.push(active_model),
-                    DbOperations::L1Withdraw(active_model) => l1_withdraws.push(active_model),
-                    DbOperations::L2Withdraw(active_model) => l2_withdraws.push(active_model),
+                    DbOperations::BridgeSourceTransaction(active_model) => {
+                        bridge_transcations.push(active_model)
+                    }
+                    DbOperations::BridgeDestinationTransactions(active_model) => {
+                        bridge_destination_transactions.push(active_model)
+                    }
                     DbOperations::CommitBatch {
                         batch,
                         details,
@@ -88,10 +90,6 @@ impl DbClient {
                         finalize_hash,
                         batch_number,
                     } => update_details.push((batch_number, finalize_hash)),
-
-                    DbOperations::TwineL1Deposits(active_model) => {}
-                    DbOperations::TwineL1Withdraw(active_model) => {}
-                    DbOperations::TwineL2Withdraw(active_model) => {}
                 }
             }
         }
@@ -100,17 +98,16 @@ impl DbClient {
         let blockscout_txn = self.blockscout.begin().await?;
 
         let primary_db_operations = async {
-            if !l1_deposits.is_empty() {
-                self.bulk_insert_l1_deposits(l1_deposits, &primary_txn)
+            if !bridge_transcations.is_empty() {
+                self.bulk_insert_source_transactions(bridge_transcations, &primary_txn)
                     .await?;
             };
-            if !l1_withdraws.is_empty() {
-                self.bulk_insert_l1_withdraws(l1_withdraws, &primary_txn)
-                    .await?;
-            }
-            if !l2_withdraws.is_empty() {
-                self.bulk_insert_l2_withdraws(l2_withdraws, &primary_txn)
-                    .await?;
+            if !bridge_destination_transactions.is_empty() {
+                self.bulk_insert_destination_transactions(
+                    bridge_destination_transactions,
+                    &primary_txn,
+                )
+                .await?;
             }
             primary_txn.commit().await?;
             Ok::<(), eyre::Report>(())
@@ -132,7 +129,6 @@ impl DbClient {
                 self.bulk_update_transactions(l2_txns, &blockscout_txn)
                     .await?;
             }
-            // IMPORTANT: Handle update_details here!
             if !update_details.is_empty() {
                 self.bulk_finalize_batches(update_details, &blockscout_txn)
                     .await?;

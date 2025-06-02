@@ -13,7 +13,10 @@ use database::{
         blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
     },
     client::DbClient,
-    entities::{l1_deposit, l1_withdraw, l2_withdraw},
+    entities::{
+        bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
+        l2_withdraw,
+    },
     DbOperations,
 };
 use eyre::Result;
@@ -141,21 +144,22 @@ impl EthereumEventHandler {
         )?;
 
         let data = decoded.data;
-        let model = l1_deposit::ActiveModel {
-            nonce: Set(data.nonce.try_into().unwrap()),
-            chain_id: Set(data.chainId.try_into().unwrap()),
-            block_number: Set(Some(data.blockNumber.try_into().unwrap())),
-            slot_number: Set(None),
-            from: Set(format!("{:?}", data.from)),
-            to_twine_address: Set(format!("{:?}", data.toTwineAddress)),
-            l1_token: Set(format!("{:?}", data.l1Token)),
-            l2_token: Set(format!("{:?}", data.l2Token)),
-            tx_hash: Set(decoded.tx_hash_str),
-            amount: Set(data.amount.to_string()),
-            created_at: Set(decoded.timestamp.into()),
+
+        let model = bridge_source_transactions::ActiveModel {
+            source_nonce: Set(data.nonce.try_into().unwrap()),
+            source_chain_id: Set(data.chainId.try_into().unwrap()),
+            source_height: Set(Some(data.blockNumber.try_into().unwrap())),
+            source_from_address: Set(format!("{:?}", data.from)),
+            source_to_address: Set(format!("{:?}", data.toTwineAddress)),
+            destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
+            source_token_address: Set(Some(format!("{:?}", data.l1Token))),
+            source_tx_hash: Set(decoded.tx_hash_str.clone()),
+            source_event_timestamp: Set(decoded.timestamp.into()),
+            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Deposit),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L1Deposits(model);
+        let operation = DbOperations::BridgeSourceTransaction(model);
 
         // let _ = self.db_client.insert_l1_deposits(model).await?;
 
@@ -167,22 +171,23 @@ impl EthereumEventHandler {
             log.clone(),
             L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE,
         )?;
+        let data = decoded.data;
 
-        let model = l1_withdraw::ActiveModel {
-            tx_hash: Set(decoded.tx_hash_str.clone()),
-            nonce: Set(decoded.data.nonce.try_into().unwrap()),
-            chain_id: Set(decoded.data.chainId.try_into().unwrap()),
-            block_number: Set(Some(decoded.data.blockNumber.try_into().unwrap())),
-            slot_number: Set(None),
-            l1_token: Set(format!("{:?}", decoded.data.l1Token)),
-            l2_token: Set(format!("{:?}", decoded.data.l2Token)),
-            from: Set(format!("{:?}", decoded.data.from)),
-            to_twine_address: Set(format!("{:?}", decoded.data.toTwineAddress)),
-            amount: Set(decoded.data.amount.to_string()),
-            created_at: Set(decoded.timestamp.into()),
+        let model = bridge_source_transactions::ActiveModel {
+            source_nonce: Set(data.nonce.try_into().unwrap()),
+            source_chain_id: Set(data.chainId.try_into().unwrap()),
+            source_height: Set(Some(data.blockNumber.try_into().unwrap())),
+            source_from_address: Set(format!("{:?}", data.from)),
+            source_to_address: Set(format!("{:?}", data.toTwineAddress)),
+            destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
+            source_token_address: Set(Some(format!("{:?}", data.l1Token))),
+            source_tx_hash: Set(decoded.tx_hash_str.clone()),
+            source_event_timestamp: Set(decoded.timestamp.into()),
+            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw),
+            ..Default::default()
         };
 
-        let operation = DbOperations::L1Withdraw(model);
+        let operation = DbOperations::BridgeSourceTransaction(model);
 
         // let _ = self.db_client.insert_l1_withdraw(model).await?;
 
@@ -194,16 +199,17 @@ impl EthereumEventHandler {
             .extract_log::<FinalizeWithdrawERC20>(log.clone(), FinalizeWithdrawERC20::SIGNATURE)?;
         let data = decoded.data;
 
-        let model = l2_withdraw::ActiveModel {
-            chain_id: Set(data.chainId.try_into().unwrap()),
-            nonce: Set(data.nonce.try_into().unwrap()),
-            block_number: Set(Some(data.blockNumber.try_into().unwrap())),
-            slot_number: Set(None),
-            tx_hash: Set(decoded.tx_hash_str.clone()),
-            created_at: Set(decoded.timestamp.into()),
+        let model = bridge_destination_transactions::ActiveModel {
+            source_nonce: Set(data.nonce.try_into().unwrap()),
+            source_chain_id: Set(data.chainId.try_into().unwrap()),
+            destination_chain_id: Set(self.chain_id as i64),
+            destination_height: Set(Some(data.blockNumber.try_into().unwrap())),
+            destination_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
+            destination_processed_at: Set(Some(decoded.timestamp.into())),
+            ..Default::default()
         };
         // let _ = self.db_client.insert_l2_withdraw(model).await?;
-        let operation = DbOperations::L2Withdraw(model);
+        let operation = DbOperations::BridgeDestinationTransactions(model);
         Ok(operation)
     }
 
@@ -211,17 +217,19 @@ impl EthereumEventHandler {
         let decoded =
             self.extract_log::<FinalizeWithdrawETH>(log.clone(), FinalizeWithdrawETH::SIGNATURE)?;
         let data = decoded.data;
-        let model = l2_withdraw::ActiveModel {
-            chain_id: Set(data.chainId.try_into().unwrap()),
-            nonce: Set(data.nonce.try_into().unwrap()),
-            block_number: Set(Some(data.blockNumber.try_into().unwrap())),
-            slot_number: Set(None),
-            tx_hash: Set(decoded.tx_hash_str.clone()),
-            created_at: Set(decoded.timestamp.into()),
+
+        let model = bridge_destination_transactions::ActiveModel {
+            source_nonce: Set(data.nonce.try_into().unwrap()),
+            source_chain_id: Set(data.chainId.try_into().unwrap()),
+            destination_chain_id: Set(self.chain_id as i64),
+            destination_height: Set(Some(data.blockNumber.try_into().unwrap())),
+            destination_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
+            destination_processed_at: Set(Some(decoded.timestamp.into())),
+            ..Default::default()
         };
         // let _ = self.db_client.insert_l2_withdraw(model).await?;
 
-        let operation = DbOperations::L2Withdraw(model);
+        let operation = DbOperations::BridgeDestinationTransactions(model);
         Ok(operation)
     }
 
