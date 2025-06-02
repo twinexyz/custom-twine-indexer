@@ -2,8 +2,7 @@ use blockscout_entities::{
     blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
 use entities::{
-    bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
-    l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
+    bridge_destination_transactions, bridge_source_transactions
 };
 
 mod batches;
@@ -12,7 +11,6 @@ pub mod blockscout_entities;
 pub mod bridge;
 pub mod client;
 pub mod connect;
-mod deposits;
 pub mod entities;
 
 pub enum DbOperations {

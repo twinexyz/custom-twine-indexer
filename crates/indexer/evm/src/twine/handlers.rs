@@ -10,10 +10,7 @@ use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
 use database::{
     client::DbClient,
-    entities::{
-        bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
-        l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
-    },
+    entities::{bridge_destination_transactions, bridge_source_transactions},
     DbOperations,
 };
 use eyre::Result;
@@ -128,7 +125,7 @@ impl TwineEventHandler {
                     source_chain_id: Set(deposit_txn.detail.chain_id.try_into().unwrap()),
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
-                    destination_tx_hash: Set(Some(tx_hash.to_string())),
+                    destination_tx_hash: Set(tx_hash.to_string()),
                     // destination_processed_at: Set(Some(decoded.timestamp.into())),
                     ..Default::default()
                 },
@@ -142,7 +139,7 @@ impl TwineEventHandler {
                     source_chain_id: Set(withdraw_txn.detail.chain_id.try_into().unwrap()),
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
-                    destination_tx_hash: Set(Some(tx_hash.to_string())),
+                    destination_tx_hash: Set(tx_hash.to_string()),
                     // destination_processed_at: Set(Some(decoded.timestamp.into())),
                     ..Default::default()
                 },
@@ -194,11 +191,11 @@ impl TwineEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             source_height: Set(Some(data.blockNumber.try_into().unwrap())),
             source_from_address: Set(format!("{:?}", data.from)),
-            source_to_address: Set(format!("{:?}", data.to)),
+            target_recipient_address: Set(Some(format!("{:?}", data.to))),
             destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
             source_token_address: Set(Some(format!("{:?}", data.l1Token))),
             source_tx_hash: Set(decoded.tx_hash_str.clone()),
-            source_event_timestamp: Set(decoded.timestamp.into()),
+            source_event_timestamp: Set(decoded.timestamp.naive_utc()),
             event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Withdraw),
             ..Default::default()
         };

@@ -3,10 +3,4 @@
 pub use super::bridge_destination_transactions::Entity as BridgeDestinationTransactions;
 pub use super::bridge_source_transactions::Entity as BridgeSourceTransactions;
 pub use super::celestia_blobs::Entity as CelestiaBlobs;
-pub use super::l1_deposit::Entity as L1Deposit;
-pub use super::l1_withdraw::Entity as L1Withdraw;
-pub use super::l2_withdraw::Entity as L2Withdraw;
 pub use super::last_synced::Entity as LastSynced;
-pub use super::twine_l1_deposit::Entity as TwineL1Deposit;
-pub use super::twine_l1_withdraw::Entity as TwineL1Withdraw;
-pub use super::twine_l2_withdraw::Entity as TwineL2Withdraw;

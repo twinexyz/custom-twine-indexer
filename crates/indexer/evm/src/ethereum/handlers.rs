@@ -13,10 +13,7 @@ use database::{
         blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
     },
     client::DbClient,
-    entities::{
-        bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
-        l2_withdraw,
-    },
+    entities::{bridge_destination_transactions, bridge_source_transactions},
     DbOperations,
 };
 use eyre::Result;
@@ -150,11 +147,12 @@ impl EthereumEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             source_height: Set(Some(data.blockNumber.try_into().unwrap())),
             source_from_address: Set(format!("{:?}", data.from)),
-            source_to_address: Set(format!("{:?}", data.toTwineAddress)),
+            source_to_address: Set(Some(format!("{:?}", data.toTwineAddress))),
             destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
             source_token_address: Set(Some(format!("{:?}", data.l1Token))),
             source_tx_hash: Set(decoded.tx_hash_str.clone()),
-            source_event_timestamp: Set(decoded.timestamp.into()),
+            source_event_timestamp: Set(decoded.timestamp.naive_utc()),
+            amount: Set(Some(data.amount.to_string())),
             event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Deposit),
             ..Default::default()
         };
@@ -178,12 +176,15 @@ impl EthereumEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             source_height: Set(Some(data.blockNumber.try_into().unwrap())),
             source_from_address: Set(format!("{:?}", data.from)),
-            source_to_address: Set(format!("{:?}", data.toTwineAddress)),
+            target_recipient_address: Set(Some(format!("{:?}", data.toTwineAddress))),
             destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
             source_token_address: Set(Some(format!("{:?}", data.l1Token))),
             source_tx_hash: Set(decoded.tx_hash_str.clone()),
-            source_event_timestamp: Set(decoded.timestamp.into()),
-            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw),
+            source_event_timestamp: Set(decoded.timestamp.naive_utc()),
+            amount: Set(Some(data.amount.to_string())),
+            event_type: Set(
+                database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw,
+            ),
             ..Default::default()
         };
 
@@ -204,8 +205,8 @@ impl EthereumEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             destination_chain_id: Set(self.chain_id as i64),
             destination_height: Set(Some(data.blockNumber.try_into().unwrap())),
-            destination_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
-            destination_processed_at: Set(Some(decoded.timestamp.into())),
+            destination_tx_hash: Set(decoded.tx_hash_str.clone()),
+            destination_processed_at: Set(Some(decoded.timestamp.naive_utc())),
             ..Default::default()
         };
         // let _ = self.db_client.insert_l2_withdraw(model).await?;
@@ -223,8 +224,8 @@ impl EthereumEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             destination_chain_id: Set(self.chain_id as i64),
             destination_height: Set(Some(data.blockNumber.try_into().unwrap())),
-            destination_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
-            destination_processed_at: Set(Some(decoded.timestamp.into())),
+            destination_tx_hash: Set(decoded.tx_hash_str.clone()),
+            destination_processed_at: Set(Some(decoded.timestamp.naive_utc())),
             ..Default::default()
         };
         // let _ = self.db_client.insert_l2_withdraw(model).await?;

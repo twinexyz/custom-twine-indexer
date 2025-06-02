@@ -12,9 +12,6 @@ use axum::{
     extract::{Query, State},
     response::IntoResponse,
 };
-use database::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
-};
 use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
 pub async fn health_check() -> impl IntoResponse {

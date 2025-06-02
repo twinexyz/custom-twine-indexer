@@ -10,10 +10,10 @@ pub struct Model {
     pub source_chain_id: i64,
     pub source_nonce: i64,
     pub destination_chain_id: i64,
-    pub destination_tx_hash: Option<String>,
+    pub destination_tx_hash: String,
     pub destination_status_code: Option<i16>,
     pub destination_height: Option<i64>,
-    pub destination_processed_at: Option<DateTimeWithTimeZone>,
+    pub destination_processed_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

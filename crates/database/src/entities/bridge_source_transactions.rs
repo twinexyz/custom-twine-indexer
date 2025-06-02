@@ -14,14 +14,14 @@ pub struct Model {
     pub source_tx_hash: String,
     pub source_height: Option<i64>,
     pub source_from_address: String,
-    pub source_to_address: String,
+    pub source_to_address: Option<String>,
     pub target_recipient_address: Option<String>,
     pub source_token_address: Option<String>,
     pub destination_token_address: Option<String>,
     pub amount: Option<String>,
     pub value: Option<String>,
-    pub l2_gas_limit: Option<String>,
-    pub source_event_timestamp: DateTimeWithTimeZone,
+    pub l2_gas_limit: Option<i64>,
+    pub source_event_timestamp: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

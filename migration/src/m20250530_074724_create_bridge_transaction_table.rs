@@ -109,7 +109,7 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(SourceTransactions::SourceToAddress)
                             .string()
-                            .not_null(),
+                            .null(),
                     )
                     .col(
                         ColumnDef::new(SourceTransactions::TargetRecipientAddress)
@@ -130,12 +130,12 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(SourceTransactions::Value).string().null())
                     .col(
                         ColumnDef::new(SourceTransactions::L2GasLimit)
-                            .string()
+                            .big_integer()
                             .null(),
                     )
                     .col(
                         ColumnDef::new(SourceTransactions::SourceEventTimestamp)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .not_null(),
                     )
                     .primary_key(
@@ -171,15 +171,15 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .col( // <-- New column definition
+                    .col(
                         ColumnDef::new(DestinationTransactions::DestinationChainId)
                             .big_integer()
-                            .not_null(), // Assuming it's known and required
+                            .not_null(),
                     )
                     .col(
                         ColumnDef::new(DestinationTransactions::DestinationTxHash)
                             .string()
-                            .null(),
+                            .not_null(),
                     )
                     .col(
                         ColumnDef::new(DestinationTransactions::DestinationStatusCode)
@@ -193,7 +193,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(DestinationTransactions::DestinationProcessedAt)
-                            .timestamp_with_time_zone()
+                            .timestamp()
                             .null(),
                     )
                     .foreign_key(
@@ -264,7 +264,11 @@ impl MigrationTrait for Migration {
         // (its indices idx_bridge_destination_transactions_fk, idx_bridge_destination_transactions_destination_chain_id
         // and fk_bridge_destination_to_bridge_source will be dropped with the table)
         manager
-            .drop_table(Table::drop().table(DestinationTransactions::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(DestinationTransactions::Table)
+                    .to_owned(),
+            )
             .await?;
 
         // Drop bridge_source_transactions table

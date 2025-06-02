@@ -8,10 +8,7 @@ use common::config::{ChainConfig, SvmConfig};
 use database::{
     blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail},
     client::DbClient,
-    entities::{
-        bridge_destination_transactions, bridge_source_transactions, l1_deposit, l1_withdraw,
-        l2_withdraw,
-    },
+    entities::{bridge_destination_transactions, bridge_source_transactions},
     DbOperations,
 };
 use evm::provider::EvmProvider;
@@ -124,12 +121,13 @@ impl SolanaEventHandler {
             source_chain_id: Set(deposit.chain_id as i64),
             source_height: Set(Some(deposit.slot_number as i64)),
             source_from_address: Set(deposit.from_l1_pubkey),
-            source_to_address: Set(deposit.to_twine_address),
+            target_recipient_address: Set(Some(deposit.to_twine_address)),
             destination_token_address: Set(Some(deposit.l2_token)),
             source_token_address: Set(Some(deposit.l1_token)),
             source_tx_hash: Set(parsed.transaction_signature),
-            source_event_timestamp: Set(parsed.timestamp.into()),
+            source_event_timestamp: Set(parsed.timestamp.naive_utc()),
             event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Deposit),
+            amount: Set(Some(deposit.amount)),
             ..Default::default()
         };
 
@@ -147,11 +145,12 @@ impl SolanaEventHandler {
             source_chain_id: Set(withdrawal.chain_id as i64),
             source_height: Set(Some(withdrawal.slot_number as i64)),
             source_from_address: Set(withdrawal.to_l1_pub_key),
-            source_to_address: Set(withdrawal.from_twine_address),
+            target_recipient_address: Set(Some(withdrawal.from_twine_address)),
             destination_token_address: Set(Some(withdrawal.l2_token)),
             source_token_address: Set(Some(withdrawal.l1_token)),
             source_tx_hash: Set(parsed.transaction_signature),
-            source_event_timestamp: Set(parsed.timestamp.into()),
+            source_event_timestamp: Set(parsed.timestamp.naive_utc()),
+            amount: Set(Some(withdrawal.amount)),
             event_type: Set(
                 database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw,
             ),
@@ -174,8 +173,8 @@ impl SolanaEventHandler {
             source_chain_id: Set(native.chain_id as i64),
             destination_chain_id: Set(self.chain_id() as i64),
             destination_height: Set(Some(native.slot_number as i64)),
-            destination_tx_hash: Set(Some(native.signature)),
-            destination_processed_at: Set(Some(parsed.timestamp.into())),
+            destination_tx_hash: Set(native.signature),
+            destination_processed_at: Set(Some(parsed.timestamp.naive_utc())),
             ..Default::default()
         };
 
@@ -191,8 +190,8 @@ impl SolanaEventHandler {
             source_chain_id: Set(spl.chain_id as i64),
             destination_chain_id: Set(self.chain_id() as i64),
             destination_height: Set(Some(spl.slot_number as i64)),
-            destination_tx_hash: Set(Some(spl.signature)),
-            destination_processed_at: Set(Some(parsed.timestamp.into())),
+            destination_tx_hash: Set(spl.signature),
+            destination_processed_at: Set(Some(parsed.timestamp.naive_utc())),
             ..Default::default()
         };
 
