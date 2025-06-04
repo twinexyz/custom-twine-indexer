@@ -5,14 +5,14 @@ db_blockscout: &db_blockscout
   url: "postgres://blockscout:password@localhost:5432/blockscout"
 
 api:
-  database: 
+  database:
     url: "postgres://blockscout:password@localhost:5432/indexer"
   port: 7777
 
 indexer:
-  database: 
+  database:
     url: "postgresql://db_user:password@localhost:5432/indexer"
-  blockscout: 
+  blockscout:
     url: "postgres://blockscout:password@localhost:5432/blockscout"
 
   l1s:
@@ -22,7 +22,7 @@ indexer:
       chain_id: 17000
       start_block: 3644217
       block_sync_batch_size: 50
-      chain: "evm" 
+      chain: "evm"
       l1_message_queue_address: "0x9a10C65D8C2069316bbF38ddccE0CB22401E5F93"
       l1_erc20_gateway_address: "0x2c941A3b8f64A2467e35FFd4A22D54707cB81b4C"
       eth_twine_chain_address: "0xAEA81eb8DeaC34C35AaA646962f337A86E383430"
@@ -37,7 +37,7 @@ indexer:
       twine_chain_program_address:  "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
       chain: "svm"
 
-  twine: 
+  twine:
     http_rpc_url: "http://0.0.0.0:8545"
     ws_rpc_url:   "ws://0.0.0.0:8546"
     chain_id:     1337

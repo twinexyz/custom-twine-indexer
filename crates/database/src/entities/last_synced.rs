@@ -7,7 +7,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub chain_id: i64,
-    pub block_number: i64,
+    pub block_number: i64, //can we name it as` chain_height`
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

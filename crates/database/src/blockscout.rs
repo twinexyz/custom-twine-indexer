@@ -1,7 +1,8 @@
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, QueryFilter as _,
-    sea_query::{ExprTrait, OnConflict},
+    sea_query::OnConflict,
 };
+use tracing::error;
 
 use crate::{
     blockscout_entities::{blocks, transactions},
@@ -10,9 +11,15 @@ use crate::{
 
 impl DbClient {
     pub async fn get_blocks_by_number(&self, number: u64) -> eyre::Result<Option<blocks::Model>> {
+        // Check if blockscout connection exists
+        let blockscout = self.blockscout.as_ref().ok_or_else(|| {
+            error!("Blockscout database connection is not available");
+            eyre::eyre!("Blockscout database connection is not available")
+        })?;
+
         let block = blocks::Entity::find()
             .filter(blocks::Column::Number.eq(number as i64))
-            .one(&self.blockscout)
+            .one(blockscout)
             .await?;
 
         Ok(block)
@@ -23,10 +30,16 @@ impl DbClient {
         start_block: u64,
         end_block: u64,
     ) -> eyre::Result<Vec<blocks::Model>> {
+        // Check if blockscout connection exists
+        let blockscout = self.blockscout.as_ref().ok_or_else(|| {
+            error!("Blockscout database connection is not available");
+            eyre::eyre!("Blockscout database connection is not available")
+        })?;
+
         let block = blocks::Entity::find()
             .filter(blocks::Column::Number.gte(start_block as i64))
             .filter(blocks::Column::Number.lte(end_block as i64))
-            .all(&self.blockscout)
+            .all(blockscout)
             .await?;
 
         Ok(block)
@@ -37,10 +50,16 @@ impl DbClient {
         start_block: u64,
         end_block: u64,
     ) -> eyre::Result<Vec<transactions::Model>> {
+        // Check if blockscout connection exists
+        let blockscout = self.blockscout.as_ref().ok_or_else(|| {
+            error!("Blockscout database connection is not available");
+            eyre::eyre!("Blockscout database connection is not available")
+        })?;
+
         let txns = transactions::Entity::find()
             .filter(transactions::Column::BlockNumber.gte(start_block as i64))
             .filter(transactions::Column::BlockNumber.lte(end_block as i64))
-            .all(&self.blockscout)
+            .all(blockscout)
             .await?;
 
         Ok(txns)
@@ -51,14 +70,24 @@ impl DbClient {
         models: Vec<blocks::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> eyre::Result<()> {
-        let _ = blocks::Entity::insert_many(models)
+        // Check if blockscout connection exists (optional, since txn implies a connection)
+        let _blockscout = self.blockscout.as_ref().ok_or_else(|| {
+            error!("Blockscout database connection is not available");
+            eyre::eyre!("Blockscout database connection is not available")
+        })?;
+
+        blocks::Entity::insert_many(models)
             .on_conflict(
                 OnConflict::column(blocks::Column::Number)
                     .update_column(blocks::Column::BatchNumber)
                     .to_owned(),
             )
-            .exec_with_returning_many(txn)
-            .await?;
+            .exec(txn)
+            .await
+            .map_err(|e| {
+                error!("Failed to update blocks: {:?}", e);
+                eyre::eyre!("Failed to update blocks: {:?}", e)
+            })?;
 
         Ok(())
     }
@@ -68,14 +97,24 @@ impl DbClient {
         models: Vec<transactions::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> eyre::Result<()> {
-        let _ = transactions::Entity::insert_many(models)
+        // Check if blockscout connection exists (optional, since txn implies a connection)
+        let _blockscout = self.blockscout.as_ref().ok_or_else(|| {
+            error!("Blockscout database connection is not available");
+            eyre::eyre!("Blockscout database connection is not available")
+        })?;
+
+        transactions::Entity::insert_many(models)
             .on_conflict(
                 OnConflict::columns([transactions::Column::BlockHash, transactions::Column::Index])
-                    .update_column(blocks::Column::BatchNumber)
+                    .update_column(transactions::Column::BatchNumber)
                     .to_owned(),
             )
-            .exec_with_returning_many(txn)
-            .await?;
+            .exec(txn)
+            .await
+            .map_err(|e| {
+                error!("Failed to update transactions: {:?}", e);
+                eyre::eyre!("Failed to update transactions: {:?}", e)
+            })?;
 
         Ok(())
     }

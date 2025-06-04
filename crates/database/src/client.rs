@@ -2,17 +2,17 @@ use crate::{DbOperations, entities::last_synced};
 use sea_orm::{
     ActiveValue::Set, DatabaseConnection, EntityTrait, TransactionTrait, sea_query::OnConflict,
 };
-use tokio::try_join;
+
 use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct DbClient {
     pub primary: DatabaseConnection,
-    pub blockscout: DatabaseConnection,
+    pub blockscout: Option<DatabaseConnection>,
 }
 
 impl DbClient {
-    pub fn new(primary: DatabaseConnection, blockscout: DatabaseConnection) -> Self {
+    pub fn new(primary: DatabaseConnection, blockscout: Option<DatabaseConnection>) -> Self {
         Self {
             primary,
             blockscout,
@@ -45,7 +45,7 @@ impl DbClient {
             .exec(&self.primary)
             .await
             .map_err(|e| {
-                error!("Failed to insert lifecycle txns: {:?}", e);
+                error!("Failed to insert lifecycle txns: {:?}", e); //is this correct? i think its a miss, we are handling the sync metadata not the transaction lifecycle
                 eyre::eyre!("Failed to insert lifecycle txns: {:?}", e)
             })?;
 
@@ -56,10 +56,10 @@ impl DbClient {
         &self,
         ops: Vec<Vec<DbOperations>>,
     ) -> eyre::Result<()> {
-        let mut bridge_transcations = Vec::new();
+        let mut bridge_transactions = Vec::new();
         let mut bridge_destination_transactions = Vec::new();
 
-        //Blockscout related tables
+        // Blockscout-related tables
         let mut batches = Vec::new();
         let mut batch_details = Vec::new();
         let mut l2_blocks = Vec::new();
@@ -70,10 +70,10 @@ impl DbClient {
             for op in data_item {
                 match op {
                     DbOperations::BridgeSourceTransaction(active_model) => {
-                        bridge_transcations.push(active_model)
+                        bridge_transactions.push(active_model);
                     }
                     DbOperations::BridgeDestinationTransactions(active_model) => {
-                        bridge_destination_transactions.push(active_model)
+                        bridge_destination_transactions.push(active_model);
                     }
                     DbOperations::CommitBatch {
                         batch,
@@ -94,26 +94,24 @@ impl DbClient {
             }
         }
 
+        // Primary database operations
         let primary_txn = self.primary.begin().await?;
-        let blockscout_txn = self.blockscout.begin().await?;
-
-        let primary_db_operations = async {
-            if !bridge_transcations.is_empty() {
-                self.bulk_insert_source_transactions(bridge_transcations, &primary_txn)
-                    .await?;
-            };
-            if !bridge_destination_transactions.is_empty() {
-                self.bulk_insert_destination_transactions(
-                    bridge_destination_transactions,
-                    &primary_txn,
-                )
+        if !bridge_transactions.is_empty() {
+            self.bulk_insert_source_transactions(bridge_transactions, &primary_txn)
                 .await?;
-            }
-            primary_txn.commit().await?;
-            Ok::<(), eyre::Report>(())
-        };
+        }
+        if !bridge_destination_transactions.is_empty() {
+            self.bulk_insert_destination_transactions(
+                bridge_destination_transactions,
+                &primary_txn,
+            )
+            .await?;
+        }
+        primary_txn.commit().await?;
 
-        let blockscout_db_operations = async {
+        // Blockscout database operations (only if blockscout connection exists)
+        if let Some(blockscout) = &self.blockscout {
+            let blockscout_txn = blockscout.begin().await?;
             if !batches.is_empty() {
                 self.bulk_insert_twine_transaction_batch(batches, &blockscout_txn)
                     .await?;
@@ -134,23 +132,16 @@ impl DbClient {
                     .await?;
             }
             blockscout_txn.commit().await?;
-            Ok::<(), eyre::Report>(())
-        };
-
-        match try_join!(primary_db_operations, blockscout_db_operations) {
-            Ok(_) => {
-                info!("All database operations and commits were successful.");
-            }
-            Err(e) => {
-                // Transactions will be rolled back automatically when `primary_txn`
-                // and `blockscout_txn` are dropped if their commit was not reached.
-                error!("Error during bulk database operations: {:?}", e);
-                return Err(e);
-            }
+        } else if !batches.is_empty()
+            || !batch_details.is_empty()
+            || !l2_blocks.is_empty()
+            || !l2_txns.is_empty()
+            || !update_details.is_empty()
+        {
+            tracing::warn!("Blockscout operations requested but no blockscout connection provided");
         }
 
         info!("All data successfully processed and saved.");
-
         Ok(())
     }
 }

@@ -889,6 +889,7 @@ dependencies = [
  "axum",
  "chrono",
  "common",
+ "config",
  "database",
  "eyre",
  "sea-orm",
