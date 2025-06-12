@@ -3277,6 +3277,7 @@ dependencies = [
  "common",
  "database",
  "eyre",
+ "futures-util",
  "tokio",
  "tracing",
 ]

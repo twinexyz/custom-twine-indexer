@@ -1,18 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
+use crate::handler::ChainEventHandler;
 use async_trait::async_trait;
 use eyre::Error;
-use tokio::{sync::Semaphore, task::JoinSet};
+use futures_util::{Stream, StreamExt};
+use tokio::{sync::Semaphore, task::JoinSet, time::Instant};
 use tracing::{error, info, instrument};
-
-use crate::handler::ChainEventHandler;
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
     type EventHandler: ChainEventHandler + Clone + Send + Sync + 'static;
+    type LiveStream: Stream<Item = eyre::Result<<Self::EventHandler as ChainEventHandler>::LogType>>
+        + Send
+        + 'static;
 
     // async fn sync_historical(&self, from: u64) -> eyre::Result<()>;
-    async fn sync_live(&self) -> eyre::Result<()>;
+    // async fn sync_live(&self) -> eyre::Result<()>;
     async fn get_initial_state(&self) -> eyre::Result<u64>;
 
     async fn get_historical_logs(
@@ -21,7 +24,13 @@ pub trait ChainIndexer: Send + Sync {
         to: u64,
     ) -> eyre::Result<Vec<<Self::EventHandler as ChainEventHandler>::LogType>>;
 
+    async fn subscribe_live(&self, from_block: Option<u64>) -> eyre::Result<Self::LiveStream>;
+
     async fn get_current_chain_height(&self) -> eyre::Result<u64>;
+    fn get_block_number_from_log(
+        &self,
+        log: &<Self::EventHandler as ChainEventHandler>::LogType,
+    ) -> Option<u64>;
 
     fn get_event_handler(&self) -> Self::EventHandler;
 
@@ -40,6 +49,86 @@ pub trait ChainIndexer: Send + Sync {
         }
 
         Ok(())
+    }
+
+    async fn sync_live(&self) -> Result<(), Error> {
+        const MAX_BATCH_SIZE: usize = 1000;
+        const MAX_BATCH_TIME: Duration = Duration::from_secs(15);
+
+        let mut reconnect_attempts = 0;
+
+        loop {
+            let last_synced = self
+                .get_event_handler()
+                .get_db_client()
+                .get_last_synced_height(self.get_event_handler().chain_id() as i64, 0)
+                .await?;
+
+            match self.subscribe_live(Some(last_synced as u64)).await {
+                Ok(stream) => {
+                    info!("Subscribed to live logs");
+                    reconnect_attempts = 0;
+
+                    let mut buffer = Vec::with_capacity(MAX_BATCH_SIZE);
+                    let mut last_flush = tokio::time::Instant::now();
+                    let mut max_seen_block = last_synced;
+
+                    let mut value = Box::pin(stream);
+                    loop {
+                        let sleep_duration = MAX_BATCH_TIME.saturating_sub(last_flush.elapsed());
+                        let sleep_future = tokio::time::sleep(sleep_duration);
+                        tokio::pin!(sleep_future);
+
+                        tokio::select! {
+                            maybe_log = value.next() => {
+                                match maybe_log {
+                                    Some(log) => {
+                                        if let Ok(log) = log {
+                                            let log_block_number = self.get_block_number_from_log(&log.clone());
+
+                                            if let Some(block_number) = log_block_number {
+                                           max_seen_block = max_seen_block.max(block_number as i64);
+                                        }
+
+                                        buffer.push(log);
+
+                                            let mut valid_logs: Vec<_> = buffer.clone();
+                                            self.process_buffer(&mut valid_logs, max_seen_block).await?;
+                                            self.process_buffer(&mut buffer, max_seen_block).await?;
+                                            last_flush = Instant::now();
+                                        }
+
+                                    }
+                                    None => {
+                                        info!("Stream closed. Reconnecting...");
+                                        break;
+                                    }
+                                }
+                            }
+
+                            _ = &mut sleep_future => {
+                                if !buffer.is_empty() {
+                                    self.process_buffer(&mut buffer, max_seen_block).await?;
+                                    last_flush = Instant::now();
+                                    max_seen_block = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Err(e) => {
+                    let delay = Duration::from_secs(5);
+
+                    reconnect_attempts += 1;
+                    error!(
+                        "Error subscribing to logs: {:?}. Reconnect attemp:{:?}, Retrying in {:?}",
+                        e, reconnect_attempts, delay
+                    );
+                    tokio::time::sleep(delay * 2u32.pow(reconnect_attempts)).await;
+                }
+            }
+        }
     }
 
     #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]

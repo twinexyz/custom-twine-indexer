@@ -1,17 +1,23 @@
-use std::{sync::Arc, time::Duration};
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common::config::ChainConfig;
 use database::client::DbClient;
 use eyre::Error;
-use futures_util::{stream::select_all, StreamExt};
+use futures_util::{stream::select_all, Stream, StreamExt};
 use generic_indexer::{handler::ChainEventHandler, indexer::ChainIndexer};
+use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
 use tokio::{sync::Semaphore, task::JoinSet};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info, instrument};
 
-use crate::{handler::SolanaEventHandler, parser::FoundEvent, provider::SvmProvider};
+use crate::{
+    handler::SolanaEventHandler,
+    parser::{parse_log, SolanaLog},
+    provider::SvmProvider,
+};
 
 pub struct SolanaIndexer {
     provider: SvmProvider,
@@ -25,9 +31,24 @@ pub struct SolanaIndexer {
 #[async_trait]
 impl ChainIndexer for SolanaIndexer {
     type EventHandler = SolanaEventHandler;
+    type LiveStream = Pin<Box<dyn Stream<Item = eyre::Result<SolanaLog>> + Send>>;
 
     fn get_event_handler(&self) -> Self::EventHandler {
         self.handler.clone()
+    }
+
+    async fn subscribe_live(&self, _from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
+        let program_id = self
+            .program_ids
+            .first()
+            .ok_or(eyre::eyre!("No program IDs configured"))?;
+
+        // Get the raw stream from the provider
+        let raw_stream = self.provider.subscribe_logs(program_id).await?;
+
+        let parsed_stream = raw_stream.map(move |result| parse_log(result));
+
+        Ok(Box::pin(parsed_stream))
     }
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {
@@ -44,31 +65,14 @@ impl ChainIndexer for SolanaIndexer {
         self.provider.get_slot().await
     }
 
-    async fn get_historical_logs(&self, from: u64, to: u64) -> eyre::Result<Vec<FoundEvent>> {
+    async fn get_historical_logs(&self, from: u64, to: u64) -> eyre::Result<Vec<SolanaLog>> {
         self.provider
             .get_logs(self.handler.get_program_addresses(), from, to)
             .await
     }
 
-    async fn sync_live(&self) -> eyre::Result<()> {
-        let mut streams = vec![];
-
-        for program_id in &self.program_ids {
-            let stream = self.provider.subscribe_logs(program_id).await.unwrap();
-            streams.push(stream);
-        }
-
-        let merged = select_all(streams);
-
-        merged.for_each(|result| async {
-            let value = result.value;
-            let logs = value.logs;
-            let sig = value.signature;
-
-            // self.handler.handle_event(&logs, Some(sig)).await;
-        });
-
-        Ok(())
+    fn get_block_number_from_log(&self, log: &SolanaLog) -> Option<u64> {
+        Some(log.slot)
     }
 }
 

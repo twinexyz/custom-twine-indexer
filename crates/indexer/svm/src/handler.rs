@@ -29,7 +29,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
     CommitBatch, DepositSuccessful, FinalizeNativeWithdrawal, FinalizeSplWithdrawal,
-    FinalizedBatch, ForcedWithdrawSuccessful, FoundEvent, SolanaEvents,
+    FinalizedBatch, ForcedWithdrawSuccessful, SolanaEvents, SolanaLog,
 };
 
 pub struct SolanaEventHandler {
@@ -40,7 +40,7 @@ pub struct SolanaEventHandler {
 
 #[async_trait]
 impl ChainEventHandler for SolanaEventHandler {
-    type LogType = FoundEvent;
+    type LogType = SolanaLog;
 
     fn get_chain_config(&self) -> ChainConfig {
         self.config.common.clone()
@@ -51,7 +51,7 @@ impl ChainEventHandler for SolanaEventHandler {
     }
 
     #[instrument(skip_all, fields(CHAIN = %self.chain_id()))]
-    async fn handle_event(&self, log: FoundEvent) -> eyre::Result<Vec<DbOperations>> {
+    async fn handle_event(&self, log: SolanaLog) -> eyre::Result<Vec<DbOperations>> {
         let mut slot_number = 0;
         let mut operations = Vec::new();
 
@@ -113,7 +113,7 @@ impl SolanaEventHandler {
         return vec![twine_chain_id, gateway_id];
     }
 
-    async fn handle_deposit(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+    async fn handle_deposit(&self, parsed: SolanaLog) -> eyre::Result<DbOperations> {
         let deposit = parsed.parse_borsh::<DepositSuccessful>()?;
 
         let model = bridge_source_transactions::ActiveModel {
@@ -138,7 +138,7 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_withdrawal(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+    async fn handle_withdrawal(&self, parsed: SolanaLog) -> eyre::Result<DbOperations> {
         let withdrawal = parsed.parse_borsh::<ForcedWithdrawSuccessful>()?;
         let model = bridge_source_transactions::ActiveModel {
             source_nonce: Set(withdrawal.nonce as i64),
@@ -164,7 +164,7 @@ impl SolanaEventHandler {
 
     async fn handle_finalize_native_withdraw(
         &self,
-        parsed: FoundEvent,
+        parsed: SolanaLog,
     ) -> eyre::Result<DbOperations> {
         let native = parsed.parse_borsh::<FinalizeNativeWithdrawal>()?;
 
@@ -182,7 +182,7 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_finalize_spl_withdraw(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+    async fn handle_finalize_spl_withdraw(&self, parsed: SolanaLog) -> eyre::Result<DbOperations> {
         let spl = parsed.parse_borsh::<FinalizeSplWithdrawal>()?;
 
         let model = bridge_destination_transactions::ActiveModel {
@@ -199,7 +199,7 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_commit_batch(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+    async fn handle_commit_batch(&self, parsed: SolanaLog) -> eyre::Result<DbOperations> {
         let commit = parsed.parse_borsh::<CommitBatch>()?;
 
         let start_block = commit.start_block as u64;
@@ -294,7 +294,7 @@ impl SolanaEventHandler {
         Ok(operation)
     }
 
-    async fn handle_finalize_batch(&self, parsed: FoundEvent) -> eyre::Result<DbOperations> {
+    async fn handle_finalize_batch(&self, parsed: SolanaLog) -> eyre::Result<DbOperations> {
         let finalize = parsed.parse_borsh::<FinalizedBatch>()?;
 
         let start_block = finalize.start_block;

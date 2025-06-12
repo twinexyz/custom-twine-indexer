@@ -9,6 +9,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde::{Deserialize, Serialize};
+use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_sdk::native_token::Sol;
 use std::env;
 use tracing::{debug, error, info};
@@ -214,8 +215,24 @@ pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
     })
 }
 
+pub fn parse_log(response: Response<RpcLogsResponse>) -> eyre::Result<SolanaLog> {
+    let signature = response.value.signature;
+    let logs = response.value.logs;
+    let slot = response.context.slot;
+
+    let metadata = extract_log(&logs).ok_or_else(|| eyre::eyre!("No relevant events found"))?;
+
+    Ok(SolanaLog {
+        event_type: metadata.event_type,
+        transaction_signature: signature,
+        slot,
+        timestamp: Utc::now(), // Live events use current time
+        encoded_data: metadata.encoded_data,
+    })
+}
+
 #[derive(Debug, Serialize, Clone)] // Added Clone for convenience
-pub struct FoundEvent {
+pub struct SolanaLog {
     pub event_type: SolanaEvents, // Storing as string representation of the enum
     pub transaction_signature: String,
     pub slot: u64,
@@ -223,7 +240,7 @@ pub struct FoundEvent {
     pub encoded_data: String,
 }
 
-impl FoundEvent {
+impl SolanaLog {
     pub fn parse_borsh<T: BorshDeserialize>(&self) -> eyre::Result<T> {
         let encoded_data = &self.encoded_data;
 

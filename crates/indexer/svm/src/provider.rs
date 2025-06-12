@@ -25,7 +25,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
-use crate::parser::{extract_log, FoundEvent};
+use crate::parser::{extract_log, SolanaLog};
 
 #[derive(Clone)]
 pub struct SvmProvider {
@@ -140,7 +140,7 @@ impl SvmProvider {
         programs: Vec<Pubkey>,
         from: u64,
         to: u64,
-    ) -> eyre::Result<Vec<FoundEvent>> {
+    ) -> eyre::Result<Vec<SolanaLog>> {
         let mut all_found_events = Vec::new();
 
         for program in programs {
@@ -185,7 +185,7 @@ impl SvmProvider {
                             })?;
 
                             if let Some(metadata) = extract_log(&logs_messages) {
-                                let found_event = FoundEvent {
+                                let found_event = SolanaLog {
                                     event_type: metadata.event_type,
                                     transaction_signature: signature_str.clone(),
                                     slot: current_slot,
@@ -215,7 +215,8 @@ impl SvmProvider {
         &self,
         program_id: &Pubkey,
     ) -> Result<ReceiverStream<Response<RpcLogsResponse>>, eyre::Error> {
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (tx, rx) = tokio::sync::mpsc::channel(256);
+
         let program_id = *program_id; // Copy the pubkey
         let ws_client = Arc::clone(&self.ws);
 

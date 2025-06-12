@@ -16,7 +16,7 @@ impl DbClient {
         Self {
             primary,
             blockscout,
-        }
+        } 
     }
 
     pub async fn get_last_synced_height(
