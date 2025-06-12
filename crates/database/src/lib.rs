@@ -1,9 +1,7 @@
 use blockscout_entities::{
     blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
-use entities::{
-    bridge_destination_transactions, bridge_source_transactions
-};
+use entities::{bridge_destination_transactions, bridge_source_transactions};
 
 mod batches;
 mod blockscout;

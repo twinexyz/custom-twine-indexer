@@ -7,7 +7,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let cfg = config::ApiConfig::from_env("api".to_string())?;
-    let db_conn = connect(&cfg.database.url).await?;
-    info!("Connected to Database");
-    api_lib::start_api(db_conn, cfg.port).await
+    let primary_db_conn = connect(&cfg.database.url).await?;
+    info!("Connected to Primary Database");
+    api_lib::start_api(primary_db_conn, cfg.port).await
 }

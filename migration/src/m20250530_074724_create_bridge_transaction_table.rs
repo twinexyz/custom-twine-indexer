@@ -196,26 +196,26 @@ impl MigrationTrait for Migration {
                             .timestamp()
                             .null(),
                     )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_bridge_destination_to_bridge_source")
-                            .from(
-                                DestinationTransactions::Table,
-                                (
-                                    DestinationTransactions::SourceChainId,
-                                    DestinationTransactions::SourceNonce,
-                                ),
-                            )
-                            .to(
-                                SourceTransactions::Table,
-                                (
-                                    SourceTransactions::SourceChainId,
-                                    SourceTransactions::SourceNonce,
-                                ),
-                            )
-                            .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
-                    )
+                    // .foreign_key(
+                    //     ForeignKey::create()
+                    //         .name("fk_bridge_destination_to_bridge_source")
+                    //         .from(
+                    //             DestinationTransactions::Table,
+                    //             (
+                    //                 DestinationTransactions::SourceChainId,
+                    //                 DestinationTransactions::SourceNonce,
+                    //             ),
+                    //         )
+                    //         .to(
+                    //             SourceTransactions::Table,
+                    //             (
+                    //                 SourceTransactions::SourceChainId,
+                    //                 SourceTransactions::SourceNonce,
+                    //             ),
+                    //         )
+                    //         .on_delete(ForeignKeyAction::Cascade)
+                    //         .on_update(ForeignKeyAction::Cascade),
+                    // )
                     .to_owned(),
             )
             .await?;
@@ -227,6 +227,8 @@ impl MigrationTrait for Migration {
                     .name("idx_bridge_source_transactions_source_chain_id")
                     .table(SourceTransactions::Table)
                     .col(SourceTransactions::SourceChainId)
+                    .col(SourceTransactions::SourceNonce)
+                    .unique()
                     .to_owned(),
             )
             .await?;
@@ -239,17 +241,7 @@ impl MigrationTrait for Migration {
                     .table(DestinationTransactions::Table)
                     .col(DestinationTransactions::SourceChainId)
                     .col(DestinationTransactions::SourceNonce)
-                    .to_owned(),
-            )
-            .await?;
-
-        // 6. Index on new DestinationChainId column in bridge_destination_transactions table
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_bridge_destination_transactions_destination_chain_id") // New index name
-                    .table(DestinationTransactions::Table)
-                    .col(DestinationTransactions::DestinationChainId) // Indexing the new column
+                    .unique()
                     .to_owned(),
             )
             .await?;
