@@ -38,17 +38,28 @@ impl ChainIndexer for SolanaIndexer {
     }
 
     async fn subscribe_live(&self, _from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
-        let program_id = self
-            .program_ids
-            .first()
-            .ok_or(eyre::eyre!("No program IDs configured"))?;
+        let program_ids = self.handler.get_program_addresses();
 
-        // Get the raw stream from the provider
-        let raw_stream = self.provider.subscribe_logs(program_id).await?;
+        let mut streams = Vec::new();
 
-        let parsed_stream = raw_stream.map(move |result| parse_log(result));
+        for program_id in program_ids.clone() {
+            let raw_stream = self.provider.subscribe_logs(&program_id).await?;
 
-        Ok(Box::pin(parsed_stream))
+            streams.push(raw_stream);
+        }
+
+        if streams.is_empty() && !program_ids.is_empty() {
+            return Err(eyre::eyre!(
+                "Solana: No log streams could be established despite configured program IDs."
+            ));
+        } else if streams.is_empty() {
+            return Ok(futures_util::stream::empty().boxed());
+        } else {
+            let merged = select_all(streams).boxed();
+            let parsed_stream = merged.map(move |result| parse_log(result));
+
+            return Ok(Box::pin(parsed_stream));
+        }
     }
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {

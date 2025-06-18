@@ -53,7 +53,7 @@ pub trait ChainIndexer: Send + Sync {
 
     async fn sync_live(&self) -> Result<(), Error> {
         const MAX_BATCH_SIZE: usize = 1000;
-        const MAX_BATCH_TIME: Duration = Duration::from_secs(15);
+        const MAX_BATCH_TIME: Duration = Duration::from_secs(12);
 
         let mut reconnect_attempts = 0;
 
@@ -86,6 +86,8 @@ pub trait ChainIndexer: Send + Sync {
                                         if let Ok(log) = log {
                                             let log_block_number = self.get_block_number_from_log(&log.clone());
 
+                                           
+
                                             if let Some(block_number) = log_block_number {
                                            max_seen_block = max_seen_block.max(block_number as i64);
                                         }
@@ -93,9 +95,12 @@ pub trait ChainIndexer: Send + Sync {
                                         buffer.push(log);
 
                                             let mut valid_logs: Vec<_> = buffer.clone();
-                                            self.process_buffer(&mut valid_logs, max_seen_block).await?;
-                                            self.process_buffer(&mut buffer, max_seen_block).await?;
-                                            last_flush = Instant::now();
+
+                                            if valid_logs.len() >= MAX_BATCH_SIZE {
+                                                self.process_buffer(&mut valid_logs, max_seen_block).await?;
+                                                // self.process_buffer(&mut buffer, max_seen_block).await?;
+                                                last_flush = Instant::now();
+                                            }
                                         }
 
                                     }

@@ -26,7 +26,10 @@ use twine_evm_contracts::evm::ethereum::{
     twine_chain::TwineChain::{CommitBatch, FinalizedBatch},
 };
 
-use crate::{error::ParserError, handler::EvmEventHandler, provider::EvmProvider, EVMChain};
+use crate::{
+    error::ParserError, ethereum::parser::get_event_name_from_signature_hash,
+    handler::EvmEventHandler, provider::EvmProvider, EVMChain,
+};
 
 use super::{
     parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH},
@@ -53,6 +56,13 @@ impl ChainEventHandler for EthereumEventHandler {
         let block_number = log.block_number.unwrap();
 
         let mut operations = Vec::new();
+
+        info!(
+            "Received event '{}' in block {} (signature hash: 0x{})",
+            get_event_name_from_signature_hash(sig),
+            block_number,
+            hex::encode(sig),
+        );
 
         match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {

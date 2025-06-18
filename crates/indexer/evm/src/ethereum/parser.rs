@@ -1,5 +1,5 @@
-use std::env;
-use alloy::primitives::B256;
+use alloy::primitives::ruint::aliases::B256;
+use alloy::primitives::FixedBytes;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockTransactions, Log};
 use alloy::sol;
@@ -11,13 +11,12 @@ use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use std::env;
 use tracing::{error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,
 };
-
-
 
 sol! {
     #[derive(Debug)]
@@ -43,6 +42,24 @@ sol! {
     );
 }
 
+pub fn get_event_name_from_signature_hash(sig: &FixedBytes<32>) -> String {
+    match *sig {
+        L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
+            L1MessageQueue::QueueDepositTransaction::SIGNATURE.to_string()
+        }
+        L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
+            L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE.to_string()
+        }
+        FinalizeWithdrawERC20::SIGNATURE_HASH => FinalizeWithdrawERC20::SIGNATURE.to_string(),
 
+        FinalizeWithdrawETH::SIGNATURE_HASH => FinalizeWithdrawETH::SIGNATURE.to_string(),
 
+        CommitBatch::SIGNATURE_HASH => CommitBatch::SIGNATURE.to_string(),
 
+        FinalizedBatch::SIGNATURE_HASH => FinalizedBatch::SIGNATURE.to_string(),
+
+        FinalizedTransaction::SIGNATURE_HASH => FinalizedTransaction::SIGNATURE.to_string(),
+
+        other => "Unknown Event".to_string(),
+    }
+}
