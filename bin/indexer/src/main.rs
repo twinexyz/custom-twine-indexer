@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common::config::{self, LoadFromEnv};
 use database::client::DbClient;
 use evm::{
-    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer, provider::EvmProvider,
+    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer,
     twine::handlers::TwineEventHandler,
 };
 use eyre::Result;
@@ -14,7 +14,7 @@ use tracing::info;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::IndexerConfig::from_env("indexer".to_string())?;
+    let cfg = config::IndexerConfig::load()?;
 
     let db_conn = database::connect::connect(&cfg.database.url).await?;
     info!("Connected to Indexer's DB");

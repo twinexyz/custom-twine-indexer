@@ -1,34 +1,32 @@
-use config::{Config, File};
+use config::{Config, File, Value};
 use dotenv::dotenv;
-use eyre::Result;
+use eyre::{eyre, Result};
 use serde::{de::DeserializeOwned, Deserialize};
 
-fn config_from_env<T: DeserializeOwned>(service: String) -> Result<T> {
+fn config_from_env() -> Result<AppConfig> {
     dotenv().ok();
-    Config::builder()
-        // .add_source(File::with_name("config.yaml").required(true))
+
+    let settings = Config::builder()
+        .add_source(File::with_name("config.yaml").required(false))
         .add_source(
             config::Environment::default()
-                .prefix(&service.to_uppercase())
                 .separator("__")
                 .list_separator(","),
         )
-        .build()?
-        .try_deserialize()
-        .map_err(eyre::Error::from)
+        .build()?;
+
+    settings.try_deserialize().map_err(eyre::Error::from)
 }
 
 pub trait LoadFromEnv: Sized + DeserializeOwned {
-    fn from_env(service: String) -> Result<Self> {
-        config_from_env(service)
-    }
+    fn load() -> Result<Self>;
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AppConfig {
-    pub api: ApiConfig,
-    pub indexer: IndexerConfig,
-    pub da_indexer: DaIndexerConfig,
+    pub api: Option<ApiConfig>,
+    pub indexer: Option<IndexerConfig>,
+    pub da_indexer: Option<DaIndexerConfig>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -103,6 +101,27 @@ pub struct DaIndexerConfig {
     pub celestia: CelestiaConfig,
 }
 
-impl LoadFromEnv for ApiConfig {}
-impl LoadFromEnv for IndexerConfig {}
-impl LoadFromEnv for DaIndexerConfig {}
+impl LoadFromEnv for ApiConfig {
+    fn load() -> Result<Self> {
+        config_from_env()?
+            .api
+            .clone()
+            .ok_or_else(|| eyre!("Configuration for the 'api' service is missing."))
+    }
+}
+impl LoadFromEnv for IndexerConfig {
+    fn load() -> Result<Self> {
+        config_from_env()?
+            .indexer
+            .clone()
+            .ok_or_else(|| eyre!("Configuration for the 'indexer' service is missing."))
+    }
+}
+impl LoadFromEnv for DaIndexerConfig {
+    fn load() -> Result<Self> {
+        config_from_env()?
+            .da_indexer
+            .clone()
+            .ok_or_else(|| eyre!("Configuration for the 'indexer' service is missing."))
+    }
+}
