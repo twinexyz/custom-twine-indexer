@@ -92,7 +92,7 @@ impl TwineEventHandler {
         &self,
         event: Bytes,
     ) -> Result<PrecompileReturn, ParserError> {
-        match PrecompileReturn::abi_decode(&event, true) {
+        match PrecompileReturn::abi_decode(&event) {
             Ok(pr) => Ok(pr),
             Err(e) => {
                 warn!(

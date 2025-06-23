@@ -65,9 +65,7 @@ pub trait ChainIndexer: Send + Sync {
                 .get_last_synced_height(self.get_event_handler().chain_id() as i64, 0)
                 .await?;
 
-            let current_height = self.get_current_chain_height().await?;
-
-            if current_height - last_synced as u64 > 1000 {
+            if reconnect_attempts > 5 {
                 info!("Switching to historical from live sync");
                 self.sync_historical(last_synced as u64).await?;
                 continue;

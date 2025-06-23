@@ -59,7 +59,6 @@ impl EvmProvider {
             filter = filter.from_block(from_block);
         }
 
-
         let stream = self
             .ws
             .subscribe_logs(&filter)
@@ -75,10 +74,7 @@ impl EvmProvider {
 
     pub async fn get_block_by_number(&self, block_number: u64) -> eyre::Result<Option<Block>> {
         self.http
-            .get_block_by_number(
-                block_number.into(),
-                alloy::rpc::types::BlockTransactionsKind::Full,
-            )
+            .get_block_by_number(block_number.into())
             .await
             .map_err(Into::into)
     }
