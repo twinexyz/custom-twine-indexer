@@ -44,10 +44,6 @@ impl ChainEventHandler for TwineEventHandler {
         self.config.common.clone()
     }
 
-    fn get_db_client(&self) -> Arc<DbClient> {
-        self.db_client.clone()
-    }
-
     #[instrument(skip_all, fields(CHAIN = "twine"))]
     async fn handle_event(&self, log: Log) -> eyre::Result<Vec<DbOperations>> {
         let sig = log.topic0().ok_or(ParserError::UnknownEvent {

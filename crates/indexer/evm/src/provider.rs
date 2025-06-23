@@ -10,7 +10,7 @@ use std::{pin::Pin, sync::Arc};
 #[derive(Clone)]
 pub struct EvmProvider {
     http: Arc<dyn Provider + Send + Sync>,
-    // ws: Arc<dyn Provider + Send + Sync>,
+    ws: Arc<dyn Provider + Send + Sync>,
     chain_id: u64,
     ws_url: String,
 }
@@ -18,10 +18,10 @@ pub struct EvmProvider {
 impl EvmProvider {
     pub async fn new(http_url: &str, ws_url: &str, chain_id: u64) -> eyre::Result<Self> {
         let http = ProviderBuilder::new().on_http(http_url.parse()?);
-        // let ws = ProviderBuilder::new().on_ws(WsConnect::new(ws_url)).await?;
+        let ws = ProviderBuilder::new().on_ws(WsConnect::new(ws_url)).await?;
         Ok(Self {
             http: Arc::new(http),
-            // ws: Arc::new(ws),
+            ws: Arc::new(ws),
             ws_url: ws_url.to_string(),
             chain_id,
         })
@@ -59,11 +59,9 @@ impl EvmProvider {
             filter = filter.from_block(from_block);
         }
 
-        let ws = ProviderBuilder::new()
-            .on_ws(WsConnect::new(self.ws_url.as_str()))
-            .await?;
 
-        let stream = ws
+        let stream = self
+            .ws
             .subscribe_logs(&filter)
             .await
             .map_err(eyre::Report::from)?;

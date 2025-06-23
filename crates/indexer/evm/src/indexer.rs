@@ -1,8 +1,11 @@
 use std::{
-    f64::consts::E, pin::Pin, sync::{
+    f64::consts::E,
+    pin::Pin,
+    sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
-    }, time::Duration
+    },
+    time::Duration,
 };
 
 use alloy::{primitives::U64, rpc::types::Log};
@@ -26,6 +29,7 @@ pub struct EvmIndexer<H: EvmEventHandler + ChainEventHandler<LogType = Log>> {
     provider: EvmProvider,
     handler: H,
     config: ChainConfig,
+    db_client: Arc<DbClient>,
 }
 
 #[async_trait]
@@ -37,6 +41,10 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
         self.handler.clone()
     }
 
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
+    }
+
     async fn subscribe_live(&self, from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
         self.provider
             .subscribe_logs(
@@ -45,14 +53,11 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
                 from_block,
             )
             .await
-            .map(|stream| {
-                Box::pin(stream.map(|log| Ok(log))) as Self::LiveStream
-            })
+            .map(|stream| Box::pin(stream.map(|log| Ok(log))) as Self::LiveStream)
     }
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {
         let last_synced = self
-            .handler
             .get_db_client()
             .get_last_synced_height(self.handler.chain_id() as i64, self.config.start_block)
             .await
@@ -78,12 +83,10 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
     fn get_block_number_from_log(&self, log: &Log) -> Option<u64> {
         log.block_number
     }
-
-
 }
 
 impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> EvmIndexer<H> {
-    pub async fn new(handler: H) -> Result<Self, Error> {
+    pub async fn new(handler: H, db_client: Arc<DbClient>) -> Result<Self, Error> {
         let config = handler.get_chain_config();
         let provider =
             EvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await?;
@@ -92,7 +95,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> EvmIndexer<H> {
             provider,
             handler,
             config,
-            // state: Arc::new(AtomicU64::new(1)),
+            db_client,
         })
     }
 }
@@ -103,6 +106,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> Clone for EvmIndexer
             provider: self.provider.clone(),
             handler: self.handler.clone(),
             config: self.config.clone(),
+            db_client: self.db_client.clone(),
         }
     }
 }

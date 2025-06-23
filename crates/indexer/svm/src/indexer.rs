@@ -25,7 +25,6 @@ pub struct SolanaIndexer {
     max_batch_size: usize,
     db_client: Arc<DbClient>,
     config: ChainConfig,
-    program_ids: Vec<Pubkey>,
 }
 
 #[async_trait]
@@ -35,6 +34,9 @@ impl ChainIndexer for SolanaIndexer {
 
     fn get_event_handler(&self) -> Self::EventHandler {
         self.handler.clone()
+    }
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
     }
 
     async fn subscribe_live(&self, _from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
@@ -64,8 +66,7 @@ impl ChainIndexer for SolanaIndexer {
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {
         let last_synced = self
-            .handler
-            .get_db_client()
+            .db_client
             .get_last_synced_height(self.handler.chain_id() as i64, self.config.start_block)
             .await
             .unwrap_or(self.config.start_block as i64);
@@ -88,7 +89,7 @@ impl ChainIndexer for SolanaIndexer {
 }
 
 impl SolanaIndexer {
-    pub async fn new(db: Arc<DbClient>, handler: SolanaEventHandler) -> eyre::Result<Self> {
+    pub async fn new(handler: SolanaEventHandler, db: Arc<DbClient>) -> eyre::Result<Self> {
         let config = handler.get_chain_config();
 
         let provider =
@@ -100,7 +101,6 @@ impl SolanaIndexer {
             max_batch_size: config.block_sync_batch_size as usize,
             db_client: db,
             config,
-            program_ids: Vec::new(),
         })
     }
 }

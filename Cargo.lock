@@ -2913,6 +2913,7 @@ name = "evm"
 version = "0.0.0"
 dependencies = [
  "alloy",
+ "async-stream",
  "async-trait",
  "blake3",
  "chrono",

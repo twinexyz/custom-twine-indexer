@@ -24,29 +24,13 @@ async fn main() -> Result<()> {
     let db_client = DbClient::new(db_conn.clone(), Some(blockscout_db_conn.clone()));
     let arc_db = Arc::new(db_client);
 
-    let twine_provider = EvmProvider::new(
-        &cfg.twine.common.http_rpc_url,
-        &cfg.twine.common.ws_rpc_url,
-        cfg.twine.common.chain_id,
-    )
-    .await
-    .unwrap();
-
     let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
-    let l1_evm_handler = EthereumEventHandler::new(
-        Arc::clone(&arc_db),
-        cfg.l1s.ethereum.clone(),
-        twine_provider.clone(),
-    );
-    let solana_handler = SolanaEventHandler::new(
-        Arc::clone(&arc_db),
-        cfg.l1s.solana.clone(),
-        twine_provider.clone(),
-    );
+    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
+    let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
 
-    let mut eth_indexer = EvmIndexer::new(l1_evm_handler).await?;
-    let mut twine_indexer = EvmIndexer::new(twine_handler).await?;
-    let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await?;
+    let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db)).await?;
+    let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db)).await?;
+    let mut solana_indexer = SolanaIndexer::new(solana_handler, Arc::clone(&arc_db)).await?;
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");
@@ -55,35 +39,14 @@ async fn main() -> Result<()> {
 
     let eth_handle = tokio::spawn(async move {
         info!("starting eth indexer");
-        // eth_indexer.run().await
+        eth_indexer.run().await
     });
     let solana_handle = tokio::spawn(async move {
         info!("starting solana indexer");
-        solana_indexer.run().await
+        // solana_indexer.run().await
     });
 
     let _ = tokio::join!(eth_handle, twine_handle, solana_handle);
 
     Ok(())
-
-    // let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
-    //     .await
-    //     .wrap_err("Failed to start indexers")?;
-
-    // for handle in handles {
-    //     match handle.await {
-    //         Ok(inner_result) => {
-    //             if let Err(e) = inner_result {
-    //                 error!("Indexer task failed: {:?}", e);
-    //             }
-    //         }
-    //         Err(e) => {
-    //             if e.is_panic() {
-    //                 error!("A task panicked: {:?}", e);
-    //             } else {
-    //                 error!("A task was cancelled: {:?}", e);
-    //             }
-    //         }
-    //     }
-    // }
 }

@@ -10,11 +10,9 @@ pub trait ChainEventHandler {
 
     async fn handle_event(&self, log: Self::LogType) -> eyre::Result<Vec<DbOperations>>;
     fn get_chain_config(&self) -> ChainConfig;
-    fn get_db_client(&self) -> Arc<DbClient>;
 
     fn chain_id(&self) -> u64 {
         let config = self.get_chain_config();
-
         config.chain_id
     }
 }

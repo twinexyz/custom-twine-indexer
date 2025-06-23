@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::handler::ChainEventHandler;
 use async_trait::async_trait;
+use database::client::DbClient;
 use eyre::Error;
 use futures_util::{Stream, StreamExt};
 use tokio::{sync::Semaphore, task::JoinSet, time::Instant};
@@ -14,8 +15,6 @@ pub trait ChainIndexer: Send + Sync {
         + Send
         + 'static;
 
-    // async fn sync_historical(&self, from: u64) -> eyre::Result<()>;
-    // async fn sync_live(&self) -> eyre::Result<()>;
     async fn get_initial_state(&self) -> eyre::Result<u64>;
 
     async fn get_historical_logs(
@@ -34,6 +33,8 @@ pub trait ChainIndexer: Send + Sync {
 
     fn get_event_handler(&self) -> Self::EventHandler;
 
+    fn get_db_client(&self) -> Arc<DbClient>;
+
     async fn run(&mut self) -> Result<(), Error> {
         let initial_height = self.get_initial_state().await?;
 
@@ -51,6 +52,7 @@ pub trait ChainIndexer: Send + Sync {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]
     async fn sync_live(&self) -> Result<(), Error> {
         const MAX_BATCH_SIZE: usize = 1000;
         const MAX_BATCH_TIME: Duration = Duration::from_secs(12);
@@ -59,10 +61,17 @@ pub trait ChainIndexer: Send + Sync {
 
         loop {
             let last_synced = self
-                .get_event_handler()
                 .get_db_client()
                 .get_last_synced_height(self.get_event_handler().chain_id() as i64, 0)
                 .await?;
+
+            let current_height = self.get_current_chain_height().await?;
+
+            if current_height - last_synced as u64 > 1000 {
+                info!("Switching to historical from live sync");
+                self.sync_historical(last_synced as u64).await?;
+                continue;
+            }
 
             match self.subscribe_live(Some(last_synced as u64)).await {
                 Ok(stream) => {
@@ -86,7 +95,7 @@ pub trait ChainIndexer: Send + Sync {
                                         if let Ok(log) = log {
                                             let log_block_number = self.get_block_number_from_log(&log.clone());
 
-                                           
+
 
                                             if let Some(block_number) = log_block_number {
                                            max_seen_block = max_seen_block.max(block_number as i64);
@@ -292,15 +301,14 @@ pub trait ChainIndexer: Send + Sync {
             prepared_event_data_results.len()
         );
 
-        match handler
+        match self
             .get_db_client()
             .process_bulk_l1_database_operations(prepared_event_data_results)
             .await
         {
             Ok(_) => {
                 info!("Succesfully updated the database");
-                handler
-                    .get_db_client()
+                self.get_db_client()
                     .upsert_last_synced(handler.chain_id() as i64, max_seen_height as i64)
                     .await?;
             }
