@@ -21,7 +21,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature:
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{mpsc::Receiver, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
@@ -30,27 +30,43 @@ use crate::parser::{extract_log, SolanaLog};
 #[derive(Clone)]
 pub struct SvmProvider {
     http: Arc<RpcClient>,
-    ws: Arc<PubsubClient>,
+    ws: Arc<OnceCell<Arc<PubsubClient>>>,
     commitment: CommitmentConfig,
+    ws_url: String,
 }
 
 impl SvmProvider {
-    pub async fn new(http_url: &str, ws_url: &str, chain_id: u64) -> eyre::Result<Self> {
-        let pubsub_client = Arc::new(
-            PubsubClient::new(ws_url)
-                .await
-                .map_err(|e| eyre::eyre!("Failed to connect to WebSocket: {}", e))?,
-        );
+    pub fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
+        // let pubsub_client = Arc::new(
+        //     PubsubClient::new(ws_url)
+        //         .await
+        //         .map_err(|e| eyre::eyre!("Failed to connect to WebSocket: {}", e))?,
+        // );
 
-        Ok(Self {
+        Self {
             http: Arc::new(RpcClient::new_with_timeout(
                 http_url.to_string(),
                 Duration::from_secs(30),
             )),
-            ws: pubsub_client,
+            ws: Arc::new(OnceCell::new()),
 
             commitment: CommitmentConfig::finalized(),
-        })
+            ws_url: ws_url.to_string(),
+        }
+    }
+
+    async fn ws_provider(&self) -> eyre::Result<&Arc<PubsubClient>> {
+        self.ws
+            .get_or_try_init(|| async {
+                let pubsub_client = PubsubClient::new(&self.ws_url)
+                    .await
+                    .map_err(|e| eyre::eyre!("Failed to connect to WebSocket: {}", e))?;
+
+                let provider = Arc::new(pubsub_client);
+
+                Ok(provider)
+            })
+            .await
     }
 
     pub async fn get_slot(&self) -> eyre::Result<u64> {
@@ -218,7 +234,8 @@ impl SvmProvider {
         let (tx, rx) = tokio::sync::mpsc::channel(256);
 
         let program_id = *program_id; // Copy the pubkey
-        let ws_client = Arc::clone(&self.ws);
+        let ws = self.ws_provider().await?;
+        let ws_client = Arc::clone(&ws);
 
         tokio::spawn(async move {
             let filter = RpcTransactionLogsFilter::Mentions(vec![program_id.to_string()]);

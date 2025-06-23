@@ -89,18 +89,17 @@ impl ChainIndexer for SolanaIndexer {
 }
 
 impl SolanaIndexer {
-    pub async fn new(handler: SolanaEventHandler, db: Arc<DbClient>) -> eyre::Result<Self> {
+    pub fn new(handler: SolanaEventHandler, db: Arc<DbClient>) -> Self {
         let config = handler.get_chain_config();
 
-        let provider =
-            SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await?;
+        let provider = SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
 
-        Ok(Self {
+        Self {
             provider,
             handler,
             max_batch_size: config.block_sync_batch_size as usize,
             db_client: db,
             config,
-        })
+        }
     }
 }

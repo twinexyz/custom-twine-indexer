@@ -86,17 +86,16 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
 }
 
 impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> EvmIndexer<H> {
-    pub async fn new(handler: H, db_client: Arc<DbClient>) -> Result<Self, Error> {
+    pub fn new(handler: H, db_client: Arc<DbClient>) -> Self {
         let config = handler.get_chain_config();
-        let provider =
-            EvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await?;
+        let provider = EvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
 
-        Ok(Self {
+        Self {
             provider,
             handler,
             config,
             db_client,
-        })
+        }
     }
 }
 

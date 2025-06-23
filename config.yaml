@@ -1,58 +1,61 @@
-db_indexer: &db_indexer
-  url: "postgresql://db_user:password@localhost:5432/indexer"
-
-db_blockscout: &db_blockscout
-  url: "postgres://blockscout:password@localhost:5432/blockscout"
-
+# ===================================================================
+# API SERVICE CONFIGURATION
+# ===================================================================
 api:
   database:
     url: "postgres://blockscout:password@localhost:5432/indexer"
   port: 7777
 
+# ===================================================================
+# INDEXER SERVICE CONFIGURATION
+# ===================================================================
 indexer:
   database:
-    url: "postgresql://db_user:password@localhost:5432/indexer"
+    url: "postgres://rabindraregmi:admin@localhost:5432/indexer"
   blockscout:
-    url: "postgres://blockscout:password@localhost:5432/blockscout"
-
+    url: "postgres://rabindraregmi:admin@localhost:5432/blockscout"
   l1s:
     ethereum:
-      http_rpc_url: "https://ethereum-holesky-rpc.publicnode.com"
-      ws_rpc_url: "https://rpc1.twine.limited"
-      chain_id: 17000
-      start_block: 3644217
-      block_sync_batch_size: 50
+      common:
+        http_rpc_url: "https://ethereum-holesky-rpc.publicnode.com"
+        ws_rpc_url: "wss://ethereum-holesky.core.chainstack.com/282f2f179d5fe31ac74360455079d3e1"
+        chain_id: 17000
+        start_block: 4011361
+        block_sync_batch_size: 1000
       chain: "evm"
-      l1_message_queue_address: "0x9a10C65D8C2069316bbF38ddccE0CB22401E5F93"
-      l1_erc20_gateway_address: "0x2c941A3b8f64A2467e35FFd4A22D54707cB81b4C"
-      eth_twine_chain_address: "0xAEA81eb8DeaC34C35AaA646962f337A86E383430"
-
+      l1_message_queue_address: "0xf0DB7691719E7766dc328B73FE152D54d3499d80"
+      l1_erc20_gateway_address: "0x901a8Ea3234174824c1A80214DdBebB1B8EeF88D"
+      eth_twine_chain_address: "0xcEE7CE22cc7b0A70Eb2Ae401acaa3a1F593F14bF"
     solana:
-      http_rpc_url: "https://api.devnet.solana.com"
-      ws_rpc_url:   "wss://api.devnet.solana.com"
-      chain_id:     103
-      start_block:  332505681
-      block_sync_batch_size:  1000
-      tokens_gateway_program_address: "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
-      twine_chain_program_address:  "BfExhdXYgFzGLcemniZ2zQguHdgBJTwyxAyAmRypmLNL"
+      common:
+        http_rpc_url: "https://api.devnet.solana.com"
+        ws_rpc_url: "wss://api.devnet.solana.com"
+        chain_id: 103
+        start_block: 388423656
+        block_sync_batch_size: 10000
       chain: "svm"
-
+      tokens_gateway_program_address: "2x33tLdRdsoiABgtLNArQBGG8M3aZKgXkUHsUK61nQTp"
+      twine_chain_program_address: "4Nzkd8xCHUKZqNo3hhvZr688rBX6fWF92Sc2KhoJJyzz"
   twine:
-    http_rpc_url: "http://0.0.0.0:8545"
-    ws_rpc_url:   "ws://0.0.0.0:8546"
-    chain_id:     1337
-    start_block:  34054
-    block_sync_batch_size:   1000
-    l2_twine_messenger_address: "0x4A79814ccC04479451A5ACE33c855385B73BA5dA"
+    common:
+      http_rpc_url: "https://rpc1.twine.limited"
+      ws_rpc_url: "wss://ws1.twine.limited"
+      chain_id: 1337
+      start_block: 34054
+      block_sync_batch_size: 1000
+    l2_twine_messenger_address: "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
 
+# ===================================================================
+# DA_INDEXER SERVICE CONFIGURATION
+# ===================================================================
 da_indexer:
   database:
     url: "postgres://blockscout:password@localhost:5432/blockscout"
   blockscout:
     url: "postgres://blockscout:password@localhost:5432/blockscout"
   celestia:
-    rpc_url:      "https://celestia-rpc.example.com"
-    wss_url:      "wss://celestia-wss.example.com"
+    rpc_url: "https://celestia-rpc.example.com"
+    wss_url: "wss://celestia-wss.example.com"
     start_height: 0
-    namespace:    "fsdfsd"
-    rpc_auth_token:   "fdafadsfasd"
+    namespace: "fsdfsd"
+    rpc_auth_token: "fdafadsfasd"

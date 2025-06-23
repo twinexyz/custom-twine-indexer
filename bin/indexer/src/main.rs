@@ -28,9 +28,9 @@ async fn main() -> Result<()> {
     let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
     let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
 
-    let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db)).await?;
-    let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db)).await?;
-    let mut solana_indexer = SolanaIndexer::new(solana_handler, Arc::clone(&arc_db)).await?;
+    let mut eth_indexer = EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db));
+    let mut twine_indexer = EvmIndexer::new(twine_handler, Arc::clone(&arc_db));
+    let mut solana_indexer = SolanaIndexer::new(solana_handler, Arc::clone(&arc_db));
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");
