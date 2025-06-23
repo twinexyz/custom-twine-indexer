@@ -1,7 +1,7 @@
 use std::{pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use common::config::ChainConfig;
+use common::config::{ChainConfig, IndexerSettings};
 use database::client::DbClient;
 use eyre::Error;
 use futures_util::{stream::select_all, Stream, StreamExt};
@@ -25,6 +25,7 @@ pub struct SolanaIndexer {
     max_batch_size: usize,
     db_client: Arc<DbClient>,
     config: ChainConfig,
+    settings: IndexerSettings,
 }
 
 #[async_trait]
@@ -37,6 +38,9 @@ impl ChainIndexer for SolanaIndexer {
     }
     fn get_db_client(&self) -> Arc<DbClient> {
         self.db_client.clone()
+    }
+    fn get_indexer_settings(&self) -> IndexerSettings {
+        self.settings.clone()
     }
 
     async fn subscribe_live(&self, _from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
@@ -89,7 +93,7 @@ impl ChainIndexer for SolanaIndexer {
 }
 
 impl SolanaIndexer {
-    pub fn new(handler: SolanaEventHandler, db: Arc<DbClient>) -> Self {
+    pub fn new(handler: SolanaEventHandler, db: Arc<DbClient>, settings: IndexerSettings) -> Self {
         let config = handler.get_chain_config();
 
         let provider = SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
@@ -100,6 +104,7 @@ impl SolanaIndexer {
             max_batch_size: config.block_sync_batch_size as usize,
             db_client: db,
             config,
+            settings,
         }
     }
 }

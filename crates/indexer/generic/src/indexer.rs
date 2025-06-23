@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::handler::ChainEventHandler;
 use async_trait::async_trait;
+use common::config::IndexerSettings;
 use database::client::DbClient;
 use eyre::Error;
 use futures_util::{Stream, StreamExt};
@@ -32,6 +33,7 @@ pub trait ChainIndexer: Send + Sync {
     ) -> Option<u64>;
 
     fn get_event_handler(&self) -> Self::EventHandler;
+    fn get_indexer_settings(&self) -> IndexerSettings;
 
     fn get_db_client(&self) -> Arc<DbClient>;
 
@@ -54,8 +56,10 @@ pub trait ChainIndexer: Send + Sync {
 
     #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]
     async fn sync_live(&self) -> Result<(), Error> {
-        const MAX_BATCH_SIZE: usize = 1000;
-        const MAX_BATCH_TIME: Duration = Duration::from_secs(12);
+        let settings = self.get_indexer_settings();
+
+        let max_batch_size: usize = settings.max_log_batch_size as usize;
+        let max_batch_time: Duration = Duration::from_secs(settings.max_log_batch_time);
 
         let mut reconnect_attempts = 0;
 
@@ -76,13 +80,13 @@ pub trait ChainIndexer: Send + Sync {
                     info!("Subscribed to live logs");
                     reconnect_attempts = 0;
 
-                    let mut buffer = Vec::with_capacity(MAX_BATCH_SIZE);
+                    let mut buffer = Vec::with_capacity(max_batch_size);
                     let mut last_flush = tokio::time::Instant::now();
                     let mut max_seen_block = last_synced;
 
                     let mut value = Box::pin(stream);
                     loop {
-                        let sleep_duration = MAX_BATCH_TIME.saturating_sub(last_flush.elapsed());
+                        let sleep_duration = max_batch_time.saturating_sub(last_flush.elapsed());
                         let sleep_future = tokio::time::sleep(sleep_duration);
                         tokio::pin!(sleep_future);
 
@@ -103,7 +107,7 @@ pub trait ChainIndexer: Send + Sync {
 
                                             let mut valid_logs: Vec<_> = buffer.clone();
 
-                                            if valid_logs.len() >= MAX_BATCH_SIZE {
+                                            if valid_logs.len() >= max_batch_size {
                                                 self.process_buffer(&mut valid_logs, max_seen_block).await?;
                                                 // self.process_buffer(&mut buffer, max_seen_block).await?;
                                                 last_flush = Instant::now();
@@ -234,7 +238,8 @@ pub trait ChainIndexer: Send + Sync {
         logs: Vec<<Self::EventHandler as ChainEventHandler>::LogType>,
         max_seen_height: u64,
     ) -> eyre::Result<()> {
-        let concurrency_limit = 1000;
+        let concurrency_limit =
+            self.get_indexer_settings().max_concurrency_for_log_process as usize;
         let semaphore = Arc::new(Semaphore::new(concurrency_limit));
         let handler = self.get_event_handler();
 

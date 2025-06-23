@@ -10,7 +10,7 @@ use std::{
 
 use alloy::{primitives::U64, rpc::types::Log};
 use async_trait::async_trait;
-use common::config::{ChainConfig, EvmConfig};
+use common::config::{ChainConfig, EvmConfig, IndexerSettings};
 use database::{client::DbClient, entities::last_synced, DbOperations};
 use eyre::{eyre, Error};
 use futures_util::{Stream, StreamExt};
@@ -30,6 +30,7 @@ pub struct EvmIndexer<H: EvmEventHandler + ChainEventHandler<LogType = Log>> {
     handler: H,
     config: ChainConfig,
     db_client: Arc<DbClient>,
+    settings: IndexerSettings,
 }
 
 #[async_trait]
@@ -43,6 +44,10 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
 
     fn get_db_client(&self) -> Arc<DbClient> {
         self.db_client.clone()
+    }
+
+    fn get_indexer_settings(&self) -> IndexerSettings {
+        self.settings.clone()
     }
 
     async fn subscribe_live(&self, from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
@@ -86,7 +91,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
 }
 
 impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> EvmIndexer<H> {
-    pub fn new(handler: H, db_client: Arc<DbClient>) -> Self {
+    pub fn new(handler: H, db_client: Arc<DbClient>, settings: IndexerSettings) -> Self {
         let config = handler.get_chain_config();
         let provider = EvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
 
@@ -95,6 +100,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> EvmIndexer<H> {
             handler,
             config,
             db_client,
+            settings,
         }
     }
 }
@@ -106,6 +112,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> Clone for EvmIndexer
             handler: self.handler.clone(),
             config: self.config.clone(),
             db_client: self.db_client.clone(),
+            settings: self.settings.clone(),
         }
     }
 }

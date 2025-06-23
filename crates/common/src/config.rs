@@ -87,9 +87,17 @@ pub struct L1sConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct IndexerSettings {
+    pub max_log_batch_size: u64,
+    pub max_log_batch_time: u64,
+    pub max_concurrency_for_log_process: u64,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct IndexerConfig {
     pub database: DatabaseConfig,
     pub blockscout: DatabaseConfig,
+    pub settings: IndexerSettings,
     pub l1s: L1sConfig,
     pub twine: TwineConfig,
 }
