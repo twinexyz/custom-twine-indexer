@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct BridgeTransactionsResponse {
     pub l1_tx_hash: String,
     pub l2_tx_hash: String,
-    pub slot_number: Option<i64>,
-    pub l2_slot_number: Option<i64>,
-    pub block_number: Option<i64>,
+    pub l1_block_height: Option<i64>,
+    pub l2_block_height: Option<i64>,
     pub status: Option<i16>,
     pub nonce: i64,
     pub chain_id: i64,

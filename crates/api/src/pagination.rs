@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_PER_PAGE: u64 = 5;
+pub const DEFAULT_PER_PAGE: u64 = 10;
 
 pub const MAX_PER_PAGE: u64 = 500;
 
