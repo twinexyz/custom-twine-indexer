@@ -9,7 +9,7 @@ use evm::{
 use eyre::Result;
 use generic_indexer::indexer::ChainIndexer;
 use svm::{handler::SolanaEventHandler, indexer::SolanaIndexer};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");
-        // twine_indexer.run().await
+        twine_indexer.run().await
     });
 
     let eth_handle = tokio::spawn(async move {
@@ -46,10 +46,63 @@ async fn main() -> Result<()> {
     });
     let solana_handle = tokio::spawn(async move {
         info!("starting solana indexer");
-        // solana_indexer.run().await
+        solana_indexer.run().await
     });
 
-    let _ = tokio::join!(eth_handle, twine_handle, solana_handle);
+    let (eth_result, twine_result, solana_result) =
+        tokio::join!(eth_handle, twine_handle, solana_handle);
 
+    let mut all_ok = true;
+
+    info!("All indexer tasks have completed. Checking results...");
+
+    // Check the result of the Ethereum indexer task
+    match eth_result {
+        Ok(Ok(_)) => info!("✅ Ethereum indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Ethereum indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!(
+                "🚨 Ethereum indexer task panicked or was cancelled: {:?}",
+                e
+            );
+            all_ok = false;
+        }
+    }
+
+    // Check the result of the Twine indexer task
+    match twine_result {
+        Ok(Ok(_)) => info!("✅ Twine indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Twine indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Twine indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+    // Check the result of the Solana indexer task
+    match solana_result {
+        Ok(Ok(_)) => info!("✅ Solana indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Solana indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Solana indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+
+    if !all_ok {
+        return Err(eyre::eyre!("One or more indexers failed to run to completion."));
+    }
+
+    info!("All services shut down gracefully.");
     Ok(())
 }
