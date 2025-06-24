@@ -5,12 +5,37 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sea_orm::DbErr;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum AppError {
     Database(DbErr),
     #[allow(dead_code)]
     Internal,
+}
+
+impl From<DbErr> for AppError {
+    fn from(err: DbErr) -> Self {
+        AppError::Database(err)
+    }
+}
+
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AppError::Database(err) => Some(err),
+            AppError::Internal => None,
+        }
+    }
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::Database(err) => write!(f, "Database error: {}", err),
+            AppError::Internal => write!(f, "Internal server error"),
+        }
+    }
 }
 
 impl IntoResponse for AppError {

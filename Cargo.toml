@@ -3,13 +3,14 @@ resolver = "2"
 members = [
     "bin/api",
     "bin/indexer",
+    "bin/da-indexer",
     "crates/api",
     "crates/common",
     "crates/indexer/evm",
     "crates/indexer/svm",
-    "migration",
-]
-default-members = ["bin/indexer", "bin/api"]
+    "migration", "crates/da", "crates/database"
+, "crates/indexer/generic"]
+default-members = ["bin/indexer", "bin/api", "bin/da-indexer"]
 
 
 [workspace.dependencies]
@@ -17,6 +18,9 @@ evm = { path = "crates/indexer/evm" }
 svm = { path = "crates/indexer/svm" }
 common = { path = "crates/common" }
 api-lib = { path = "crates/api" }
+da = {path = "crates/da"}
+database = {path = "crates/database"}
+generic-indexer = {path = "crates/indexer/generic"}
 
 anyhow = "1.0.97"
 async-trait = "0.1.87"
@@ -30,7 +34,7 @@ eyre = "0.6.12"
 futures-util = { version = "0.3.31" }
 hex = "0.4.3"
 num-traits = "0.2.19"
-sea-orm = { version = "1.1.4", features = [
+sea-orm = { version = "1.1.12", features = [
     "macros",
     "sqlx-postgres",
     "runtime-tokio-native-tls",
@@ -43,4 +47,3 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "master" }

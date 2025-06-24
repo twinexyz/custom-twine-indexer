@@ -1,0 +1,15 @@
+[package]
+name = "database"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+config = { workspace = true }
+dotenv = { workspace = true }
+eyre = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tokio = {workspace = true}
+bigdecimal = "0.4"
+

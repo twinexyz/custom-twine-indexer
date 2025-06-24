@@ -1,9 +1,10 @@
 mod common;
-mod ethereum;
-mod twine;
-
-pub use ethereum::EthereumIndexer;
-pub use twine::TwineIndexer;
+mod error;
+pub mod ethereum;
+pub mod handler;
+pub mod indexer;
+pub mod provider;
+pub mod twine;
 
 use common::{create_http_provider, create_ws_provider, poll_missing_logs, subscribe_stream};
 
