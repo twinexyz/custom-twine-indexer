@@ -5,14 +5,18 @@ use alloy::rpc::types::{BlockTransactions, Log};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use blake3::hash;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use common::blockscout_entities::{
+    twine_batch_l2_blocks, twine_batch_l2_transactions, twine_lifecycle_l1_transactions,
+    twine_transaction_batch, twine_transaction_batch_detail,
+};
 use eyre::Report;
 use num_traits::FromPrimitive;
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::env;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
     CommitBatch, FinalizedBatch, FinalizedTransaction,

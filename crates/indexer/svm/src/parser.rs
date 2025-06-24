@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_sdk::native_token::Sol;
 use std::env;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -157,6 +158,7 @@ pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
     let mut encoded_data = None;
 
     for log in logs {
+        debug!("Processing log: {}", log);
         match log.as_str() {
             "Program log: Instruction: NativeTokenDeposit" => {
                 event_type = Some(SolanaEvents::NativeDeposit)
@@ -186,7 +188,7 @@ pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
             log if log.starts_with("Program data: ") => {
                 encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
             }
-            _ => continue,
+            _ => debug!("Unrecognized log: {}", log),
         }
     }
 
@@ -195,7 +197,7 @@ pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
         return None;
     };
     let Some(encoded_data) = encoded_data else {
-        debug!(
+        error!(
             "No encoded data found for event {} in logs: {:?}",
             event_type.as_str(),
             logs
