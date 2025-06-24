@@ -1,116 +1,108 @@
-use common::{config, db, indexer::ChainIndexer};
-use eyre::{Result, WrapErr};
-use sea_orm::DatabaseConnection;
-use tokio::task::JoinHandle;
+use std::sync::Arc;
+
+use common::config::{self, LoadFromEnv};
+use database::client::DbClient;
+use evm::{
+    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer,
+    twine::handlers::TwineEventHandler,
+};
+use eyre::Result;
+use generic_indexer::indexer::ChainIndexer;
+use svm::{handler::SolanaEventHandler, indexer::SolanaIndexer};
 use tracing::{error, info};
-
-macro_rules! create_and_spawn_indexer {
-    ($type:ty, $http_rpc_url:expr, $ws_rpc_url:expr, $chain_id:expr, $starting_block:expr, $db_conn:expr, $blockscout_db_conn:expr,  $name:expr, $contracts:expr) => {{
-        let mut indexer = <$type>::new(
-            $http_rpc_url,
-            $ws_rpc_url,
-            $chain_id,
-            $starting_block,
-            &$db_conn,
-            $blockscout_db_conn,
-            $contracts,
-        )
-        .await?;
-        tokio::spawn(async move {
-            info!("Starting {} indexer", $name);
-            indexer.run().await
-        })
-    }};
-}
-
-pub async fn start_indexer(
-    config: config::IndexerConfig,
-    db_conn: DatabaseConnection,
-    blockscout_db_conn: DatabaseConnection,
-) -> Result<Vec<JoinHandle<Result<()>>>> {
-    let mut handles = Vec::new();
-
-    let evm_contracts = vec![
-        config.l1_erc20_gateway_address.clone(),
-        config.l1_message_queue_address.clone(),
-        config.eth_twine_chain_address.clone(),
-    ];
-
-    let twine_contracts = vec![config.l2_twine_messenger_address.clone()];
-
-    let svm_contracts = vec![
-        config.tokens_gateway_program_address.clone(),
-        config.twine_chain_program_address.clone(),
-    ];
-
-    handles.push(create_and_spawn_indexer!(
-        evm::EthereumIndexer,
-        config.ethereum.http_rpc_url,
-        config.ethereum.ws_rpc_url,
-        config.ethereum.chain_id,
-        config.ethereum.start_block,
-        db_conn,
-        Some(&blockscout_db_conn),
-        "EVM",
-        evm_contracts
-    ));
-
-    handles.push(create_and_spawn_indexer!(
-        evm::TwineIndexer,
-        config.twine.http_rpc_url,
-        config.twine.ws_rpc_url,
-        config.twine.chain_id,
-        config.twine.start_block,
-        db_conn,
-        None,
-        "Twine",
-        twine_contracts
-    ));
-
-    handles.push(create_and_spawn_indexer!(
-        svm::SVMIndexer,
-        config.solana.http_rpc_url,
-        config.solana.ws_rpc_url,
-        config.solana.chain_id,
-        config.solana.start_block,
-        db_conn,
-        Some(&blockscout_db_conn),
-        "SVM",
-        svm_contracts
-    ));
-
-    Ok(handles)
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::IndexerConfig::from_env()?;
-    let db_conn = db::connect(&cfg.database_url).await?;
+    let cfg = config::IndexerConfig::load()?;
+
+    let db_conn = database::connect::connect(&cfg.database.url).await?;
     info!("Connected to Indexer's DB");
-    let blockscout_db_conn = db::connect(&cfg.blockscout_database_url).await?;
+    let blockscout_db_conn = database::connect::connect(&cfg.blockscout.url).await?;
     info!("Connected to Blockscout's DB");
 
-    let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
-        .await
-        .wrap_err("Failed to start indexers")?;
+    let db_client = DbClient::new(db_conn.clone(), Some(blockscout_db_conn.clone()));
+    let arc_db = Arc::new(db_client);
 
-    for handle in handles {
-        match handle.await {
-            Ok(inner_result) => {
-                if let Err(e) = inner_result {
-                    error!("Indexer task failed: {:?}", e);
-                }
-            }
-            Err(e) => {
-                if e.is_panic() {
-                    error!("A task panicked: {:?}", e);
-                } else {
-                    error!("A task was cancelled: {:?}", e);
-                }
-            }
+    let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
+    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
+    let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
+
+    let mut eth_indexer =
+        EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db), cfg.settings.clone());
+    let mut twine_indexer =
+        EvmIndexer::new(twine_handler, Arc::clone(&arc_db), cfg.settings.clone());
+    let mut solana_indexer =
+        SolanaIndexer::new(solana_handler, Arc::clone(&arc_db), cfg.settings.clone());
+
+    let twine_handle = tokio::spawn(async move {
+        info!("starting twine indexer");
+        twine_indexer.run().await
+    });
+
+    let eth_handle = tokio::spawn(async move {
+        info!("starting eth indexer");
+        eth_indexer.run().await
+    });
+    let solana_handle = tokio::spawn(async move {
+        info!("starting solana indexer");
+        solana_indexer.run().await
+    });
+
+    let (eth_result, twine_result, solana_result) =
+        tokio::join!(eth_handle, twine_handle, solana_handle);
+
+    let mut all_ok = true;
+
+    info!("All indexer tasks have completed. Checking results...");
+
+    // Check the result of the Ethereum indexer task
+    match eth_result {
+        Ok(Ok(_)) => info!("✅ Ethereum indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Ethereum indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!(
+                "🚨 Ethereum indexer task panicked or was cancelled: {:?}",
+                e
+            );
+            all_ok = false;
         }
     }
 
+    // Check the result of the Twine indexer task
+    match twine_result {
+        Ok(Ok(_)) => info!("✅ Twine indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Twine indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Twine indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+    // Check the result of the Solana indexer task
+    match solana_result {
+        Ok(Ok(_)) => info!("✅ Solana indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Solana indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Solana indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+
+    if !all_ok {
+        return Err(eyre::eyre!("One or more indexers failed to run to completion."));
+    }
+
+    info!("All services shut down gracefully.");
     Ok(())
 }

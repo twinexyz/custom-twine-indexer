@@ -1,14 +1,21 @@
+use std::env;
+
 use super::EVMChain;
 use alloy::{
     primitives::{address, Address},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{Filter, Log},
+    rpc::types::{BlockTransactions, Filter, Log},
 };
-use common::indexer::{MAX_RETRIES, RETRY_DELAY};
+use chrono::{DateTime, Utc};
+use common::{
+    blockscout_entities::{twine_batch_l2_blocks, twine_batch_l2_transactions},
+    indexer::{MAX_RETRIES, RETRY_DELAY},
+};
 use eyre::{Report, Result};
 use futures_util::Stream;
+use sea_orm::ActiveValue::Set;
 use tokio::time::sleep;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 pub async fn with_retry<F, Fut, T>(mut operation: F) -> Result<T, eyre::Report>
 where

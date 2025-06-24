@@ -1,240 +1,142 @@
-use chrono::{DateTime, Utc};
-use common::entities::{
-    l1_deposit, l1_withdraw, l2_withdraw, twine_l1_deposit, twine_l1_withdraw, twine_l2_withdraw,
-};
-use eyre::{eyre, Result};
-use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Select};
-use sea_query::Expr;
-use serde::{Deserialize, Serialize};
+use axum::extract::{Query, State};
 
-#[derive(Deserialize)]
+use chrono::{DateTime, Utc};
+
+use eyre::{eyre, Result};
+
+use serde::Deserialize;
+
+use tracing::{error, instrument};
+
+use crate::{
+    error::AppError, pagination::PlaceholderPagination, types::TransactionSuggestion, ApiResponse,
+    AppState,
+};
+
+use database::entities::{
+    bridge_destination_transactions, bridge_source_transactions,
+    sea_orm_active_enums::EventTypeEnum,
+};
+
+#[derive(Deserialize, Debug)]
+
 pub struct QuickSearchParams {
     pub q: String,
     pub limit: Option<u64>,
 }
 
-#[derive(Serialize)]
-pub struct TransactionSuggestion {
-    pub l1_hash: String,
-    pub tx_hash: String,
-    pub block_number: String,
-    pub from: String,
-    pub to: String,
-    pub token_symbol: String,
-    pub timestamp: DateTime<Utc>,
-    pub r#type: String,
-    pub url: String,
-}
+const DEFAULT_SEARCH_LIMIT: u64 = 10;
 
-pub struct QuickSearchQuery {
-    pub q_value: Option<u64>,
-    pub q_text: String,
-}
+#[instrument(skip(state), fields(params = ?params))]
 
-impl From<&str> for QuickSearchQuery {
-    fn from(q: &str) -> Self {
-        Self {
-            q_value: q.parse::<u64>().ok(),
-            q_text: q.to_string(),
-        }
-    }
-}
+pub async fn quick_search(
+    State(state): State<AppState>,
 
-pub trait QuickSearchable {
-    type Entity: EntityTrait;
-    type Column: ColumnTrait;
+    Query(params): Query<QuickSearchParams>,
+) -> Result<ApiResponse<Vec<TransactionSuggestion>, PlaceholderPagination>, AppError> {
+    let limit = params.limit.unwrap_or(DEFAULT_SEARCH_LIMIT);
 
-    fn get_numeric_columns() -> Vec<Self::Column>;
+    let query_str = params.q.trim();
 
-    fn get_text_columns() -> Vec<Self::Column>;
-
-    fn apply_quick_search(
-        mut query: Select<Self::Entity>,
-        quick: &QuickSearchQuery,
-    ) -> Select<Self::Entity> {
-        let mut condition = Condition::any();
-
-        // Numeric searches (cast to text for pattern matching)
-        if let Some(val) = quick.q_value {
-            let pattern = format!("%{}%", val);
-            for column in Self::get_numeric_columns() {
-                condition = condition.add(
-                    Expr::cust_with_expr("CAST($1 AS TEXT)", Expr::col(column))
-                        .like(pattern.clone()),
-                );
-            }
-        }
-
-        // text searches
-        let text_pattern = format!("%{}%", quick.q_text);
-        for column in Self::get_text_columns() {
-            condition = condition.add(Expr::col(column).like(text_pattern.clone()));
-        }
-
-        query = query.filter(condition);
-        query
+    if query_str.is_empty() {
+        return Ok(ApiResponse {
+            success: true,
+            items: Vec::new(),
+            next_page_params: None,
+        });
     }
 
-    async fn to_search_suggestion(
-        model: &<Self::Entity as EntityTrait>::Model,
-        db: &DatabaseConnection,
-    ) -> Result<TransactionSuggestion>;
+    let search_results = state
+        .db_client
+        .quick_search_transactions(query_str, limit)
+        .await
+        .map_err(|db_err| {
+            error!(error = %db_err, "Database error during quick search");
+            let _ = eyre!("Failed to execute quick search in database: {}", db_err);
+            AppError::Internal
+        })?;
+
+    let suggestions = search_results
+        .iter()
+        .map(|(source, dest)| map_to_suggestion(source, dest))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|suggestion_err| {
+            error!(error = %suggestion_err, "Mapping suggestion error during quick search");
+
+            AppError::Internal
+        })?;
+
+    Ok(ApiResponse {
+        success: true,
+
+        items: suggestions,
+
+        next_page_params: None,
+    })
 }
 
-impl QuickSearchable for l1_deposit::Entity {
-    type Entity = l1_deposit::Entity;
-    type Column = l1_deposit::Column;
+fn map_to_suggestion(
+    source: &bridge_source_transactions::Model,
 
-    fn get_numeric_columns() -> Vec<Self::Column> {
-        vec![Self::Column::SlotNumber, Self::Column::BlockNumber]
-    }
+    dest: &bridge_destination_transactions::Model,
+) -> Result<TransactionSuggestion> {
+    let to_address = source
+        .target_recipient_address
+        .as_deref()
+        .or(source.source_to_address.as_deref())
+        .unwrap_or_default()
+        .to_string();
 
-    fn get_text_columns() -> Vec<Self::Column> {
-        vec![
-            Self::Column::L1Token,
-            Self::Column::L2Token,
-            Self::Column::TxHash,
-        ]
-    }
+    let timestamp_utc =
+        DateTime::<Utc>::from_naive_utc_and_offset(source.source_event_timestamp, Utc);
 
-    async fn to_search_suggestion(
-        model: &l1_deposit::Model,
-        db: &DatabaseConnection,
-    ) -> Result<TransactionSuggestion> {
-        let nonce = model.nonce.clone();
-        let chain_id = model.chain_id.clone();
-
-        let matching_deposits = twine_l1_deposit::Entity::find()
-            .filter(twine_l1_deposit::Column::L1Nonce.eq(nonce.clone()))
-            .filter(twine_l1_deposit::Column::ChainId.eq(chain_id.clone()))
-            .one(db)
-            .await?
-            .ok_or_else(|| {
-                eyre!(
-                    "No matching withdraw found for nonce {} and chain {}",
-                    nonce,
-                    chain_id
-                )
-            })?;
-
-        let hash = matching_deposits.tx_hash.clone();
-
-        Ok(TransactionSuggestion {
-            l1_hash: model.tx_hash.clone(),
-            tx_hash: hash.clone(),
-            block_number: model
-                .block_number
-                .unwrap_or(model.slot_number.unwrap_or(0))
-                .to_string(),
-            from: model.from.clone(),
-            to: model.to_twine_address.clone(),
-            token_symbol: model.l1_token.split('/').last().unwrap_or("").to_string(),
-            timestamp: model.created_at.into(),
+    match source.event_type {
+        EventTypeEnum::Deposit => Ok(TransactionSuggestion {
+            l1_hash: source.source_tx_hash.clone(),
+            l2_hash: dest.destination_tx_hash.clone(),
+            block_number: source.source_height.unwrap_or(0).to_string(),
+            from: source.source_from_address.clone(),
+            to: to_address,
+            token_symbol: extract_token_symbol(&source.source_token_address),
+            timestamp: timestamp_utc,
             r#type: "l1_deposit".to_string(),
-            url: format!("/tx/{}", hash),
-        })
-    }
-}
+            url: format!("/tx/{}", source.source_tx_hash),
+        }),
 
-impl QuickSearchable for l1_withdraw::Entity {
-    type Entity = l1_withdraw::Entity;
-    type Column = l1_withdraw::Column;
-
-    fn get_numeric_columns() -> Vec<Self::Column> {
-        vec![Self::Column::SlotNumber, Self::Column::BlockNumber]
-    }
-
-    fn get_text_columns() -> Vec<Self::Column> {
-        vec![
-            Self::Column::L1Token,
-            Self::Column::L2Token,
-            Self::Column::TxHash,
-        ]
-    }
-
-    async fn to_search_suggestion(
-        model: &l1_withdraw::Model,
-        db: &DatabaseConnection,
-    ) -> Result<TransactionSuggestion> {
-        let nonce = model.nonce.clone();
-        let chain_id = model.chain_id.clone();
-
-        let matching_withdraw = twine_l1_withdraw::Entity::find()
-            .filter(twine_l1_withdraw::Column::L1Nonce.eq(nonce.clone()))
-            .filter(twine_l1_withdraw::Column::ChainId.eq(chain_id.clone()))
-            .one(db)
-            .await?
-            .ok_or_else(|| {
-                eyre!(
-                    "No matching withdraw found for nonce {} and chain {}",
-                    nonce,
-                    chain_id
-                )
-            })?;
-
-        let hash = matching_withdraw.tx_hash.clone();
-
-        Ok(TransactionSuggestion {
-            l1_hash: model.tx_hash.clone(),
-            tx_hash: hash.clone(),
-            block_number: model
-                .block_number
-                .unwrap_or(model.slot_number.unwrap_or(0))
-                .to_string(),
-            from: model.from.clone(),
-            to: model.to_twine_address.clone(),
-            token_symbol: model.l2_token.split('/').last().unwrap_or("").to_string(),
-            timestamp: model.created_at.into(),
-            r#type: "l1_withdraw".to_string(),
-            url: format!("/tx/{}", hash),
-        })
-    }
-}
-
-impl QuickSearchable for twine_l2_withdraw::Entity {
-    type Entity = twine_l2_withdraw::Entity;
-    type Column = twine_l2_withdraw::Column;
-
-    fn get_numeric_columns() -> Vec<Self::Column> {
-        vec![Self::Column::BlockNumber]
-    }
-
-    fn get_text_columns() -> Vec<Self::Column> {
-        vec![Self::Column::TxHash]
-    }
-
-    async fn to_search_suggestion(
-        model: &twine_l2_withdraw::Model,
-        db: &DatabaseConnection,
-    ) -> Result<TransactionSuggestion> {
-        let nonce = model.nonce.clone();
-        let chain_id = model.chain_id.clone();
-
-        let matching_withdraw = l2_withdraw::Entity::find()
-            .filter(l2_withdraw::Column::Nonce.eq(nonce.clone()))
-            .filter(l2_withdraw::Column::ChainId.eq(chain_id.clone()))
-            .one(db)
-            .await?
-            .ok_or_else(|| {
-                eyre!(
-                    "No matching withdraw found for nonce {} and chain {}",
-                    nonce,
-                    chain_id
-                )
-            })?;
-
-        let timestamp = matching_withdraw.created_at;
-
-        Ok(TransactionSuggestion {
-            l1_hash: matching_withdraw.tx_hash.clone(),
-            tx_hash: model.tx_hash.clone(),
-            block_number: model.block_number.clone(),
-            from: model.from.clone(),
-            to: model.to.clone(),
-            token_symbol: model.l2_token.split('/').last().unwrap_or("").to_string(),
-            timestamp: timestamp.into(),
+        EventTypeEnum::Withdraw => Ok(TransactionSuggestion {
+            l1_hash: dest.destination_tx_hash.clone(),
+            l2_hash: source.source_tx_hash.clone(),
+            block_number: source.source_height.unwrap_or(0).to_string(),
+            from: source.source_from_address.clone(),
+            to: to_address,
+            token_symbol: extract_token_symbol(&source.source_token_address),
+            timestamp: timestamp_utc,
             r#type: "l2_withdraw".to_string(),
-            url: format!("/tx/{}", model.tx_hash),
-        })
+            url: format!("/tx/{}", source.source_tx_hash),
+        }),
+
+        EventTypeEnum::ForcedWithdraw => Ok(TransactionSuggestion {
+            l1_hash: source.source_tx_hash.clone(),
+            l2_hash: dest.destination_tx_hash.clone(),
+            block_number: source.source_height.unwrap_or(0).to_string(),
+            from: source.source_from_address.clone(),
+            to: to_address,
+            token_symbol: extract_token_symbol(&source.source_token_address),
+            timestamp: timestamp_utc,
+            r#type: "l1_forced_withdraw".to_string(),
+            url: format!("/tx/{}", source.source_tx_hash),
+        }),
     }
+}
+
+// A small utility to extract a token symbol from a token address path.
+
+fn extract_token_symbol(token_address: &Option<String>) -> String {
+    token_address
+        .as_deref()
+        .unwrap_or_default()
+        .split('/')
+        .last()
+        .unwrap_or_default()
+        .to_string()
 }

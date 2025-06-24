@@ -1,12 +1,13 @@
-use common::{config, db};
+use common::config::{self, LoadFromEnv as _};
+use database::connect::connect;
 use eyre::Result;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::ApiConfig::from_env()?;
-    let db_conn = db::connect(&cfg.database_url).await?;
-    info!("Connected to Database");
-    api_lib::start_api(db_conn, cfg.api_port).await
+    let cfg = config::ApiConfig::load()?;
+    let primary_db_conn = connect(&cfg.database.url).await?;
+    info!("Connected to Primary Database");
+    api_lib::start_api(primary_db_conn, cfg.port).await
 }

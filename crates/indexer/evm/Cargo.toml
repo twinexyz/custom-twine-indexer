@@ -3,7 +3,7 @@ name = "evm"
 edition = "2021"
 
 [dependencies]
-alloy = { version = "0.11.0", features = ["full"] }
+alloy = { version = "0.14.0", features = ["full"] }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 common = { workspace = true }
@@ -18,7 +18,10 @@ serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-twine-evm-contracts = { workspace = true }
+twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "fix/alloy-version" }
+database = {workspace = true}
+generic-indexer = {workspace = true}
+async-stream = {version = "0.3.6"}
 
 [lints.rust]
 unused = "allow"

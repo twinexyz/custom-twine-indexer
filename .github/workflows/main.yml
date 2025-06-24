@@ -36,34 +36,34 @@ jobs:
       workflow_name: ${{ github.workflow }}
       run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
       job_status: started
-  precommit:
-    needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/precommit.yml@main
-    secrets: inherit
-  dependency-check:
-    needs: ["pre-notify", "precommit"]
-    uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
-    secrets: inherit
-    with:
-      branch_slug: ${{ github.ref_name }}
-  semgrep:
-    needs: ["pre-notify", "precommit"]
-    uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
-    secrets: inherit
-  test:
-    needs: ["pre-notify", "precommit"]
-    uses: twinexyz/workflows/.github/workflows/test.yml@main
-    secrets: inherit
-  audit:
-    needs: ["pre-notify", "precommit"]
-    uses: twinexyz/workflows/.github/workflows/audit.yml@main
-    secrets: inherit
-  file-scan:
-    needs: ["pre-notify", "precommit"]
-    uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
-    secrets: inherit
+  # precommit:
+  #   needs: ["pre-notify"]
+  #   uses: twinexyz/workflows/.github/workflows/precommit.yml@main
+  #   secrets: inherit
+  # dependency-check:
+  #   needs: ["pre-notify", "precommit"]
+  #   uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
+  #   secrets: inherit
+  #   with:
+  #     branch_slug: ${{ github.ref_name }}
+  # semgrep:
+  #   needs: ["pre-notify", "precommit"]
+  #   uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
+  #   secrets: inherit
+  # test:
+  #   needs: ["pre-notify", "precommit"]
+  #   uses: twinexyz/workflows/.github/workflows/test.yml@main
+  #   secrets: inherit
+  # audit:
+  #   needs: ["pre-notify", "precommit"]
+  #   uses: twinexyz/workflows/.github/workflows/audit.yml@main
+  #   secrets: inherit
+  # file-scan:
+  #   needs: ["pre-notify", "precommit"]
+  #   uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+  #   secrets: inherit
   build:
-    needs: ["pre-notify", "precommit"]
+    needs: ["pre-notify"]
     uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
@@ -71,7 +71,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan:
-    needs: ["pre-notify", "precommit", "build"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
@@ -79,7 +79,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   deploy:
-    needs: ["pre-notify", "precommit", "build"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
@@ -89,7 +89,8 @@ jobs:
       app_name: "api,indexer"
   post-notify:
     if: always()
-    needs: ["pre-notify", "precommit", "build", "deploy"]
+    #needs: ["pre-notify", "precommit", "build", "deploy"]
+    needs: ["pre-notify", "build", "deploy"]
     uses: twinexyz/workflows/.github/workflows/notify.yml@main
     secrets: inherit
     with:

@@ -9,6 +9,7 @@ eyre = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+database = {workspace = true}
 
 [dev-dependencies]
 pre-commit-hooks = "0.3"
