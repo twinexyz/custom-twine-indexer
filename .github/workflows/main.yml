@@ -63,7 +63,7 @@ jobs:
     uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
     secrets: inherit
   build:
-    needs: ["pre-notify", "precommit"]
+    needs: ["pre-notify"]
     uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
@@ -71,7 +71,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan:
-    needs: ["pre-notify", "precommit", "build"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
@@ -79,7 +79,7 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   deploy:
-    needs: ["pre-notify", "precommit", "build"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
