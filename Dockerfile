@@ -14,8 +14,7 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     openssl-libs-static && \
     # Set up Git credentials for private repositories
     git config --global credential.helper store && \
-    # echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
-    echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
+    echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
     chmod 600 ~/.git-credentials
 
 FROM base AS dependency
