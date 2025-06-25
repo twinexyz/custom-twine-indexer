@@ -6,23 +6,43 @@ use alloy::{
 };
 use futures_util::Stream;
 use std::{pin::Pin, sync::Arc};
+use tokio::sync::OnceCell;
 
 #[derive(Clone)]
 pub struct EvmProvider {
     http: Arc<dyn Provider + Send + Sync>,
-    ws: Arc<dyn Provider + Send + Sync>,
+    ws: Arc<OnceCell<Arc<dyn Provider + Send + Sync>>>,
     chain_id: u64,
+    ws_url: String,
 }
 
 impl EvmProvider {
-    pub async fn new(http_url: &str, ws_url: &str, chain_id: u64) -> eyre::Result<Self> {
-        let http = ProviderBuilder::new().on_http(http_url.parse()?);
-        let ws = ProviderBuilder::new().on_ws(WsConnect::new(ws_url)).await?;
-        Ok(Self {
+    pub fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
+        let http = ProviderBuilder::new().on_http(http_url.parse().expect("Invalid Http URL"));
+        Self {
             http: Arc::new(http),
-            ws: Arc::new(ws),
+            ws: Arc::new(OnceCell::new()),
+            ws_url: ws_url.to_string(),
             chain_id,
-        })
+        }
+    }
+
+    async fn ws_provider(&self) -> eyre::Result<&Arc<dyn Provider + Send + Sync>> {
+        self.ws
+            .get_or_try_init(|| async {
+                // The builder returns a `Result`, so we use `?` to get the inner provider.
+                let provider = ProviderBuilder::new()
+                    .on_ws(WsConnect::new(self.ws_url.clone()))
+                    .await?;
+
+                // Explicitly create an Arc of the trait object `dyn Provider`.
+                // This is the key change to fix the type mismatch error.
+                let provider_arc: Arc<dyn Provider + Send + Sync> = Arc::new(provider);
+
+                // The closure needs to return a Result, so we wrap the success value in Ok.
+                Ok(provider_arc)
+            })
+            .await
     }
 
     pub async fn get_logs(
@@ -57,8 +77,9 @@ impl EvmProvider {
             filter = filter.from_block(from_block);
         }
 
-        let stream = self
-            .ws
+        let ws_provider = self.ws_provider().await?;
+
+        let stream = ws_provider
             .subscribe_logs(&filter)
             .await
             .map_err(eyre::Report::from)?;
@@ -72,10 +93,7 @@ impl EvmProvider {
 
     pub async fn get_block_by_number(&self, block_number: u64) -> eyre::Result<Option<Block>> {
         self.http
-            .get_block_by_number(
-                block_number.into(),
-                alloy::rpc::types::BlockTransactionsKind::Full,
-            )
+            .get_block_by_number(block_number.into())
             .await
             .map_err(Into::into)
     }

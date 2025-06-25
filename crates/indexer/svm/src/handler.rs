@@ -35,7 +35,6 @@ use crate::parser::{
 pub struct SolanaEventHandler {
     db_client: Arc<DbClient>,
     config: SvmConfig,
-    twine_provider: EvmProvider,
 }
 
 #[async_trait]
@@ -46,14 +45,16 @@ impl ChainEventHandler for SolanaEventHandler {
         self.config.common.clone()
     }
 
-    fn get_db_client(&self) -> Arc<DbClient> {
-        self.db_client.clone()
-    }
-
     #[instrument(skip_all, fields(CHAIN = %self.chain_id()))]
     async fn handle_event(&self, log: SolanaLog) -> eyre::Result<Vec<DbOperations>> {
         let mut slot_number = 0;
         let mut operations = Vec::new();
+
+        info!(
+            "Received event '{}' in block {}",
+            log.event_type.as_str(),
+            log.slot,
+        );
 
         match log.event_type {
             SolanaEvents::SplDeposit | SolanaEvents::NativeDeposit => {
@@ -97,12 +98,8 @@ impl ChainEventHandler for SolanaEventHandler {
 }
 
 impl SolanaEventHandler {
-    pub fn new(db_client: Arc<DbClient>, config: SvmConfig, twine_provider: EvmProvider) -> Self {
-        Self {
-            db_client,
-            config,
-            twine_provider,
-        }
+    pub fn new(db_client: Arc<DbClient>, config: SvmConfig) -> Self {
+        Self { db_client, config }
     }
 
     pub fn get_program_addresses(&self) -> Vec<Pubkey> {
@@ -314,7 +311,6 @@ impl Clone for SolanaEventHandler {
             // chain_id: self.chain_id,
             config: self.config.clone(),
             db_client: self.db_client.clone(),
-            twine_provider: self.twine_provider.clone(),
         }
     }
 }

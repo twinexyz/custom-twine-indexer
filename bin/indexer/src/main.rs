@@ -3,18 +3,18 @@ use std::sync::Arc;
 use common::config::{self, LoadFromEnv};
 use database::client::DbClient;
 use evm::{
-    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer, provider::EvmProvider,
+    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer,
     twine::handlers::TwineEventHandler,
 };
 use eyre::Result;
 use generic_indexer::indexer::ChainIndexer;
 use svm::{handler::SolanaEventHandler, indexer::SolanaIndexer};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cfg = config::IndexerConfig::from_env("indexer".to_string())?;
+    let cfg = config::IndexerConfig::load()?;
 
     let db_conn = database::connect::connect(&cfg.database.url).await?;
     info!("Connected to Indexer's DB");
@@ -24,29 +24,16 @@ async fn main() -> Result<()> {
     let db_client = DbClient::new(db_conn.clone(), Some(blockscout_db_conn.clone()));
     let arc_db = Arc::new(db_client);
 
-    let twine_provider = EvmProvider::new(
-        &cfg.twine.common.http_rpc_url,
-        &cfg.twine.common.ws_rpc_url,
-        cfg.twine.common.chain_id,
-    )
-    .await
-    .unwrap();
-
     let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
-    let l1_evm_handler = EthereumEventHandler::new(
-        Arc::clone(&arc_db),
-        cfg.l1s.ethereum.clone(),
-        twine_provider.clone(),
-    );
-    let solana_handler = SolanaEventHandler::new(
-        Arc::clone(&arc_db),
-        cfg.l1s.solana.clone(),
-        twine_provider.clone(),
-    );
+    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
+    let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
 
-    let mut eth_indexer = EvmIndexer::new(l1_evm_handler).await?;
-    let mut twine_indexer = EvmIndexer::new(twine_handler).await?;
-    let mut solana_indexer = SolanaIndexer::new(Arc::clone(&arc_db), solana_handler).await?;
+    let mut eth_indexer =
+        EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db), cfg.settings.clone());
+    let mut twine_indexer =
+        EvmIndexer::new(twine_handler, Arc::clone(&arc_db), cfg.settings.clone());
+    let mut solana_indexer =
+        SolanaIndexer::new(solana_handler, Arc::clone(&arc_db), cfg.settings.clone());
 
     let twine_handle = tokio::spawn(async move {
         info!("starting twine indexer");
@@ -62,28 +49,60 @@ async fn main() -> Result<()> {
         solana_indexer.run().await
     });
 
-    let _ = tokio::join!(eth_handle, twine_handle, solana_handle);
+    let (eth_result, twine_result, solana_result) =
+        tokio::join!(eth_handle, twine_handle, solana_handle);
 
+    let mut all_ok = true;
+
+    info!("All indexer tasks have completed. Checking results...");
+
+    // Check the result of the Ethereum indexer task
+    match eth_result {
+        Ok(Ok(_)) => info!("✅ Ethereum indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Ethereum indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!(
+                "🚨 Ethereum indexer task panicked or was cancelled: {:?}",
+                e
+            );
+            all_ok = false;
+        }
+    }
+
+    // Check the result of the Twine indexer task
+    match twine_result {
+        Ok(Ok(_)) => info!("✅ Twine indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Twine indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Twine indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+    // Check the result of the Solana indexer task
+    match solana_result {
+        Ok(Ok(_)) => info!("✅ Solana indexer finished successfully."),
+        Ok(Err(e)) => {
+            error!("❌ Solana indexer returned an application error: {:?}", e);
+            all_ok = false;
+        }
+        Err(e) => {
+            error!("🚨 Solana indexer task panicked or was cancelled: {:?}", e);
+            all_ok = false;
+        }
+    }
+
+
+    if !all_ok {
+        return Err(eyre::eyre!("One or more indexers failed to run to completion."));
+    }
+
+    info!("All services shut down gracefully.");
     Ok(())
-
-    // let handles = start_indexer(cfg, db_conn, blockscout_db_conn)
-    //     .await
-    //     .wrap_err("Failed to start indexers")?;
-
-    // for handle in handles {
-    //     match handle.await {
-    //         Ok(inner_result) => {
-    //             if let Err(e) = inner_result {
-    //                 error!("Indexer task failed: {:?}", e);
-    //             }
-    //         }
-    //         Err(e) => {
-    //             if e.is_panic() {
-    //                 error!("A task panicked: {:?}", e);
-    //             } else {
-    //                 error!("A task was cancelled: {:?}", e);
-    //             }
-    //         }
-    //     }
-    // }
 }

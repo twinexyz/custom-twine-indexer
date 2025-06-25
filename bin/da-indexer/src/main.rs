@@ -9,7 +9,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let cfg = config::DaIndexerConfig::from_env("da_indexer".to_string())?;
+    let cfg = config::DaIndexerConfig::load()?;
 
     let db_conn = database::connect::connect(&cfg.blockscout.url).await?;
     info!("Connected to Blockscout's DB");

@@ -40,7 +40,7 @@ impl DbClient {
                 .do_nothing()
                 .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|db_err| {
                 error!(error = %db_err, "Failed to bulk insert source transactions");
@@ -70,7 +70,7 @@ impl DbClient {
                 .do_nothing()
                 .to_owned(),
             )
-            .exec(txn)
+            .exec_with_returning_many(txn)
             .await
             .map_err(|db_err| {
                 error!(error = %db_err, "Failed to bulk insert destination transactions");

@@ -26,7 +26,10 @@ use twine_evm_contracts::evm::ethereum::{
     twine_chain::TwineChain::{CommitBatch, FinalizedBatch},
 };
 
-use crate::{error::ParserError, handler::EvmEventHandler, provider::EvmProvider, EVMChain};
+use crate::{
+    error::ParserError, ethereum::parser::get_event_name_from_signature_hash,
+    handler::EvmEventHandler, provider::EvmProvider, EVMChain,
+};
 
 use super::{
     parser::{FinalizeWithdrawERC20, FinalizeWithdrawETH},
@@ -38,7 +41,6 @@ pub struct EthereumEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
     config: EvmConfig,
-    twine_provider: EvmProvider,
 }
 
 #[async_trait]
@@ -53,6 +55,13 @@ impl ChainEventHandler for EthereumEventHandler {
         let block_number = log.block_number.unwrap();
 
         let mut operations = Vec::new();
+
+        info!(
+            "Received event '{}' in block {} (signature hash: 0x{})",
+            get_event_name_from_signature_hash(sig),
+            block_number,
+            hex::encode(sig),
+        );
 
         match *sig {
             L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
@@ -93,10 +102,6 @@ impl ChainEventHandler for EthereumEventHandler {
     fn get_chain_config(&self) -> common::config::ChainConfig {
         self.config.common.clone()
     }
-
-    fn get_db_client(&self) -> Arc<DbClient> {
-        self.db_client.clone()
-    }
 }
 
 #[async_trait]
@@ -124,12 +129,11 @@ impl EvmEventHandler for EthereumEventHandler {
 }
 
 impl EthereumEventHandler {
-    pub fn new(db_client: Arc<DbClient>, config: EvmConfig, twine_provider: EvmProvider) -> Self {
+    pub fn new(db_client: Arc<DbClient>, config: EvmConfig) -> Self {
         Self {
             db_client,
             chain_id: config.common.chain_id,
             config,
-            twine_provider,
         }
     }
 
@@ -147,7 +151,7 @@ impl EthereumEventHandler {
             source_chain_id: Set(data.chainId.try_into().unwrap()),
             source_height: Set(Some(data.blockNumber.try_into().unwrap())),
             source_from_address: Set(format!("{:?}", data.from)),
-            source_to_address: Set(Some(format!("{:?}", data.toTwineAddress))),
+            target_recipient_address: Set(Some(format!("{:?}", data.toTwineAddress))),
             destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
             source_token_address: Set(Some(format!("{:?}", data.l1Token))),
             source_tx_hash: Set(decoded.tx_hash_str.clone()),

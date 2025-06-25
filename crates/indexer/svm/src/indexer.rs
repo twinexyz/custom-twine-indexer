@@ -1,7 +1,7 @@
 use std::{pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use common::config::ChainConfig;
+use common::config::{ChainConfig, IndexerSettings};
 use database::client::DbClient;
 use eyre::Error;
 use futures_util::{stream::select_all, Stream, StreamExt};
@@ -25,7 +25,7 @@ pub struct SolanaIndexer {
     max_batch_size: usize,
     db_client: Arc<DbClient>,
     config: ChainConfig,
-    program_ids: Vec<Pubkey>,
+    settings: IndexerSettings,
 }
 
 #[async_trait]
@@ -36,25 +36,41 @@ impl ChainIndexer for SolanaIndexer {
     fn get_event_handler(&self) -> Self::EventHandler {
         self.handler.clone()
     }
+    fn get_db_client(&self) -> Arc<DbClient> {
+        self.db_client.clone()
+    }
+    fn get_indexer_settings(&self) -> IndexerSettings {
+        self.settings.clone()
+    }
 
     async fn subscribe_live(&self, _from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
-        let program_id = self
-            .program_ids
-            .first()
-            .ok_or(eyre::eyre!("No program IDs configured"))?;
+        let program_ids = self.handler.get_program_addresses();
 
-        // Get the raw stream from the provider
-        let raw_stream = self.provider.subscribe_logs(program_id).await?;
+        let mut streams = Vec::new();
 
-        let parsed_stream = raw_stream.map(move |result| parse_log(result));
+        for program_id in program_ids.clone() {
+            let raw_stream = self.provider.subscribe_logs(&program_id).await?;
 
-        Ok(Box::pin(parsed_stream))
+            streams.push(raw_stream);
+        }
+
+        if streams.is_empty() && !program_ids.is_empty() {
+            return Err(eyre::eyre!(
+                "Solana: No log streams could be established despite configured program IDs."
+            ));
+        } else if streams.is_empty() {
+            return Ok(futures_util::stream::empty().boxed());
+        } else {
+            let merged = select_all(streams).boxed();
+            let parsed_stream = merged.map(move |result| parse_log(result));
+
+            return Ok(Box::pin(parsed_stream));
+        }
     }
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {
         let last_synced = self
-            .handler
-            .get_db_client()
+            .db_client
             .get_last_synced_height(self.handler.chain_id() as i64, self.config.start_block)
             .await
             .unwrap_or(self.config.start_block as i64);
@@ -77,19 +93,18 @@ impl ChainIndexer for SolanaIndexer {
 }
 
 impl SolanaIndexer {
-    pub async fn new(db: Arc<DbClient>, handler: SolanaEventHandler) -> eyre::Result<Self> {
+    pub fn new(handler: SolanaEventHandler, db: Arc<DbClient>, settings: IndexerSettings) -> Self {
         let config = handler.get_chain_config();
 
-        let provider =
-            SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id).await?;
+        let provider = SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
 
-        Ok(Self {
+        Self {
             provider,
             handler,
             max_batch_size: config.block_sync_batch_size as usize,
             db_client: db,
             config,
-            program_ids: Vec::new(),
-        })
+            settings,
+        }
     }
 }
