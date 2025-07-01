@@ -15,16 +15,19 @@ use database::{
 };
 use eyre::Result;
 use generic_indexer::handler::ChainEventHandler;
-use sea_orm::{sqlx::types::uuid::timestamp, ActiveValue::Set};
+use sea_orm::{
+    sqlx::{decode, types::uuid::timestamp},
+    ActiveValue::Set,
+};
 use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::{
     ethereum::{l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch},
-    twine::l2_messenger::{L2Messenger, PrecompileReturn},
+    twine::l2_messenger::L2Messenger::{self, L1Txns},
 };
 
 use crate::{
     error::ParserError,
-    handler::{EvmEventHandler, LogContext},
+    handler::{EvmEventHandler, LogContext}, twine::get_event_name_from_signature_hash,
 };
 
 use super::TWINE_EVENT_SIGNATURES;
@@ -53,18 +56,24 @@ impl ChainEventHandler for TwineEventHandler {
 
         let mut operations = Vec::new();
 
-        match *sig {
-            L2Messenger::EthereumTransactionsHandled::SIGNATURE_HASH => {
-                let (deposits, withdraws) = self.handle_ethereum_transactions_handled(log).await?;
-                operations.extend(deposits);
-                operations.extend(withdraws);
-            }
-            L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
-                let (deposits, withdraws) = self.handle_solana_transactions_handled(log).await?;
-                operations.extend(deposits);
-                operations.extend(withdraws);
-            }
+        info!(
+            "Received event '{}' in block {} (signature hash: 0x{})",
+            get_event_name_from_signature_hash(sig),
+            block_number,
+            hex::encode(sig),
+        );
 
+        match *sig {
+            L2Messenger::L1TransactionsHandled::SIGNATURE_HASH => {
+                let (deposits, withdraws) = self.handle_l1_transactions_handled(log).await?;
+                operations.extend(deposits);
+                operations.extend(withdraws);
+            }
+            // L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
+            //     let (deposits, withdraws) = self.handle_solana_transactions_handled(log).await?;
+            //     operations.extend(deposits);
+            //     operations.extend(withdraws);
+            // }
             L2Messenger::SentMessage::SIGNATURE_HASH => {
                 let operation = self.handle_sent_message(log).await?;
                 operations.push(operation);
@@ -88,11 +97,8 @@ impl TwineEventHandler {
         }
     }
 
-    async fn decode_precompile_return(
-        &self,
-        event: Bytes,
-    ) -> Result<PrecompileReturn, ParserError> {
-        match PrecompileReturn::abi_decode(&event) {
+    async fn decode_precompile_return(&self, event: Bytes) -> Result<L1Txns, ParserError> {
+        match L1Txns::abi_decode(&event) {
             Ok(pr) => Ok(pr),
             Err(e) => {
                 warn!(
@@ -107,18 +113,21 @@ impl TwineEventHandler {
 
     fn process_precompile_return(
         &self,
-        pr: PrecompileReturn,
+        pr: L1Txns,
         tx_hash: String,
         block_number: i64,
+        chain_id: u64,
     ) -> (Vec<DbOperations>, Vec<DbOperations>) {
         let mut parsed_deposits = Vec::new();
         let mut parsed_withdraws = Vec::new();
 
-        for deposit_txn in pr.deposit {
+        let tokentxns = pr.tokenTxn;
+
+        if tokentxns.deposit {
             parsed_deposits.push(DbOperations::BridgeDestinationTransactions(
                 bridge_destination_transactions::ActiveModel {
-                    source_nonce: Set(deposit_txn.l1_nonce.try_into().unwrap()),
-                    source_chain_id: Set(deposit_txn.detail.chain_id.try_into().unwrap()),
+                    source_nonce: Set(pr.nonce as i64),
+                    source_chain_id: Set(chain_id as i64),
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
                     destination_tx_hash: Set(tx_hash.to_string()),
@@ -126,13 +135,11 @@ impl TwineEventHandler {
                     ..Default::default()
                 },
             ));
-        }
-
-        for withdraw_txn in pr.withdraws {
+        } else {
             parsed_withdraws.push(DbOperations::BridgeDestinationTransactions(
                 bridge_destination_transactions::ActiveModel {
-                    source_nonce: Set(withdraw_txn.l1_nonce.try_into().unwrap()),
-                    source_chain_id: Set(withdraw_txn.detail.chain_id.try_into().unwrap()),
+                    source_nonce: Set(pr.nonce as i64),
+                    source_chain_id: Set(chain_id as i64),
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
                     destination_tx_hash: Set(tx_hash.to_string()),
@@ -146,34 +153,22 @@ impl TwineEventHandler {
     }
 
     //Handlers are here
-    async fn handle_ethereum_transactions_handled(
+    async fn handle_l1_transactions_handled(
         &self,
         log: Log,
     ) -> Result<(Vec<DbOperations>, Vec<DbOperations>)> {
-        let decoded = self.extract_log::<L2Messenger::EthereumTransactionsHandled>(log, "")?;
+        let decoded = self.extract_log::<L2Messenger::L1TransactionsHandled>(log, "")?;
 
         let pr = self
             .decode_precompile_return(decoded.data.transactionOutput)
             .await?;
 
-        let (deposits, withdraws) =
-            self.process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number);
-
-        Ok((deposits, withdraws))
-    }
-
-    async fn handle_solana_transactions_handled(
-        &self,
-        log: Log,
-    ) -> Result<(Vec<DbOperations>, Vec<DbOperations>)> {
-        let decoded = self.extract_log::<L2Messenger::SolanaTransactionsHandled>(log, "")?;
-
-        let pr = self
-            .decode_precompile_return(decoded.data.transactionOutput)
-            .await?;
-
-        let (deposits, withdraws) =
-            self.process_precompile_return(pr, decoded.tx_hash_str, decoded.block_number);
+        let (deposits, withdraws) = self.process_precompile_return(
+            pr,
+            decoded.tx_hash_str,
+            decoded.block_number,
+            decoded.data.chainId.to::<u64>(),
+        );
 
         Ok((deposits, withdraws))
     }
