@@ -27,7 +27,8 @@ use twine_evm_contracts::evm::{
 
 use crate::{
     error::ParserError,
-    handler::{EvmEventHandler, LogContext}, twine::get_event_name_from_signature_hash,
+    handler::{EvmEventHandler, LogContext},
+    twine::get_event_name_from_signature_hash,
 };
 
 use super::TWINE_EVENT_SIGNATURES;
@@ -117,6 +118,7 @@ impl TwineEventHandler {
         tx_hash: String,
         block_number: i64,
         chain_id: u64,
+        status: u16,
     ) -> (Vec<DbOperations>, Vec<DbOperations>) {
         let mut parsed_deposits = Vec::new();
         let mut parsed_withdraws = Vec::new();
@@ -131,6 +133,7 @@ impl TwineEventHandler {
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
                     destination_tx_hash: Set(tx_hash.to_string()),
+                    destination_status_code: Set(Some(status as i16)),
                     // destination_processed_at: Set(Some(decoded.timestamp.into())),
                     ..Default::default()
                 },
@@ -143,6 +146,7 @@ impl TwineEventHandler {
                     destination_chain_id: Set(self.chain_id as i64),
                     destination_height: Set(Some(block_number)),
                     destination_tx_hash: Set(tx_hash.to_string()),
+                    destination_status_code: Set(Some(status as i16)),
                     // destination_processed_at: Set(Some(decoded.timestamp.into())),
                     ..Default::default()
                 },
@@ -168,6 +172,7 @@ impl TwineEventHandler {
             decoded.tx_hash_str,
             decoded.block_number,
             decoded.data.chainId.to::<u64>(),
+            decoded.data.status as u16,
         );
 
         Ok((deposits, withdraws))
