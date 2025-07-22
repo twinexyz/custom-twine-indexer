@@ -18,7 +18,7 @@ serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "fix/alloy-version" }
+twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "feat/indexer" }
 database = {workspace = true}
 generic-indexer = {workspace = true}
 async-stream = {version = "0.3.6"}

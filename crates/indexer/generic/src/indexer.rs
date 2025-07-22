@@ -37,6 +37,7 @@ pub trait ChainIndexer: Send + Sync {
 
     fn get_db_client(&self) -> Arc<DbClient>;
 
+    #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]
     async fn run(&mut self) -> Result<(), Error> {
         let initial_height = self.get_initial_state().await?;
 
