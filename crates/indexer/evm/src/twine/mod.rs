@@ -23,8 +23,6 @@ use twine_evm_contracts::evm::twine::l2_messenger::L2Messenger;
 
 pub mod handlers;
 
-pub mod handlers;
-
 pub const TWINE_EVENT_SIGNATURES: &[&str] = &[
     L2Messenger::L1TransactionsHandled::SIGNATURE,
     L2Messenger::SentMessage::SIGNATURE,
