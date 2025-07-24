@@ -12,7 +12,6 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     libcrypto3 \
     perl \
     openssl-libs-static && \
-    # Set up Git credentials for private repositories
     git config --global credential.helper store && \
     echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
     chmod 600 ~/.git-credentials
@@ -30,8 +29,6 @@ COPY Cargo.toml Cargo.lock ./
 RUN  sed -i -E '/\[\[bin\]\]/{N;/name = "api"/{N;d}}; /name = "indexer"/{N;s/path = "[^"]+"/path = "dummy.rs"/}' Cargo.toml
 RUN echo "fn main() {}" > dummy.rs
 
-
-# Copy full source and build binaries
 COPY . .
 RUN cargo build --release --bin api --bin indexer
 
