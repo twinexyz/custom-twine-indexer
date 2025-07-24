@@ -106,8 +106,8 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   deploy:
-    #needs: ["pre-notify", "build-amd64", "build-arm64"]
     needs: ["pre-notify", "build"]
+    #needs: ["pre-notify", "build-amd64", "build-arm64"]
     uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
