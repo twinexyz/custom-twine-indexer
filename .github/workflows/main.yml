@@ -36,32 +36,32 @@ jobs:
       workflow_name: ${{ github.workflow }}
       run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
       job_status: started
-  # precommit:
-  #   needs: ["pre-notify"]
-  #   uses: twinexyz/workflows/.github/workflows/precommit.yml@main
-  #   secrets: inherit
-  # dependency-check:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
-  #   secrets: inherit
-  #   with:
-  #     branch_slug: ${{ github.ref_name }}
-  # semgrep:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
-  #   secrets: inherit
-  # test:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/test.yml@main
-  #   secrets: inherit
-  # audit:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/audit.yml@main
-  #   secrets: inherit
-  # file-scan:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
-  #   secrets: inherit
+  precommit:
+    needs: ["pre-notify"]
+    uses: twinexyz/workflows/.github/workflows/precommit.yml@main
+    secrets: inherit
+  dependency-check:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
+    secrets: inherit
+    with:
+      branch_slug: ${{ github.ref_name }}
+  semgrep:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
+    secrets: inherit
+  test:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/test.yml@main
+    secrets: inherit
+  audit:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/audit.yml@main
+    secrets: inherit
+  file-scan:
+    needs: ["pre-notify", "precommit"]
+    uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+    secrets: inherit
   build-amd64:
     needs: ["pre-notify"]
     uses: twinexyz/workflows/.github/workflows/build-amd64.yml@main
