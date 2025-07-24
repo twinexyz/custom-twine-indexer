@@ -65,7 +65,7 @@ jobs:
     secrets: inherit
   build:
     needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/build.yml@main
+    uses: twinexyz/workflows/.github/workflows/build-matrix.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
