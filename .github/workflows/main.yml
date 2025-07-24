@@ -105,7 +105,6 @@ jobs:
       app_name: "api,indexer"
   post-notify:
     if: always()
-    #needs: ["pre-notify", "precommit", "build", "deploy"]
     needs: ["pre-notify", "build-arm64", "build-amd64", "deploy"]
     uses: twinexyz/workflows/.github/workflows/notify.yml@main
     secrets: inherit
