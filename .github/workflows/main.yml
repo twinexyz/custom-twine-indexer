@@ -62,24 +62,33 @@ jobs:
     needs: ["pre-notify", "precommit"]
     uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
     secrets: inherit
-  build-amd64:
+  build:
     needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/build-amd64.yml@main
+    uses: twinexyz/workflows/.github/workflows/build.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
-  build-arm64:
-    needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/build-arm64.yml@main
-    secrets: inherit
-    with:
-      sha: ${{ github.sha  }}
-      branch_slug: ${{ github.ref_name }}
-      repo_name: ${{ github.event.repository.name }}
+  #build-amd64:
+  #  needs: ["pre-notify"]
+  #  uses: twinexyz/workflows/.github/workflows/build-amd64.yml@main
+  #  secrets: inherit
+  #  with:
+  #    sha: ${{ github.sha  }}
+  #    branch_slug: ${{ github.ref_name }}
+  #    repo_name: ${{ github.event.repository.name }}
+  #build-arm64:
+  #  needs: ["pre-notify"]
+  #  uses: twinexyz/workflows/.github/workflows/build-arm64.yml@main
+  #  secrets: inherit
+  #  with:
+  #    sha: ${{ github.sha  }}
+  #    branch_slug: ${{ github.ref_name }}
+  #    repo_name: ${{ github.event.repository.name }}
   container-scan-amd64:
-    needs: ["pre-notify", "build-amd64"]
+    needs: ["pre-notify", "build"]
+    #needs: ["pre-notify", "build-amd64"]
     uses: twinexyz/workflows/.github/workflows/container-scan-amd64.yml@main
     secrets: inherit
     with:
@@ -87,7 +96,8 @@ jobs:
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan-arm64:
-    needs: ["pre-notify", "build-arm64"]
+    needs: ["pre-notify", "build"]
+    #needs: ["pre-notify", "build-arm64"]
     uses: twinexyz/workflows/.github/workflows/container-scan-arm64.yml@main
     secrets: inherit
     with:
