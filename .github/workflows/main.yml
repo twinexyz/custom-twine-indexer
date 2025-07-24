@@ -88,8 +88,8 @@ jobs:
   #    branch_slug: ${{ github.ref_name }}
   #    repo_name: ${{ github.event.repository.name }}
   container-scan-amd64:
-    needs: ["pre-notify", "build"]
     #needs: ["pre-notify", "build-amd64"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/container-scan-amd64.yml@main
     secrets: inherit
     with:
