@@ -6,6 +6,7 @@ on:
       - 'main'
       - 'staging'
       - 'develop'
+      - 'feat/ci-fixes'
     tags:
       - '**'
   pull_request:
