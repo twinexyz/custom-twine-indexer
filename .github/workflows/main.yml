@@ -78,9 +78,17 @@ jobs:
       sha: ${{ github.sha  }}
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
-  container-scan:
-    needs: ["pre-notify", "build-amd64", "build-arm64"]
-    uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
+  container-scan-amd64:
+    needs: ["pre-notify", "build-amd64"]
+    uses: twinexyz/workflows/.github/workflows/container-scan-amd64.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+  container-scan-arm64:
+    needs: ["pre-notify", "build-arm64"]
+    uses: twinexyz/workflows/.github/workflows/container-scan-arm64.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
