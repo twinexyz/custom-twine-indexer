@@ -6,6 +6,7 @@ on:
       - 'main'
       - 'staging'
       - 'develop'
+      - 'feat/ci-fixes'
     tags:
       - '**'
   pull_request:
@@ -64,31 +65,15 @@ jobs:
     secrets: inherit
   build:
     needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/build.yml@main
+    uses: twinexyz/workflows/.github/workflows/build-matrix.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
-  #build-amd64:
-  #  needs: ["pre-notify"]
-  #  uses: twinexyz/workflows/.github/workflows/build-amd64.yml@main
-  #  secrets: inherit
-  #  with:
-  #    sha: ${{ github.sha  }}
-  #    branch_slug: ${{ github.ref_name }}
-  #    repo_name: ${{ github.event.repository.name }}
-  #build-arm64:
-  #  needs: ["pre-notify"]
-  #  uses: twinexyz/workflows/.github/workflows/build-arm64.yml@main
-  #  secrets: inherit
-  #  with:
-  #    sha: ${{ github.sha  }}
-  #    branch_slug: ${{ github.ref_name }}
-  #    repo_name: ${{ github.event.repository.name }}
   container-scan-amd64:
-    needs: ["pre-notify", "build"]
     #needs: ["pre-notify", "build-amd64"]
+    needs: ["pre-notify", "build"]
     uses: twinexyz/workflows/.github/workflows/container-scan-amd64.yml@main
     secrets: inherit
     with:
