@@ -191,16 +191,17 @@ impl DbClient {
 
     pub async fn bulk_finalize_batches(
         &self,
-        finalizations: Vec<(i64, Vec<u8>)>,
+        finalizations: Vec<(i64, String, i64)>,
         txn: &DatabaseTransaction,
     ) -> Result<()> {
-        for (batch_number, tx_hash) in finalizations {
+        for (batch_number, tx_hash, chain_id) in finalizations {
             twine_transaction_batch_detail::Entity::update_many()
                 .col_expr(
                     twine_transaction_batch_detail::Column::FinalizeTransactionHash,
                     Expr::value(tx_hash),
                 )
                 .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
+                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
                 .exec(txn)
                 .await
                 .map_err(|e| {

@@ -280,7 +280,7 @@ impl EthereumEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
-            commit_transaction_hash: Set(Some(decoded.tx_hash_str.clone().into_bytes())),
+            commit_transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
             finalize_transaction_hash: Set(None),
             ..Default::default()
         };
@@ -361,8 +361,9 @@ impl EthereumEventHandler {
         let chain_id_dec = Decimal::from_i64(self.chain_id as i64).unwrap();
 
         let operation = DbOperations::FinalizeBatch {
-            finalize_hash: tx_hash_bytes,
+            finalize_hash: decoded.tx_hash_str.clone(),
             batch_number: batch_number as i64,
+            chain_id: self.chain_id as i64,
         };
 
         Ok(operation)

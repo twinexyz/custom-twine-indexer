@@ -271,7 +271,7 @@ impl SolanaEventHandler {
 
         //Build batch model
         let batch_model = twine_transaction_batch::ActiveModel {
-            number: Set(start_block as i64),
+            number: Set(batch_number as i64),
             timestamp: Set(timestamp.naive_utc()),
             start_block: Set(start_block as i64),
             end_block: Set(end_block as i64),
@@ -280,13 +280,13 @@ impl SolanaEventHandler {
         };
 
         let detail_model = twine_transaction_batch_detail::ActiveModel {
-            batch_number: Set(start_block as i64),
+            batch_number: Set(batch_number as i64),
             l1_transaction_count: Set(0),
             l2_transaction_count: Set(0),
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-            commit_transaction_hash: Set(Some(signature.clone().into_bytes())),
+            commit_transaction_hash: Set(Some(signature.clone())),
             finalize_transaction_hash: Set(None),
             ..Default::default()
         };
@@ -366,8 +366,9 @@ impl SolanaEventHandler {
         let batch_number = event.batch_number;
 
         Ok(DbOperations::FinalizeBatch {
-            finalize_hash: signature.into_bytes(),
+            finalize_hash: signature,
             batch_number: batch_number as i64,
+            chain_id: self.chain_id() as i64,
         })
     }
 }

@@ -3,7 +3,7 @@
 # ===================================================================
 api:
   database:
-    url: "postgres://blockscout:password@localhost:5432/indexer"
+    url: "postgres://rabindraregmi:admin@localhost:5432/indexer"
   port: 7777
 
 # ===================================================================
