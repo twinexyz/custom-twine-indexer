@@ -7,19 +7,14 @@ on:
       - 'staging'
       - 'develop'
     tags:
-      - '**'
+      - '**'  # This will trigger on all tags
+    paths-ignore:
+      - '.github/workflows/**'
   pull_request:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  CARGO_INCREMENTAL: 0
-  CARGO_TERM_COLOR: always
-  CARGO_PROFILE_TEST_DEBUG: 0
-  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
-  CARGO_PROFILE_RELEASE_LTO: true
+    branches:
+      - 'main'
+      - 'staging'
+      - 'develop'
 
 jobs:
   pre-notify:
@@ -36,42 +31,43 @@ jobs:
       workflow_name: ${{ github.workflow }}
       run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
       job_status: started
-  # precommit:
-  #   needs: ["pre-notify"]
-  #   uses: twinexyz/workflows/.github/workflows/precommit.yml@main
-  #   secrets: inherit
-  # dependency-check:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
-  #   secrets: inherit
-  #   with:
-  #     branch_slug: ${{ github.ref_name }}
-  # semgrep:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
-  #   secrets: inherit
-  # test:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/test.yml@main
-  #   secrets: inherit
-  # audit:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/audit.yml@main
-  #   secrets: inherit
-  # file-scan:
-  #   needs: ["pre-notify", "precommit"]
-  #   uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
-  #   secrets: inherit
+  #precommit:
+  #  needs: ["pre-notify"]
+  #  uses: twinexyz/workflows/.github/workflows/precommit.yml@main
+  #  secrets: inherit
+  #dependency-check:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
+  #  secrets: inherit
+  #  with:
+  #    branch_slug: ${{ github.ref_name }}
+  #semgrep:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
+  #  secrets: inherit
+  #test:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/test.yml@main
+  #  secrets: inherit
+  #audit:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/audit.yml@main
+  #  secrets: inherit
+  #file-scan:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+  #  secrets: inherit
+  #
   build:
     needs: ["pre-notify"]
-    uses: twinexyz/workflows/.github/workflows/build.yml@main
+    uses: twinexyz/workflows/.github/workflows/build-matrix.yml@main
     secrets: inherit
     with:
       sha: ${{ github.sha  }}
       branch_slug: ${{ github.ref_name }}
       repo_name: ${{ github.event.repository.name }}
   container-scan:
-    needs: ["pre-notify", "build"]
+    needs: ["build"]
     uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
     secrets: inherit
     with:
@@ -80,6 +76,7 @@ jobs:
       repo_name: ${{ github.event.repository.name }}
   deploy:
     needs: ["pre-notify", "build"]
+    #needs: ["pre-notify", "build-amd64", "build-arm64"]
     uses: twinexyz/workflows/.github/workflows/deploy.yml@main
     secrets: inherit
     with:
@@ -89,7 +86,7 @@ jobs:
       app_name: "api,indexer"
   post-notify:
     if: always()
-    #needs: ["pre-notify", "precommit", "build", "deploy"]
+    #needs: ["pre-notify", "precommit", "build"]
     needs: ["pre-notify", "build", "deploy"]
     uses: twinexyz/workflows/.github/workflows/notify.yml@main
     secrets: inherit
@@ -110,4 +107,3 @@ jobs:
       anchore_sbom_scan_duration: ${{ needs.container-scan.outputs.anchore_sbom_scan_duration }}
       trivy_scan_duration: ${{ needs.container-scan.outputs.trivy_scan_duration }}
       docker_scout_scan_duration: ${{ needs.container-scan.outputs.docker_scout_scan_duration }}
-      deploy_duration: ${{ needs.deploy.outputs.duration }}
