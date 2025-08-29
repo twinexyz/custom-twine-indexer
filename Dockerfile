@@ -26,10 +26,13 @@ FROM base AS dependency
 
 RUN cargo install sea-orm-cli@1.1.7
 
-FROM rust:1.85-alpine
+FROM rust:1.86 as final
 
-RUN apk add musl-dev
-WORKDIR /app
+RUN apt-get update --allow-insecure-repositories && \
+    apt-get install -y build-essential clang libssl-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/* && \
+    wget -c https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/bin/yq && \
+    chmod +x /usr/bin/yq
 
 COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
 COPY --from=base /app/target/release/api /usr/local/bin/api
