@@ -22,7 +22,8 @@ pub enum DbOperations {
         transactions: Vec<transactions::ActiveModel>,
     },
     FinalizeBatch {
-        finalize_hash: Vec<u8>,
+        finalize_hash: String,
         batch_number: i64,
+        chain_id: i64,
     },
 }

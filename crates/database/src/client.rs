@@ -89,7 +89,8 @@ impl DbClient {
                     DbOperations::FinalizeBatch {
                         finalize_hash,
                         batch_number,
-                    } => update_details.push((batch_number, finalize_hash)),
+                        chain_id,
+                    } => update_details.push((batch_number, finalize_hash, chain_id)),
                 }
             }
         }
