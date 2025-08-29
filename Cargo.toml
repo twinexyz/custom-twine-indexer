@@ -23,6 +23,7 @@ database = {path = "crates/database"}
 generic-indexer = {path = "crates/indexer/generic"}
 
 anyhow = "1.0.97"
+
 async-trait = "0.1.87"
 base64 = "0.22.0"
 blake3 = "1.7.0"
@@ -47,3 +48,6 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.23.1", features = ["native-tls"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+
+[workspace.metadata.precommit]
+fmt = "cargo fmt"

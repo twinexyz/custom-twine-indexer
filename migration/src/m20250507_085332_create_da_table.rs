@@ -14,10 +14,26 @@ impl MigrationTrait for Migration {
                     .table(CelestiaBlobs::Table)
                     .if_not_exists()
                     .col(pk_auto(CelestiaBlobs::Id))
-                    .col(ColumnDef::new(CelestiaBlobs::CommitmentHash).string().not_null())
-                    .col(ColumnDef::new(CelestiaBlobs::TransactionHash).string().not_null())
-                    .col(ColumnDef::new(CelestiaBlobs::TwineBlockHash).string().not_null())
-                    .col(ColumnDef::new(CelestiaBlobs::Height).big_unsigned().not_null())
+                    .col(
+                        ColumnDef::new(CelestiaBlobs::CommitmentHash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(CelestiaBlobs::TransactionHash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(CelestiaBlobs::TwineBlockHash)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(CelestiaBlobs::Height)
+                            .big_unsigned()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await
@@ -37,5 +53,5 @@ enum CelestiaBlobs {
     TwineBlockHash,
     CommitmentHash,
     TransactionHash,
-    Height
+    Height,
 }

@@ -1,6 +1,6 @@
 use std::{
     sync::{mpsc, Arc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Utc};
@@ -17,7 +17,9 @@ use solana_client::{
     rpc_request::RpcRequest,
     rpc_response::{Response, RpcConfirmedTransactionStatusWithSignature, RpcLogsResponse},
 };
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signature};
+use solana_commitment_config::CommitmentConfig;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
 };
@@ -25,7 +27,7 @@ use tokio::sync::{mpsc::Receiver, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
-use crate::parser::{extract_log, SolanaLog};
+use crate::parser::{parse_json_log, SolanaLog};
 
 #[derive(Clone)]
 pub struct SvmProvider {
@@ -86,6 +88,8 @@ impl SvmProvider {
         let mut all_signatures = Vec::new();
         let mut before: Option<String> = None;
 
+        let start_time = Instant::now();
+
         loop {
             let config = RpcSignaturesForAddressConfig {
                 before: before.clone(),
@@ -132,6 +136,9 @@ impl SvmProvider {
         all_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
         all_signatures.dedup_by(|a, b| a.signature == b.signature);
 
+        let elapsed = start_time.elapsed();
+        info!("get_signature_for_address took {:?}", elapsed);
+
         Ok(all_signatures)
     }
 
@@ -159,10 +166,22 @@ impl SvmProvider {
     ) -> eyre::Result<Vec<SolanaLog>> {
         let mut all_found_events = Vec::new();
 
+        let start_time = Instant::now();
+
         for program in programs {
             let signatures = self
                 .get_signature_for_address(&program, from, to, 1000)
                 .await?;
+
+            info!(
+                "Found {} signatures for program {}",
+                signatures.len(),
+                program
+            );
+
+            if signatures.is_empty() {
+                continue;
+            }
 
             for sig in signatures {
                 let signature_str = &sig.signature;
@@ -193,36 +212,42 @@ impl SvmProvider {
                             });
 
                         if let Some(meta) = tx_with_meta.transaction.meta {
-                            let logs_messages = meta.log_messages.ok_or_else(|| {
-                                eyre::eyre!(
-                                    "Log messages missing in transaction meta for slot {}",
-                                    current_slot
-                                )
-                            })?;
+                            if let OptionSerializer::Some(logs) = meta.log_messages {
+                                for log in logs {
+                                    if !log.starts_with("Program log:") {
+                                        continue;
+                                    }
 
-                            if let Some(metadata) = extract_log(&logs_messages) {
-                                let found_event = SolanaLog {
-                                    event_type: metadata.event_type,
-                                    transaction_signature: signature_str.clone(),
-                                    slot: current_slot,
-                                    timestamp,
-                                    encoded_data: metadata.encoded_data,
-                                };
-                                all_found_events.push(found_event);
+                                    match parse_json_log(&log) {
+                                        Ok(event) => {
+                                            all_found_events.push(SolanaLog {
+                                                event: event,
+                                                slot_number: current_slot,
+                                                signature: signature_str.clone(),
+                                                timestamp: timestamp,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to parse log '{}': {}", log, e);
+                                        }
+                                    }
+                                }
                             }
-                        } else {
-                            info!("No meta in transaction for tx: {}", signature_str);
                         }
                     }
 
                     Err(e) => {
-                        return Err(eyre!("Erorr while fetching the transaction from signature"))
+                        error!("Erorr while fetching the transaction from signature: {}", e);
+                        return Err(eyre!("Erorr while fetching the transaction from signature"));
                     }
                 }
             }
         }
 
-        all_found_events.sort_by_key(|event| event.slot);
+        all_found_events.sort_by_key(|event| event.slot_number);
+
+        let elapsed = start_time.elapsed();
+        info!("get_logs took {:?}", elapsed);
 
         Ok(all_found_events)
     }

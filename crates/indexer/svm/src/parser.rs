@@ -9,212 +9,186 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use solana_client::rpc_response::{Response, RpcLogsResponse};
 use solana_sdk::native_token::Sol;
 use std::env;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct DepositSuccessful {
+#[derive(Debug, Clone, Deserialize)]
+pub struct SolanaLog {
+    pub event: SolanaEvent,
+    pub timestamp: DateTime<Utc>,
+    pub slot_number: u64,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MessageTransactionEvent {
+    pub event: String,
     pub nonce: u64,
-    pub from_l1_pubkey: String,
-    pub to_twine_address: String,
+    pub l1_pubkey: String,
+    pub twine_address: String,
     pub l1_token: String,
     pub l2_token: String,
     pub chain_id: u64,
     pub amount: String,
+    pub data: Vec<u8>,
+    pub message_type: String,
     pub slot_number: u64,
-    #[borsh(skip)]
-    pub signature: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct ForcedWithdrawSuccessful {
-    pub nonce: u64,
-    pub from_twine_address: String,
-    pub to_l1_pub_key: String,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub chain_id: u64,
-    pub amount: String,
-    pub slot_number: u64,
-    #[borsh(skip)]
-    pub signature: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct FinalizeNativeWithdrawal {
-    pub nonce: u64,
-    pub receiver_l1_pubkey: String,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub chain_id: u64,
-    pub amount: u64,
-    pub slot_number: u64,
-    #[borsh(skip)]
-    pub signature: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct FinalizeSplWithdrawal {
-    pub nonce: u64,
-    pub receiver_l1_pubkey: String,
-    pub l1_token: String,
-    pub l2_token: String,
-    pub chain_id: u64,
-    pub amount: u64,
-    pub slot_number: u64,
-    #[borsh(skip)]
-    pub signature: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct CommitBatch {
-    pub start_block: u64,
-    pub end_block: u64,
-    pub chain_id: u64,
-    pub slot_number: u64,
-    #[borsh(skip)]
-    pub signature: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct FinalizedBatch {
-    pub start_block: u64,
-    pub end_block: u64,
-    pub chain_id: u64,
+#[derive(Debug, Clone, Deserialize)]
+pub struct CommitBatchEvent {
+    pub event: String,
+    pub batch_number: u64,
     pub batch_hash: [u8; 32],
-    #[borsh(skip)]
-    pub signature: String,
-    pub slot_number: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct FinalizedTransaction {
-    pub start_block: u64,
-    pub end_block: u64,
     pub chain_id: u64,
-    pub deposit_count: u64,
-    pub withdraw_count: u64,
-    #[borsh(skip)]
-    pub signature: String,
     pub slot_number: u64,
 }
 
-pub fn generate_number(start_block: u64, end_block: u64) -> Result<i32> {
-    let input = format!("{}:{}", start_block, end_block);
-    let digest = blake3::hash(input.as_bytes());
-    let value = u64::from_le_bytes(digest.as_bytes()[..8].try_into().unwrap());
-    let masked_value = value & 0x7FFF_FFFF;
-    if masked_value > i32::MAX as u64 {
-        Err(eyre::eyre!(
-            "Generated batch number {} exceeds i32 max",
-            masked_value
-        ))
-    } else {
-        Ok(masked_value as i32)
+#[derive(Debug, Clone, Deserialize)]
+pub struct FinalizeBatchEvent {
+    pub event: String,
+    pub batch_number: u64,
+    pub batch_hash: [u8; 32],
+    pub chain_id: u64,
+    pub slot_number: u64,
+    pub messages_handled_on_twine: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchCommitmentAndFinalizationSuccessfulEvent {
+    pub event: String,
+    pub batch_number: u64,
+    pub batch_hash: [u8; 32],
+    pub chain_id: u64,
+    pub slot_number: u64,
+    pub messages_handled_on_twine: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RefundSuccessfulEvent {
+    pub event: String,
+    pub nonce: u64,
+    pub l1_receiver: String,
+    pub l1_token: String,
+    pub chain_id: u64,
+    pub amount: u64,
+    pub slot_number: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ForcedWithdrawalSuccessfulEvent {
+    pub event: String,
+    pub nonce: u64,
+    pub l1_receiver: String,
+    pub l1_token: String,
+    pub chain_id: u64,
+    pub amount: u64,
+    pub slot_number: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L2WithdrawExecutedEvent {
+    pub event: String,
+    pub nonce: u64,
+    pub l1_receiver: String,
+    pub l1_token: String,
+    pub l2_token: String,
+    pub chain_id: u64,
+    pub amount: u64,
+    pub slot_number: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum SolanaEvent {
+    MessageTransaction(MessageTransactionEvent),
+    CommitBatch(CommitBatchEvent),
+    FinalizeBatch(FinalizeBatchEvent),
+    BatchCommitmentAndFinalizationSuccessful(BatchCommitmentAndFinalizationSuccessfulEvent),
+    RefundSuccessful(RefundSuccessfulEvent),
+    ForcedWithdrawalSuccessful(ForcedWithdrawalSuccessfulEvent),
+    L2WithdrawExecuted(L2WithdrawExecutedEvent),
+    Unknown(Value), // For events we don't have specific structs for
+}
+
+/// Parse a JSON log string by first extracting the event type and then deserializing appropriately
+pub fn parse_json_log(log: &str) -> Result<SolanaEvent> {
+    let actual_log = log.trim_start_matches("Program log: ");
+
+    // First, parse as generic JSON to extract the event field
+    let json_value: Value =
+        serde_json::from_str(actual_log).map_err(|e| eyre::eyre!("Failed to parse JSON: {}", e))?;
+
+    // Extract the event field
+    let event_type = json_value
+        .get("event")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| eyre::eyre!("No 'event' field found in JSON"))?;
+
+    info!("Parsing event type: {}", event_type);
+    match event_type {
+        "MessageTransaction" => {
+            let event: MessageTransactionEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize MessageTransaction: {}", e))?;
+            Ok(SolanaEvent::MessageTransaction(event))
+        }
+        "CommitedBatch" => {
+            let event: CommitBatchEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::CommitBatch(event))
+        }
+        "FinalizedBatch" => {
+            let event: FinalizeBatchEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::FinalizeBatch(event))
+        }
+        "BatchCommitmentAndFinalizationSuccessful" => {
+            let event: BatchCommitmentAndFinalizationSuccessfulEvent =
+                serde_json::from_str(actual_log)
+                    .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::BatchCommitmentAndFinalizationSuccessful(event))
+        }
+        "RefundSuccessful" => {
+            let event: RefundSuccessfulEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::RefundSuccessful(event))
+        }
+        "ForcedWithdrawalSuccessful" => {
+            let event: ForcedWithdrawalSuccessfulEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::ForcedWithdrawalSuccessful(event))
+        }
+        "L2WithdrawExecuted" => {
+            let event: L2WithdrawExecutedEvent = serde_json::from_str(actual_log)
+                .map_err(|e| eyre::eyre!("Failed to deserialize Batch: {}", e))?;
+            Ok(SolanaEvent::L2WithdrawExecuted(event))
+        }
+        _ => {
+            debug!(
+                "Unknown event type: {}, storing as generic JSON",
+                event_type
+            );
+            Ok(SolanaEvent::Unknown(json_value))
+        }
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Serialize, Clone)]
-pub enum SolanaEvents {
-    NativeDeposit,
-    SplDeposit,
-    NativeWithdrawal,
-    SplWithdrawal,
-    FinalizeNativeWithdrawal,
-    FinalizeSplWithdrawal,
-    CommitBatch,
-    FinalizeBatch,
-    CommitAndFinalizeTransaction,
-}
-
-impl SolanaEvents {
-    pub fn as_str(&self) -> &'static str {
+impl SolanaEvent {
+    pub fn get_event_type(&self) -> &str {
         match self {
-            SolanaEvents::NativeDeposit => "native_deposit",
-            SolanaEvents::SplDeposit => "spl_deposit",
-            SolanaEvents::NativeWithdrawal => "native_withdrawal",
-            SolanaEvents::SplWithdrawal => "spl_withdrawal",
-            SolanaEvents::FinalizeNativeWithdrawal => "finalize_native_withdrawal",
-            SolanaEvents::FinalizeSplWithdrawal => "finalize_spl_withdrawal",
-            SolanaEvents::CommitBatch => "commit_batch",
-            SolanaEvents::FinalizeBatch => "finalize_batch",
-            SolanaEvents::CommitAndFinalizeTransaction => "commit_and_finalize_transaction",
+            SolanaEvent::MessageTransaction(event) => &event.event,
+            SolanaEvent::CommitBatch(event) => &event.event,
+            SolanaEvent::FinalizeBatch(event) => &event.event,
+            SolanaEvent::BatchCommitmentAndFinalizationSuccessful(event) => &event.event,
+            SolanaEvent::RefundSuccessful(event) => &event.event,
+            SolanaEvent::ForcedWithdrawalSuccessful(event) => &event.event,
+            SolanaEvent::L2WithdrawExecuted(event) => &event.event,
+            SolanaEvent::Unknown(event) => "Unknown",
         }
     }
-}
-
-pub struct LogMetadata {
-    pub event_type: SolanaEvents,
-    pub encoded_data: String,
-}
-
-pub fn extract_log(logs: &[String]) -> Option<LogMetadata> {
-    debug!("Parsing logs: {:?}", logs);
-
-    let mut event_type = None;
-    let mut encoded_data = None;
-
-    for log in logs {
-        debug!("Processing log: {}", log);
-        match log.as_str() {
-            "Program log: Instruction: NativeTokenDeposit" => {
-                event_type = Some(SolanaEvents::NativeDeposit)
-            }
-            "Program log: Instruction: SplTokensDeposit" => {
-                event_type = Some(SolanaEvents::SplDeposit)
-            }
-            "Program log: Instruction: ForcedNativeTokenWithdrawal" => {
-                event_type = Some(SolanaEvents::NativeWithdrawal)
-            }
-            "Program log: Instruction: ForcedSplTokenWithdrawal" => {
-                event_type = Some(SolanaEvents::SplWithdrawal)
-            }
-            "Program log: Instruction: FinalizeNativeWithdrawal" => {
-                event_type = Some(SolanaEvents::FinalizeNativeWithdrawal)
-            }
-            "Program log: Instruction: FinalizeSplWithdrawal" => {
-                event_type = Some(SolanaEvents::FinalizeSplWithdrawal)
-            }
-            "Program log: Instruction: CommitBatch" => event_type = Some(SolanaEvents::CommitBatch),
-            "Program log: Instruction: FinalizeBatch" => {
-                event_type = Some(SolanaEvents::FinalizeBatch)
-            }
-            "Program log: Instruction: CommitAndFinalizeTransaction" => {
-                event_type = Some(SolanaEvents::CommitAndFinalizeTransaction)
-            }
-            log if log.starts_with("Program data: ") => {
-                encoded_data = Some(log.trim_start_matches("Program data: ").to_string());
-            }
-            _ => debug!("Unrecognized log: {}", log),
-        }
-    }
-
-    let Some(event_type) = event_type else {
-        debug!("No recognized event type found in logs: {:?}", logs);
-        return None;
-    };
-    let Some(encoded_data) = encoded_data else {
-        error!(
-            "No encoded data found for event {} in logs: {:?}",
-            event_type.as_str(),
-            logs
-        );
-        return None;
-    };
-
-    debug!(
-        "Identified event_type: {}, encoded_data: {}",
-        event_type.as_str(),
-        encoded_data
-    );
-
-    Some(LogMetadata {
-        event_type,
-        encoded_data,
-    })
 }
 
 pub fn parse_log(response: Response<RpcLogsResponse>) -> eyre::Result<SolanaLog> {
@@ -222,48 +196,17 @@ pub fn parse_log(response: Response<RpcLogsResponse>) -> eyre::Result<SolanaLog>
     let logs = response.value.logs;
     let slot = response.context.slot;
 
-    let metadata = extract_log(&logs).ok_or_else(|| eyre::eyre!("No relevant events found"))?;
+    for log in logs {
+        let event = parse_json_log(&log);
 
-    Ok(SolanaLog {
-        event_type: metadata.event_type,
-        transaction_signature: signature,
-        slot,
-        timestamp: Utc::now(), // Live events use current time
-        encoded_data: metadata.encoded_data,
-    })
-}
-
-#[derive(Debug, Serialize, Clone)] // Added Clone for convenience
-pub struct SolanaLog {
-    pub event_type: SolanaEvents, // Storing as string representation of the enum
-    pub transaction_signature: String,
-    pub slot: u64,
-    pub timestamp: DateTime<Utc>,
-    pub encoded_data: String,
-}
-
-impl SolanaLog {
-    pub fn parse_borsh<T: BorshDeserialize>(&self) -> eyre::Result<T> {
-        let encoded_data = &self.encoded_data;
-
-        debug!("Parsing Borsh data: encoded_data = {}", encoded_data);
-
-        let decoded_data = general_purpose::STANDARD
-            .decode(encoded_data)
-            .map_err(|e| eyre::eyre!("Failed to decode base64: {}", e))?;
-
-        let data_with_discriminator = if decoded_data.len() >= 8 {
-            &decoded_data[8..]
-        } else {
-            &decoded_data[..]
-        };
-
-        let mut event = match T::try_from_slice(data_with_discriminator) {
-            Ok(event) => event,
-            Err(_) => T::try_from_slice(&decoded_data)
-                .map_err(|e| eyre::eyre!("Failed to deserialize Borsh data: {}", e))?,
-        };
-
-        Ok(event)
+        if let Ok(event) = event {
+            return Ok(SolanaLog {
+                event: event,
+                signature: signature,
+                slot_number: slot,
+                timestamp: Utc::now(), // Live events use current time
+            });
+        }
     }
+    Err(eyre::eyre!("No relevant events found"))
 }

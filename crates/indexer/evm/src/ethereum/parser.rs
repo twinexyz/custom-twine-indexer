@@ -17,52 +17,32 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::env;
 use tracing::{debug, error, info};
-use twine_evm_contracts::evm::ethereum::l1_message_queue::L1MessageQueue;
+use twine_evm_contracts::evm::ethereum::l1_message_handler::L1MessageHandler;
 use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
-    CommitBatch, FinalizedBatch, FinalizedTransaction,
+    self, CommitedBatch, FinalizedBatch, ForcedWithdrawalSuccessful, L2WithdrawExecuted,
+    RefundSuccessful,
 };
-
-sol! {
-    #[derive(Debug)]
-    event FinalizeWithdrawETH(
-        string l1Token,
-        string l2Token,
-        string indexed to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber
-    );
-
-    #[derive(Debug)]
-    event FinalizeWithdrawERC20(
-        string indexed l1Token,
-        string indexed l2Token,
-        string to,
-        string amount,
-        uint64 nonce,
-        uint64 chainId,
-        uint256 blockNumber,
-    );
-}
 
 pub fn get_event_name_from_signature_hash(sig: &FixedBytes<32>) -> String {
     match *sig {
-        L1MessageQueue::QueueDepositTransaction::SIGNATURE_HASH => {
-            L1MessageQueue::QueueDepositTransaction::SIGNATURE.to_string()
+        L1MessageHandler::MessageTransaction::SIGNATURE_HASH => {
+            L1MessageHandler::MessageTransaction::SIGNATURE.to_string()
         }
-        L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE_HASH => {
-            L1MessageQueue::QueueWithdrawalTransaction::SIGNATURE.to_string()
+
+        TwineChain::L2WithdrawExecuted::SIGNATURE_HASH => {
+            TwineChain::L2WithdrawExecuted::SIGNATURE.to_string()
         }
-        FinalizeWithdrawERC20::SIGNATURE_HASH => FinalizeWithdrawERC20::SIGNATURE.to_string(),
+        TwineChain::ForcedWithdrawalSuccessful::SIGNATURE_HASH => {
+            TwineChain::ForcedWithdrawalSuccessful::SIGNATURE.to_string()
+        }
 
-        FinalizeWithdrawETH::SIGNATURE_HASH => FinalizeWithdrawETH::SIGNATURE.to_string(),
+        TwineChain::RefundSuccessful::SIGNATURE_HASH => {
+            TwineChain::RefundSuccessful::SIGNATURE.to_string()
+        }
 
-        CommitBatch::SIGNATURE_HASH => CommitBatch::SIGNATURE.to_string(),
+        CommitedBatch::SIGNATURE_HASH => CommitedBatch::SIGNATURE.to_string(),
 
         FinalizedBatch::SIGNATURE_HASH => FinalizedBatch::SIGNATURE.to_string(),
-
-        FinalizedTransaction::SIGNATURE_HASH => FinalizedTransaction::SIGNATURE.to_string(),
 
         other => "Unknown Event".to_string(),
     }

@@ -41,6 +41,12 @@ pub trait ChainIndexer: Send + Sync {
     async fn run(&mut self) -> Result<(), Error> {
         let initial_height = self.get_initial_state().await?;
 
+        info!(
+            "Initial height for chain: {} is {}",
+            initial_height,
+            self.get_event_handler().chain_id()
+        );
+
         match self.sync_historical(initial_height).await {
             Ok(()) => {
                 info!("Historical sync completed successfully");

@@ -21,7 +21,7 @@ use sea_orm::{
 };
 use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::{
-    ethereum::{l1_message_queue::L1MessageQueue, twine_chain::TwineChain::CommitBatch},
+    ethereum::{l1_message_handler::L1MessageHandler, twine_chain::TwineChain::CommitedBatch},
     twine::l2_messenger::L2Messenger::{self, L1Txns},
 };
 
@@ -70,11 +70,6 @@ impl ChainEventHandler for TwineEventHandler {
                 operations.extend(deposits);
                 operations.extend(withdraws);
             }
-            // L2Messenger::SolanaTransactionsHandled::SIGNATURE_HASH => {
-            //     let (deposits, withdraws) = self.handle_solana_transactions_handled(log).await?;
-            //     operations.extend(deposits);
-            //     operations.extend(withdraws);
-            // }
             L2Messenger::SentMessage::SIGNATURE_HASH => {
                 let operation = self.handle_sent_message(log).await?;
                 operations.push(operation);
@@ -184,14 +179,15 @@ impl TwineEventHandler {
 
         let model = bridge_source_transactions::ActiveModel {
             source_nonce: Set(data.nonce.try_into().unwrap()),
-            source_chain_id: Set(data.chainId.try_into().unwrap()),
+            source_chain_id: Set(self.chain_id as i64),
             source_height: Set(Some(data.blockNumber.try_into().unwrap())),
             source_from_address: Set(format!("{:?}", data.from)),
-            target_recipient_address: Set(Some(format!("{:?}", data.to))),
+            target_recipient_address: Set(Some(data.to)),
             destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
-            source_token_address: Set(Some(format!("{:?}", data.l1Token))),
+            source_token_address: Set(Some(data.l1Token)),
             source_tx_hash: Set(decoded.tx_hash_str.clone()),
             source_event_timestamp: Set(decoded.timestamp.naive_utc()),
+            amount: Set(Some(data.amount.to_string())),
             event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Withdraw),
             ..Default::default()
         };
