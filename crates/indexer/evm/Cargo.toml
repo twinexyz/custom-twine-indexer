@@ -19,6 +19,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 twine-evm-contracts = { git = "https://github.com/twinexyz/contracts-metadata.git", branch = "feat/indexer" }
+twine-rpc = { git = "https://github.com/twinexyz/weaver.git", branch = "main" }
 database = {workspace = true}
 generic-indexer = {workspace = true}
 async-stream = {version = "0.3.6"}

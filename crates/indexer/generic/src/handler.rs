@@ -6,7 +6,7 @@ use database::{DbOperations, client::DbClient};
 
 #[async_trait]
 pub trait ChainEventHandler {
-    type LogType: Clone + Send + Sync + ;
+    type LogType: Clone + Send + Sync;
 
     async fn handle_event(&self, log: Self::LogType) -> eyre::Result<Vec<DbOperations>>;
     fn get_chain_config(&self) -> ChainConfig;

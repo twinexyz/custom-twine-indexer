@@ -88,7 +88,7 @@ impl ChainIndexer for SolanaIndexer {
     }
 
     fn get_block_number_from_log(&self, log: &SolanaLog) -> Option<u64> {
-        Some(log.slot)
+        Some(log.slot_number)
     }
 }
 

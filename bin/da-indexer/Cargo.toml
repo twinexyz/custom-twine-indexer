@@ -15,7 +15,3 @@ database = {workspace = true}
 [dev-dependencies]
 pre-commit-hooks = "0.3"
 sea-orm-cli = "1.1.7"
-
-[package.metadata.precommit]
-fmt = "cargo fmt"
-sort = "cargo sort"

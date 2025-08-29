@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common::config::{self, LoadFromEnv};
 use database::client::DbClient;
 use evm::{
-    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer,
+    ethereum::handlers::EthereumEventHandler, indexer::EvmIndexer, provider::EvmProvider,
     twine::handlers::TwineEventHandler,
 };
 use eyre::Result;
@@ -25,8 +25,24 @@ async fn main() -> Result<()> {
     let arc_db = Arc::new(db_client);
 
     let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
-    let l1_evm_handler = EthereumEventHandler::new(Arc::clone(&arc_db), cfg.l1s.ethereum.clone());
-    let solana_handler = SolanaEventHandler::new(Arc::clone(&arc_db), cfg.l1s.solana.clone());
+    let l1_evm_handler = EthereumEventHandler::new(
+        Arc::clone(&arc_db),
+        cfg.l1s.ethereum.clone(),
+        Arc::new(EvmProvider::new(
+            &cfg.twine.common.http_rpc_url,
+            &cfg.twine.common.ws_rpc_url,
+            cfg.twine.common.chain_id,
+        )),
+    );
+    let solana_handler = SolanaEventHandler::new(
+        Arc::clone(&arc_db),
+        cfg.l1s.solana.clone(),
+        Arc::new(EvmProvider::new(
+            &cfg.twine.common.http_rpc_url,
+            &cfg.twine.common.ws_rpc_url,
+            cfg.twine.common.chain_id,
+        )),
+    );
 
     let mut eth_indexer =
         EvmIndexer::new(l1_evm_handler, Arc::clone(&arc_db), cfg.settings.clone());
@@ -98,9 +114,10 @@ async fn main() -> Result<()> {
         }
     }
 
-
     if !all_ok {
-        return Err(eyre::eyre!("One or more indexers failed to run to completion."));
+        return Err(eyre::eyre!(
+            "One or more indexers failed to run to completion."
+        ));
     }
 
     info!("All services shut down gracefully.");

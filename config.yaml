@@ -23,33 +23,33 @@ indexer:
   l1s:
     ethereum:
       common:
-        http_rpc_url: "https://ethereum-holesky-rpc.publicnode.com"
-        ws_rpc_url: "wss://ethereum-holesky.core.chainstack.com/282f2f179d5fe31ac74360455079d3e1"
-        chain_id: 17000
-        start_block: 4011361
-        block_sync_batch_size: 1000
+        http_rpc_url: "https://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        ws_rpc_url: "wss://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        chain_id: 11155111
+        start_block: 9087470
+        block_sync_batch_size: 100
       chain: "evm"
-      l1_message_queue_address: "0xf0DB7691719E7766dc328B73FE152D54d3499d80"
-      l1_erc20_gateway_address: "0x901a8Ea3234174824c1A80214DdBebB1B8EeF88D"
-      eth_twine_chain_address: "0xcEE7CE22cc7b0A70Eb2Ae401acaa3a1F593F14bF"
+      l1_message_queue_address: "0x06B45B9D4b1AbF392E2D30e433239E3b91aC0e71"
+      l1_erc20_gateway_address: "0x97FFADA7BE33A6C88bdF1db705c31b3Ee082BD7b"
+      eth_twine_chain_address: "0xa586eA75687F21Ab14A563C88E2440c44540b91C"
     solana:
       common:
-        http_rpc_url: "https://api.devnet.solana.com"
-        ws_rpc_url: "wss://api.devnet.solana.com"
+        http_rpc_url: "https://solana-devnet.core.chainstack.com/ca55faa405ab06b82b90511bf258b050"
+        ws_rpc_url: "wss://solana-devnet.core.chainstack.com/ca55faa405ab06b82b90511bf258b050"
         chain_id: 103
-        start_block: 388423656
+        start_block: 404112006
         block_sync_batch_size: 10000
       chain: "svm"
-      tokens_gateway_program_address: "2x33tLdRdsoiABgtLNArQBGG8M3aZKgXkUHsUK61nQTp"
-      twine_chain_program_address: "4Nzkd8xCHUKZqNo3hhvZr688rBX6fWF92Sc2KhoJJyzz"
+      tokens_gateway_program_address: "64RtUeZggjF2jeDrC6qmaEH2szhrbxQ5DX7afiy7HqRt"
+      twine_chain_program_address: "9mypqQniPSQs73QaGM4raPmvReXJFLTfvD3YKtbJrbvy"
   twine:
     common:
       http_rpc_url: "https://rpc1.twine.limited"
       ws_rpc_url: "wss://ws1.twine.limited"
       chain_id: 1337
-      start_block: 34054
+      start_block: 1
       block_sync_batch_size: 1000
-    l2_twine_messenger_address: "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+    l2_twine_messenger_address: "0x67d269191c92Caf3cD7723F116c85e6E9bf55933"
 
 # ===================================================================
 # DA_INDEXER SERVICE CONFIGURATION

@@ -7,6 +7,7 @@ use alloy::{
 use futures_util::Stream;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::OnceCell;
+use twine_rpc::client::BatchClient;
 
 #[derive(Clone)]
 pub struct EvmProvider {
@@ -14,17 +15,29 @@ pub struct EvmProvider {
     ws: Arc<OnceCell<Arc<dyn Provider + Send + Sync>>>,
     chain_id: u64,
     ws_url: String,
+    http_url: String,
 }
 
 impl EvmProvider {
     pub fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
         let http = ProviderBuilder::new().on_http(http_url.parse().expect("Invalid Http URL"));
+
         Self {
             http: Arc::new(http),
             ws: Arc::new(OnceCell::new()),
             ws_url: ws_url.to_string(),
+            http_url: http_url.to_string(),
             chain_id,
         }
+    }
+
+    async fn batch_client(&self) -> eyre::Result<Arc<BatchClient>> {
+        let client = BatchClient::new(&self.http_url.clone());
+        Ok(Arc::new(client))
+    }
+
+    pub fn get_chain_id(&self) -> u64 {
+        self.chain_id
     }
 
     async fn ws_provider(&self) -> eyre::Result<&Arc<dyn Provider + Send + Sync>> {
@@ -126,5 +139,11 @@ impl EvmProvider {
         }
 
         Ok((blocks, transactions))
+    }
+
+    pub async fn get_blocks_in_batch(&self, batch_number: u64) -> eyre::Result<Vec<u64>> {
+        let client = self.batch_client().await?;
+        let blocks = client.get_blocks_in_batch(batch_number).await?;
+        Ok(blocks.into_iter().map(|block| block).collect())
     }
 }
