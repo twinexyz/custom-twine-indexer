@@ -64,11 +64,13 @@ impl ChainEventHandler for SolanaEventHandler {
                         .handle_withdrawal(event, log.signature, log.timestamp, log.slot_number)
                         .await?;
                     operations.push(operation);
-                } else {
+                } else if event.message_type == "Deposit" {
                     let operation = self
                         .handle_deposit(event, log.signature, log.timestamp, log.slot_number)
                         .await?;
                     operations.push(operation);
+                } else {
+                    info!("Unknown message type: {}", event.message_type);
                 }
             }
 
@@ -241,7 +243,6 @@ impl SolanaEventHandler {
         timestamp: DateTime<Utc>,
         slot_number: u64,
     ) -> eyre::Result<DbOperations> {
-
         let l2_chain_id = self.twine_provider.get_chain_id();
 
         let model = bridge_destination_transactions::ActiveModel {
