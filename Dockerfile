@@ -24,7 +24,7 @@ RUN cargo build --release --bin api --bin indexer
 
 FROM base AS dependency
 
-RUN cargo install sea-orm-cli@1.1.7
+RUN cargo install sea-orm-cli@1.1.15
 
 FROM rust:1.86 as final
 
