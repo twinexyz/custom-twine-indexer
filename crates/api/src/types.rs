@@ -38,9 +38,14 @@ pub struct QuickSearchParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct L1TransactionRequest {
+    pub l1_transaction_hash: String,
+    pub l1_chain_id: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct BatchL2TransactionHashRequest {
-    pub l1_hashes: Vec<String>,
-    pub l1_chain_ids: Vec<u64>,
+    pub l1_transactions: Vec<L1TransactionRequest>,
 }
 
 #[derive(Debug, Clone, Serialize)]

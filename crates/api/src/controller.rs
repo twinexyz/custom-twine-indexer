@@ -73,23 +73,18 @@ pub async fn get_l1_forced_withdraws(
     .await
 }
 
-#[instrument(skip(state, request), fields(request_count = request.l1_hashes.len()))]
+#[instrument(skip(state, request), fields(request_count = request.l1_transactions.len()))]
 pub async fn get_l2_txns_for_l1_txn(
     State(state): State<AppState>,
     Json(request): Json<BatchL2TransactionHashRequest>,
 ) -> ApiResult<Vec<BatchL2TransactionHashResponse>, PlaceholderPagination> {
     info!(
-        request_count = request.l1_hashes.len(),
+        request_count = request.l1_transactions.len(),
         "Processing batch L2 transaction hash lookup"
     );
 
-    // Validate that array lengths match
-    if request.l1_hashes.len() != request.l1_chain_ids.len() {
-        return Err(AppError::Internal);
-    }
-
-    // Validate that arrays are not empty
-    if request.l1_hashes.is_empty() {
+    // Validate that the array is not empty
+    if request.l1_transactions.is_empty() {
         return Ok(ApiResponse {
             success: true,
             items: Vec::new(),
@@ -97,21 +92,24 @@ pub async fn get_l2_txns_for_l1_txn(
         });
     }
 
+    // Convert to tuples for the database method
+    let l1_transaction_tuples: Vec<(String, u64)> = request
+        .l1_transactions
+        .iter()
+        .map(|tx| (tx.l1_transaction_hash.clone(), tx.l1_chain_id))
+        .collect();
+
     let results = state
         .db_client
-        .batch_find_l2_transactions_by_l1_hashes_and_chain_ids(
-            &request.l1_hashes,
-            &request.l1_chain_ids,
-        )
+        .batch_find_l2_transactions_by_l1_transactions(&l1_transaction_tuples)
         .await
         .map_err(AppError::from)?;
 
     let response_items: Vec<BatchL2TransactionHashResponse> = request
-        .l1_hashes
+        .l1_transactions
         .iter()
-        .zip(request.l1_chain_ids.iter())
         .zip(results.iter())
-        .map(|((l1_hash, chain_id), result)| match result {
+        .map(|(l1_tx, result)| match result {
             Some((_source_tx, dest_tx)) => {
                 let timestamp = dest_tx
                     .destination_processed_at
@@ -119,8 +117,8 @@ pub async fn get_l2_txns_for_l1_txn(
                     .and_utc();
 
                 BatchL2TransactionHashResponse {
-                    l1_tx_hash: l1_hash.clone(),
-                    l1_chain_id: *chain_id,
+                    l1_tx_hash: l1_tx.l1_transaction_hash.clone(),
+                    l1_chain_id: l1_tx.l1_chain_id,
                     l2_tx_hash: Some(dest_tx.destination_tx_hash.clone()),
                     block_height: dest_tx.destination_height,
                     timestamp: Some(timestamp),
@@ -128,8 +126,8 @@ pub async fn get_l2_txns_for_l1_txn(
                 }
             }
             None => BatchL2TransactionHashResponse {
-                l1_tx_hash: l1_hash.clone(),
-                l1_chain_id: *chain_id,
+                l1_tx_hash: l1_tx.l1_transaction_hash.clone(),
+                l1_chain_id: l1_tx.l1_chain_id,
                 l2_tx_hash: None,
                 block_height: None,
                 timestamp: None,

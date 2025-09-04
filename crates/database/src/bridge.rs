@@ -360,11 +360,10 @@ impl DbClient {
         Ok(None)
     }
 
-    #[instrument(skip(self), fields(request_count = l1_hashes.len()))]
-    pub async fn batch_find_l2_transactions_by_l1_hashes_and_chain_ids(
+    #[instrument(skip(self), fields(request_count = l1_transactions.len()))]
+    pub async fn batch_find_l2_transactions_by_l1_transactions(
         &self,
-        l1_hashes: &[String],
-        l1_chain_ids: &[u64],
+        l1_transactions: &[(String, u64)],
     ) -> Result<
         Vec<
             Option<(
@@ -374,22 +373,14 @@ impl DbClient {
         >,
         DbErr,
     > {
-        if l1_hashes.len() != l1_chain_ids.len() {
-            return Err(DbErr::Custom("Array lengths must match".to_string()));
-        }
-
-        if l1_hashes.is_empty() {
+        if l1_transactions.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Convert chain IDs to i64
-        let chain_ids_i64: Vec<i64> = l1_chain_ids.iter().map(|&id| id as i64).collect();
-
         // Create tuples of (hash, chain_id) for the query
-        let hash_chain_pairs: Vec<(String, i64)> = l1_hashes
+        let hash_chain_pairs: Vec<(String, i64)> = l1_transactions
             .iter()
-            .zip(chain_ids_i64.iter())
-            .map(|(hash, &chain_id)| (hash.clone(), chain_id))
+            .map(|(hash, chain_id)| (hash.clone(), *chain_id as i64))
             .collect();
 
         // Build the condition for the IN clause
@@ -433,7 +424,7 @@ impl DbClient {
         }
 
         // Build results in the same order as input
-        let mut results = Vec::with_capacity(l1_hashes.len());
+        let mut results = Vec::with_capacity(l1_transactions.len());
         for (hash, chain_id) in hash_chain_pairs {
             let key = (hash.clone(), chain_id);
             let result = found_results.get(&key).cloned();
