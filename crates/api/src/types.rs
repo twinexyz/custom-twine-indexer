@@ -36,3 +36,24 @@ pub struct QuickSearchParams {
     pub q: String,
     pub limit: Option<u64>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L1TransactionRequest {
+    pub l1_transaction_hash: String,
+    pub l1_chain_id: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchL2TransactionHashRequest {
+    pub l1_transactions: Vec<L1TransactionRequest>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchL2TransactionHashResponse {
+    pub l1_tx_hash: String,
+    pub l1_chain_id: u64,
+    pub l2_tx_hash: Option<String>,
+    pub block_height: Option<i64>,
+    pub timestamp: Option<DateTime<Utc>>,
+    pub found: bool,
+}

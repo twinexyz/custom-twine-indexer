@@ -12,6 +12,7 @@ pub enum AppError {
     Database(DbErr),
     #[allow(dead_code)]
     Internal,
+    NotFound(String),
 }
 
 impl From<DbErr> for AppError {
@@ -25,6 +26,7 @@ impl std::error::Error for AppError {
         match self {
             AppError::Database(err) => Some(err),
             AppError::Internal => None,
+            AppError::NotFound(_) => None,
         }
     }
 }
@@ -34,6 +36,7 @@ impl fmt::Display for AppError {
         match self {
             AppError::Database(err) => write!(f, "Database error: {}", err),
             AppError::Internal => write!(f, "Internal server error"),
+            AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
         }
     }
 }
@@ -49,6 +52,7 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error".to_owned(),
             ),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
         };
 
         ApiResponse {
