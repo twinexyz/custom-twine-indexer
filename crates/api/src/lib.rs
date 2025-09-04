@@ -7,7 +7,7 @@ pub mod types;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use database::client::DbClient;
@@ -49,6 +49,10 @@ fn make_server(state: AppState) -> Router {
         .route("/l2_withdraws", get(controller::get_l2_withdraws))
         .route("/l1_withdraws", get(controller::get_l1_forced_withdraws))
         .route("/search/quick", get(search::quick_search))
+        .route(
+            "/get_l2_txns_for_l1_txn",
+            post(controller::get_l2_txns_for_l1_txn),
+        )
         .route("/status", get(controller::health_check))
         .with_state(state)
 }

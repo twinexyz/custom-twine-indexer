@@ -3,6 +3,7 @@ use sea_orm::{
     ColumnTrait, Condition, DatabaseTransaction, DbErr, EntityTrait, JoinType, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait, sea_query::OnConflict,
 };
+use std::collections::HashMap;
 use tracing::{debug, error, instrument, warn};
 
 use crate::{
@@ -299,6 +300,153 @@ impl DbClient {
             found_count = results.len(),
             "Quick search completed"
         );
+        Ok(results)
+    }
+
+    #[instrument(skip(self), fields(l1_tx_hash = l1_tx_hash, chain_id = chain_id))]
+    pub async fn find_l2_transaction_by_l1_hash_and_chain_id(
+        &self,
+        l1_tx_hash: &str,
+        chain_id: i64,
+    ) -> Result<
+        Option<(
+            bridge_source_transactions::Model,
+            bridge_destination_transactions::Model,
+        )>,
+        DbErr,
+    > {
+        let source_tx: Option<bridge_source_transactions::Model> =
+            bridge_source_transactions::Entity::find()
+                .filter(
+                    Condition::all()
+                        .add(bridge_source_transactions::Column::SourceTxHash.eq(l1_tx_hash))
+                        .add(bridge_source_transactions::Column::SourceChainId.eq(chain_id)),
+                )
+                .one(&self.primary)
+                .await?;
+
+        if let Some(source_model) = source_tx {
+            let dest_tx = bridge_destination_transactions::Entity::find()
+                .filter(
+                    Condition::all()
+                        .add(
+                            bridge_destination_transactions::Column::SourceChainId
+                                .eq(source_model.source_chain_id),
+                        )
+                        .add(
+                            bridge_destination_transactions::Column::SourceNonce
+                                .eq(source_model.source_nonce),
+                        ),
+                )
+                .one(&self.primary)
+                .await?;
+
+            if let Some(dest_model) = dest_tx {
+                debug!(
+                    l1_tx_hash = l1_tx_hash,
+                    chain_id = chain_id,
+                    l2_tx_hash = dest_model.destination_tx_hash,
+                    "Found L2 transaction for L1 hash and chain ID"
+                );
+                return Ok(Some((source_model, dest_model)));
+            }
+        }
+
+        debug!(
+            l1_tx_hash = l1_tx_hash,
+            chain_id = chain_id,
+            "No L2 transaction found for L1 hash and chain ID"
+        );
+        Ok(None)
+    }
+
+    #[instrument(skip(self), fields(request_count = l1_hashes.len()))]
+    pub async fn batch_find_l2_transactions_by_l1_hashes_and_chain_ids(
+        &self,
+        l1_hashes: &[String],
+        l1_chain_ids: &[u64],
+    ) -> Result<
+        Vec<
+            Option<(
+                bridge_source_transactions::Model,
+                bridge_destination_transactions::Model,
+            )>,
+        >,
+        DbErr,
+    > {
+        if l1_hashes.len() != l1_chain_ids.len() {
+            return Err(DbErr::Custom("Array lengths must match".to_string()));
+        }
+
+        if l1_hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Convert chain IDs to i64
+        let chain_ids_i64: Vec<i64> = l1_chain_ids.iter().map(|&id| id as i64).collect();
+
+        // Create tuples of (hash, chain_id) for the query
+        let hash_chain_pairs: Vec<(String, i64)> = l1_hashes
+            .iter()
+            .zip(chain_ids_i64.iter())
+            .map(|(hash, &chain_id)| (hash.clone(), chain_id))
+            .collect();
+
+        // Build the condition for the IN clause
+        let mut condition = Condition::any();
+        for (hash, chain_id) in &hash_chain_pairs {
+            condition = condition.add(
+                Condition::all()
+                    .add(bridge_source_transactions::Column::SourceTxHash.eq(hash))
+                    .add(bridge_source_transactions::Column::SourceChainId.eq(*chain_id)),
+            );
+        }
+
+        // Execute the batch query
+        let joined_data = bridge_source_transactions::Entity::find()
+            .filter(condition)
+            .join(
+                JoinType::InnerJoin,
+                bridge_source_transactions::Relation::BridgeDestinationTransactions.def(),
+            )
+            .select_also(bridge_destination_transactions::Entity)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map of found results for quick lookup
+        let mut found_results: HashMap<
+            (String, i64),
+            (
+                bridge_source_transactions::Model,
+                bridge_destination_transactions::Model,
+            ),
+        > = HashMap::new();
+
+        for (source_model, dest_model_opt) in joined_data {
+            if let Some(dest_model) = dest_model_opt {
+                let key = (
+                    source_model.source_tx_hash.clone(),
+                    source_model.source_chain_id,
+                );
+                found_results.insert(key, (source_model, dest_model));
+            }
+        }
+
+        // Build results in the same order as input
+        let mut results = Vec::with_capacity(l1_hashes.len());
+        for (hash, chain_id) in hash_chain_pairs {
+            let key = (hash.clone(), chain_id);
+            let result = found_results.get(&key).cloned();
+            results.push(result);
+        }
+
+        let found_count = results.iter().filter(|r| r.is_some()).count();
+        debug!(
+            total_processed = results.len(),
+            found_count = found_count,
+            "Completed optimized batch lookup"
+        );
+
         Ok(results)
     }
 }

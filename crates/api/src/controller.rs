@@ -1,5 +1,6 @@
 use axum::extract::{Query, State};
-use chrono::{DateTime, FixedOffset};
+use axum::Json;
+use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::DbErr;
 use std::future::Future;
 use std::sync::Arc;
@@ -8,7 +9,9 @@ use tracing::{info, instrument};
 use crate::{
     error::AppError,
     pagination::{items_count, BridgeTransactionsPagination, PlaceholderPagination},
-    types::BridgeTransactionsResponse,
+    types::{
+        BatchL2TransactionHashRequest, BatchL2TransactionHashResponse, BridgeTransactionsResponse,
+    },
     ApiResponse, ApiResult, AppState,
 };
 use database::{
@@ -68,6 +71,85 @@ pub async fn get_l1_forced_withdraws(
         |client, params| async move { client.fetch_l1_forced_withdraws_paginated(params).await },
     )
     .await
+}
+
+#[instrument(skip(state, request), fields(request_count = request.l1_hashes.len()))]
+pub async fn get_l2_txns_for_l1_txn(
+    State(state): State<AppState>,
+    Json(request): Json<BatchL2TransactionHashRequest>,
+) -> ApiResult<Vec<BatchL2TransactionHashResponse>, PlaceholderPagination> {
+    info!(
+        request_count = request.l1_hashes.len(),
+        "Processing batch L2 transaction hash lookup"
+    );
+
+    // Validate that array lengths match
+    if request.l1_hashes.len() != request.l1_chain_ids.len() {
+        return Err(AppError::Internal);
+    }
+
+    // Validate that arrays are not empty
+    if request.l1_hashes.is_empty() {
+        return Ok(ApiResponse {
+            success: true,
+            items: Vec::new(),
+            next_page_params: None,
+        });
+    }
+
+    let results = state
+        .db_client
+        .batch_find_l2_transactions_by_l1_hashes_and_chain_ids(
+            &request.l1_hashes,
+            &request.l1_chain_ids,
+        )
+        .await
+        .map_err(AppError::from)?;
+
+    let response_items: Vec<BatchL2TransactionHashResponse> = request
+        .l1_hashes
+        .iter()
+        .zip(request.l1_chain_ids.iter())
+        .zip(results.iter())
+        .map(|((l1_hash, chain_id), result)| match result {
+            Some((_source_tx, dest_tx)) => {
+                let timestamp = dest_tx
+                    .destination_processed_at
+                    .unwrap_or_else(|| Utc::now().naive_utc())
+                    .and_utc();
+
+                BatchL2TransactionHashResponse {
+                    l1_tx_hash: l1_hash.clone(),
+                    l1_chain_id: *chain_id,
+                    l2_tx_hash: Some(dest_tx.destination_tx_hash.clone()),
+                    block_height: dest_tx.destination_height,
+                    timestamp: Some(timestamp),
+                    found: true,
+                }
+            }
+            None => BatchL2TransactionHashResponse {
+                l1_tx_hash: l1_hash.clone(),
+                l1_chain_id: *chain_id,
+                l2_tx_hash: None,
+                block_height: None,
+                timestamp: None,
+                found: false,
+            },
+        })
+        .collect();
+
+    let found_count = response_items.iter().filter(|item| item.found).count();
+    info!(
+        total_processed = response_items.len(),
+        found_count = found_count,
+        "Completed batch L2 transaction hash lookup"
+    );
+
+    Ok(ApiResponse {
+        success: true,
+        items: response_items,
+        next_page_params: None,
+    })
 }
 
 #[instrument(skip(state, fetch_fn), fields(pagination_query = ?pagination_query, transaction_type = %transaction_type_name))]
