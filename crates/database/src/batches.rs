@@ -1,7 +1,6 @@
 use crate::blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail};
 use crate::client::DbClient;
 use eyre::{Context, Result};
-use sea_orm::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
@@ -149,7 +148,7 @@ impl DbClient {
                     twine_transaction_batch_detail::Column::ChainId,
                 ])
                 .update_columns([
-                    twine_transaction_batch_detail::Column::CommitTransactionHash,
+                    twine_transaction_batch_detail::Column::FinalizedAt,
                     twine_transaction_batch_detail::Column::FinalizeTransactionHash,
                 ])
                 .to_owned(),
@@ -175,7 +174,7 @@ impl DbClient {
                     twine_transaction_batch_detail::Column::ChainId,
                 ])
                 .update_columns([
-                    twine_transaction_batch_detail::Column::CommitTransactionHash,
+                    twine_transaction_batch_detail::Column::FinalizedAt,
                     twine_transaction_batch_detail::Column::FinalizeTransactionHash,
                 ])
                 .to_owned(),
@@ -186,29 +185,6 @@ impl DbClient {
                 error!("Failed to insert twine txn batch details: {:?}", e);
                 eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
             })?;
-        Ok(())
-    }
-
-    pub async fn bulk_finalize_batches(
-        &self,
-        finalizations: Vec<(i64, String, i64)>,
-        txn: &DatabaseTransaction,
-    ) -> Result<()> {
-        for (batch_number, tx_hash, chain_id) in finalizations {
-            twine_transaction_batch_detail::Entity::update_many()
-                .col_expr(
-                    twine_transaction_batch_detail::Column::FinalizeTransactionHash,
-                    Expr::value(tx_hash),
-                )
-                .filter(twine_transaction_batch_detail::Column::BatchNumber.eq(batch_number))
-                .filter(twine_transaction_batch_detail::Column::ChainId.eq(chain_id))
-                .exec(txn)
-                .await
-                .map_err(|e| {
-                    error!("Failed to update twine txn batch details: {:?}", e);
-                    eyre::eyre!("Failed to update twine txn batch details: {:?}", e)
-                })?;
-        }
         Ok(())
     }
 }

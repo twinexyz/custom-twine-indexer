@@ -16,9 +16,7 @@ pub struct Model {
     pub l2_fair_gas_price: Decimal,
     #[sea_orm(column_type = "Decimal(Some((100, 0)))")]
     pub chain_id: Decimal,
-    pub commit_transaction_hash: Option<String>,
     pub finalize_transaction_hash: Option<String>,
-    pub committed_at: Option<DateTime>,
     pub finalized_at: Option<DateTime>,
     pub inserted_at: DateTime,
     pub updated_at: DateTime,

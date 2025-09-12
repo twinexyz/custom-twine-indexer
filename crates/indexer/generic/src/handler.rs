@@ -15,4 +15,6 @@ pub trait ChainEventHandler {
         let config = self.get_chain_config();
         config.chain_id
     }
+
+    
 }

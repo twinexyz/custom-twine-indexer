@@ -28,8 +28,7 @@ use solana_transaction_status_client_types::{
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
-    CommitBatchEvent, FinalizeBatchEvent, ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent,
-    MessageTransactionEvent, SolanaEvent, SolanaLog,
+    BatchCommitmentAndFinalizationSuccessfulEvent, CommitBatchEvent, FinalizeBatchEvent, ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent, MessageTransactionEvent, SolanaEvent, SolanaLog
 };
 
 pub struct SolanaEventHandler {
@@ -114,16 +113,10 @@ impl ChainEventHandler for SolanaEventHandler {
             //     let operation = self.handle_finalize_native_withdraw(log).await?;
             //     operations.push(operation);
             // }
-            SolanaEvent::CommitBatch(event) => {
+
+            SolanaEvent::BatchCommitmentAndFinalizationSuccessful(event) => {
                 let operation = self
                     .handle_commit_batch(event, log.signature, log.timestamp, log.slot_number)
-                    .await?;
-                operations.push(operation);
-            }
-
-            SolanaEvent::FinalizeBatch(event) => {
-                let operation = self
-                    .handle_finalize_batch(event, log.signature, log.timestamp, log.slot_number)
                     .await?;
                 operations.push(operation);
             }
@@ -261,7 +254,7 @@ impl SolanaEventHandler {
 
     async fn handle_commit_batch(
         &self,
-        event: CommitBatchEvent,
+        event: BatchCommitmentAndFinalizationSuccessfulEvent,
         signature: String,
         timestamp: DateTime<Utc>,
         slot_number: u64,
@@ -297,8 +290,8 @@ impl SolanaEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id() as i64).unwrap()),
-            commit_transaction_hash: Set(Some(signature.clone())),
-            finalize_transaction_hash: Set(None),
+            finalize_transaction_hash: Set(Some(signature.clone())),
+            finalized_at: Set(Some(timestamp.naive_utc())),
             ..Default::default()
         };
 
@@ -306,7 +299,7 @@ impl SolanaEventHandler {
         let mut l2_txs = Vec::new();
 
         //1. Check if batch already exists
-        match self.db_client.get_batch_by_id(start_block as i64).await? {
+        match self.db_client.get_batch_by_id(batch_number as i64).await? {
             Some(existing_batch) => {
                 //If the batch already exists, it means it already has its corresponding transactions and blocks as welll.
                 // So we just need to put twine commit information in the table
@@ -365,22 +358,6 @@ impl SolanaEventHandler {
         };
 
         Ok(operation)
-    }
-
-    async fn handle_finalize_batch(
-        &self,
-        event: FinalizeBatchEvent,
-        signature: String,
-        timestamp: DateTime<Utc>,
-        slot_number: u64,
-    ) -> eyre::Result<DbOperations> {
-        let batch_number = event.batch_number;
-
-        Ok(DbOperations::FinalizeBatch {
-            finalize_hash: signature,
-            batch_number: batch_number as i64,
-            chain_id: self.chain_id() as i64,
-        })
     }
 }
 
