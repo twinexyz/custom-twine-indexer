@@ -128,10 +128,6 @@ impl DbClient {
                 self.bulk_update_transactions(l2_txns, &blockscout_txn)
                     .await?;
             }
-            if !update_details.is_empty() {
-                self.bulk_finalize_batches(update_details, &blockscout_txn)
-                    .await?;
-            }
             blockscout_txn.commit().await?;
         } else if !batches.is_empty()
             || !batch_details.is_empty()

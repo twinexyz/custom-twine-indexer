@@ -83,13 +83,9 @@ impl ChainEventHandler for EthereumEventHandler {
             //     let operation = self.handle_finalize_withdraw(log).await?;
             //     operations.push(operation);
             // }
-            CommitedBatch::SIGNATURE_HASH => {
-                let operation = self.handle_commit_batch(log).await?;
-                operations.push(operation);
-            }
 
             FinalizedBatch::SIGNATURE_HASH => {
-                let operation = self.handle_finalize_batch(log).await?;
+                let operation = self.handle_commit_batch(log).await?;
                 operations.push(operation);
             }
             other => {
@@ -280,8 +276,8 @@ impl EthereumEventHandler {
             l1_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             l2_fair_gas_price: Set(Decimal::from_f64(0.0).unwrap()),
             chain_id: Set(Decimal::from_i64(self.chain_id as i64).unwrap()),
-            commit_transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
-            finalize_transaction_hash: Set(None),
+            finalize_transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
+            finalized_at: Set(Some(decoded.timestamp.naive_utc())),
             ..Default::default()
         };
 
@@ -347,23 +343,6 @@ impl EthereumEventHandler {
             details: detail_model,
             blocks: l2_blocks,
             transactions: l2_txs,
-        };
-
-        Ok(operation)
-    }
-
-    async fn handle_finalize_batch(&self, log: Log) -> Result<DbOperations> {
-        let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
-
-        let batch_number = decoded.data.batchNumber;
-        let tx_hash_bytes = decoded.tx_hash_str.clone().into_bytes();
-        let timestamp = decoded.timestamp.naive_utc();
-        let chain_id_dec = Decimal::from_i64(self.chain_id as i64).unwrap();
-
-        let operation = DbOperations::FinalizeBatch {
-            finalize_hash: decoded.tx_hash_str.clone(),
-            batch_number: batch_number as i64,
-            chain_id: self.chain_id as i64,
         };
 
         Ok(operation)
