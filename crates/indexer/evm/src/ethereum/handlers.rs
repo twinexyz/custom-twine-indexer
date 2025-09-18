@@ -83,7 +83,6 @@ impl ChainEventHandler for EthereumEventHandler {
             //     let operation = self.handle_finalize_withdraw(log).await?;
             //     operations.push(operation);
             // }
-
             FinalizedBatch::SIGNATURE_HASH => {
                 let operation = self.handle_commit_batch(log).await?;
                 operations.push(operation);
@@ -242,7 +241,7 @@ impl EthereumEventHandler {
     }
 
     async fn handle_commit_batch(&self, log: Log) -> Result<DbOperations> {
-        let decoded = self.extract_log::<CommitedBatch>(log.clone(), CommitedBatch::SIGNATURE)?;
+        let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
 
         let data = decoded.data;
 
