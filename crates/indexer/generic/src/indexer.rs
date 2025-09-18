@@ -7,7 +7,7 @@ use database::client::DbClient;
 use eyre::Error;
 use futures_util::{Stream, StreamExt};
 use tokio::{sync::Semaphore, task::JoinSet, time::Instant};
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
@@ -302,11 +302,11 @@ pub trait ChainIndexer: Send + Sync {
         }
 
         if prepared_event_data_results.is_empty() {
-            info!("No successfully prepared event data to process ");
+            debug!("No successfully prepared event data to process ");
             return Ok(());
         }
 
-        info!(
+        debug!(
             "Successfully prepared events: {}",
             prepared_event_data_results.len()
         );
@@ -317,7 +317,7 @@ pub trait ChainIndexer: Send + Sync {
             .await
         {
             Ok(_) => {
-                info!("Succesfully updated the database");
+                debug!("Succesfully updated the database for a batch of logs");
                 self.get_db_client()
                     .upsert_last_synced(handler.chain_id() as i64, max_seen_height as i64)
                     .await?;

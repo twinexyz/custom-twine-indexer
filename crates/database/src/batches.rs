@@ -7,6 +7,19 @@ use sea_orm::{
 };
 use tracing::error;
 
+/// Generic utility for processing database operations in batches to avoid PostgreSQL parameter limits
+async fn process_in_batches<T, F, Fut>(items: Vec<T>, batch_size: usize, operation: F) -> Result<()>
+where
+    T: Clone,
+    F: Fn(Vec<T>) -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    for chunk in items.chunks(batch_size) {
+        operation(chunk.to_vec()).await?;
+    }
+    Ok(())
+}
+
 impl DbClient {
     pub async fn get_batch_by_id(
         &self,
@@ -120,20 +133,25 @@ impl DbClient {
         models: Vec<twine_transaction_batch::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> Result<()> {
-        twine_transaction_batch::Entity::insert_many(models)
-            .on_conflict(
-                OnConflict::columns([twine_transaction_batch::Column::Number])
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec_with_returning_many(txn)
-            .await
-            .map_err(|e| {
-                error!("Failed to insert batch: {:?}", e);
-                eyre::eyre!("Failed to insert batch: {:?}", e)
-            })?;
+        // Process in batches to avoid PostgreSQL parameter limit (max ~65k parameters)
+        const BATCH_SIZE: usize = 5000;
 
-        Ok(())
+        process_in_batches(models, BATCH_SIZE, |chunk| async {
+            twine_transaction_batch::Entity::insert_many(chunk)
+                .on_conflict(
+                    OnConflict::columns([twine_transaction_batch::Column::Number])
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec_with_returning_many(txn)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert batch: {:?}", e);
+                    eyre::eyre!("Failed to insert batch: {:?}", e)
+                })?;
+            Ok(())
+        })
+        .await
     }
 
     pub async fn insert_twine_transaction_batch_detail(
@@ -167,24 +185,30 @@ impl DbClient {
         models: Vec<twine_transaction_batch_detail::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> Result<()> {
-        twine_transaction_batch_detail::Entity::insert_many(models)
-            .on_conflict(
-                OnConflict::columns([
-                    twine_transaction_batch_detail::Column::BatchNumber,
-                    twine_transaction_batch_detail::Column::ChainId,
-                ])
-                .update_columns([
-                    twine_transaction_batch_detail::Column::FinalizedAt,
-                    twine_transaction_batch_detail::Column::FinalizeTransactionHash,
-                ])
-                .to_owned(),
-            )
-            .exec(txn)
-            .await
-            .map_err(|e| {
-                error!("Failed to insert twine txn batch details: {:?}", e);
-                eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
-            })?;
-        Ok(())
+        // Process in batches to avoid PostgreSQL parameter limit (max ~65k parameters)
+        const BATCH_SIZE: usize = 3000;
+
+        process_in_batches(models, BATCH_SIZE, |chunk| async {
+            twine_transaction_batch_detail::Entity::insert_many(chunk)
+                .on_conflict(
+                    OnConflict::columns([
+                        twine_transaction_batch_detail::Column::BatchNumber,
+                        twine_transaction_batch_detail::Column::ChainId,
+                    ])
+                    .update_columns([
+                        twine_transaction_batch_detail::Column::FinalizedAt,
+                        twine_transaction_batch_detail::Column::FinalizeTransactionHash,
+                    ])
+                    .to_owned(),
+                )
+                .exec(txn)
+                .await
+                .map_err(|e| {
+                    error!("Failed to insert twine txn batch details: {:?}", e);
+                    eyre::eyre!("Failed to insert twine txn batch details: {:?}", e)
+                })?;
+            Ok(())
+        })
+        .await
     }
 }

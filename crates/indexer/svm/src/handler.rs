@@ -28,7 +28,9 @@ use solana_transaction_status_client_types::{
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
-    BatchCommitmentAndFinalizationSuccessfulEvent, CommitBatchEvent, FinalizeBatchEvent, ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent, MessageTransactionEvent, SolanaEvent, SolanaLog
+    BatchCommitmentAndFinalizationSuccessfulEvent, CommitBatchEvent, FinalizeBatchEvent,
+    ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent, MessageTransactionEvent, SolanaEvent,
+    SolanaLog,
 };
 
 pub struct SolanaEventHandler {
@@ -113,7 +115,6 @@ impl ChainEventHandler for SolanaEventHandler {
             //     let operation = self.handle_finalize_native_withdraw(log).await?;
             //     operations.push(operation);
             // }
-
             SolanaEvent::BatchCommitmentAndFinalizationSuccessful(event) => {
                 let operation = self
                     .handle_commit_batch(event, log.signature, log.timestamp, log.slot_number)
@@ -304,7 +305,7 @@ impl SolanaEventHandler {
                 //If the batch already exists, it means it already has its corresponding transactions and blocks as welll.
                 // So we just need to put twine commit information in the table
 
-                info!("Batch already exists so don't need to fetch blocks and transactions");
+                debug!("Batch already exists so don't need to fetch blocks and transactions");
             }
             None => {
                 // info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
