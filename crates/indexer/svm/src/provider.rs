@@ -25,7 +25,7 @@ use solana_transaction_status_client_types::{
 };
 use tokio::sync::{mpsc::Receiver, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::parser::{parse_json_log, SolanaLog};
 
@@ -88,8 +88,6 @@ impl SvmProvider {
         let mut all_signatures = Vec::new();
         let mut before: Option<String> = None;
 
-        let start_time = Instant::now();
-
         loop {
             let config = RpcSignaturesForAddressConfig {
                 before: before.clone(),
@@ -136,9 +134,6 @@ impl SvmProvider {
         all_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
         all_signatures.dedup_by(|a, b| a.signature == b.signature);
 
-        let elapsed = start_time.elapsed();
-        info!("get_signature_for_address took {:?}", elapsed);
-
         Ok(all_signatures)
     }
 
@@ -166,14 +161,12 @@ impl SvmProvider {
     ) -> eyre::Result<Vec<SolanaLog>> {
         let mut all_found_events = Vec::new();
 
-        let start_time = Instant::now();
-
         for program in programs {
             let signatures = self
                 .get_signature_for_address(&program, from, to, 1000)
                 .await?;
 
-            info!(
+            debug!(
                 "Found {} signatures for program {}",
                 signatures.len(),
                 program
@@ -245,9 +238,6 @@ impl SvmProvider {
         }
 
         all_found_events.sort_by_key(|event| event.slot_number);
-
-        let elapsed = start_time.elapsed();
-        info!("get_logs took {:?}", elapsed);
 
         Ok(all_found_events)
     }

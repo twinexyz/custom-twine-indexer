@@ -305,7 +305,7 @@ impl SolanaEventHandler {
                 //If the batch already exists, it means it already has its corresponding transactions and blocks as welll.
                 // So we just need to put twine commit information in the table
 
-                info!("Batch already exists so don't need to fetch blocks and transactions");
+                debug!("Batch already exists so don't need to fetch blocks and transactions");
             }
             None => {
                 // info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");

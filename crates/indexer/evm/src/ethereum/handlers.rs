@@ -20,7 +20,7 @@ use eyre::Result;
 use generic_indexer::handler::ChainEventHandler;
 use num_traits::FromPrimitive;
 use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set, IntoActiveModel};
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use twine_evm_contracts::evm::ethereum::{
     l1_message_handler::L1MessageHandler,
     twine_chain::TwineChain::{self, CommitedBatch, FinalizedBatch},
@@ -289,7 +289,7 @@ impl EthereumEventHandler {
                 //If the batch already exists, it means it already has its corresponding transactions and blocks as welll.
                 // So we just need to put twine commit information in the table
 
-                info!("Batch already exists so don't need to fetch blocks and transactions");
+                debug!("Batch already exists so don't need to fetch blocks and transactions");
             }
             None => {
                 // info!("First time encoutering this batch, so need to fecth blocks and transactions from twine");
