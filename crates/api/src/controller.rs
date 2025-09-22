@@ -1,4 +1,4 @@
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::DbErr;
@@ -11,13 +11,14 @@ use crate::{
     pagination::{items_count, BridgeTransactionsPagination, PlaceholderPagination},
     types::{
         BatchL2TransactionHashRequest, BatchL2TransactionHashResponse, BridgeTransactionsResponse,
+        UserDepositsResponse,
     },
     ApiResponse, ApiResult, AppState,
 };
 use database::{
     bridge::FetchBridgeTransactionsParams,
     client::DbClient,
-    entities::{bridge_destination_transactions, bridge_source_transactions},
+    entities::{source_transactions, transaction_flows},
 };
 
 #[instrument(skip_all)]
@@ -73,6 +74,83 @@ pub async fn get_l1_forced_withdraws(
     .await
 }
 
+#[instrument(skip(state), fields(user_address = %user_address))]
+pub async fn get_user_deposits(
+    State(state): State<AppState>,
+    Path(user_address): Path<String>,
+) -> ApiResult<Vec<UserDepositsResponse>, PlaceholderPagination> {
+    info!(
+        user_address = %user_address,
+        "Fetching deposits for user"
+    );
+
+    let results = state
+        .db_client
+        .fetch_user_deposits(&user_address)
+        .await
+        .map_err(AppError::from)?;
+
+    let response_items: Vec<UserDepositsResponse> = results
+        .iter()
+        .map(|(source_tx, dest_tx_opt)| {
+            let created_at: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(
+                source_tx.timestamp.unwrap_or_default().naive_utc(),
+                FixedOffset::east_opt(0).expect("UTC offset should be valid"),
+            );
+
+            UserDepositsResponse {
+                l1_tx_hash: source_tx.transaction_hash.clone().unwrap_or_default(),
+                l2_tx_hash: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.handle_tx_hash.clone()),
+                l1_block_height: Some(source_tx.block_number),
+                l2_block_height: dest_tx_opt.as_ref().and_then(|tx| tx.handle_block_number),
+                status: dest_tx_opt.as_ref().and_then(|tx| tx.handle_status),
+                nonce: source_tx.nonce,
+                chain_id: source_tx.chain_id,
+                l1_token: Some(source_tx.l1_token.clone()),
+                l2_token: Some(source_tx.l2_token.clone()),
+                from: source_tx.l1_address.clone(),
+                to_twine_address: Some(source_tx.twine_address.clone()),
+                amount: Some(source_tx.amount.to_string()),
+                created_at,
+                l2_handled_at: dest_tx_opt.as_ref().and_then(|tx| tx.handled_at),
+                l1_execute_hash: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.execute_tx_hash.clone()),
+                l1_execute_block_height: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.execute_block_number),
+                l1_executed_at: dest_tx_opt.as_ref().and_then(|tx| tx.executed_at),
+                is_handled: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_handled)
+                    .unwrap_or(false),
+                is_executed: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_executed)
+                    .unwrap_or(false),
+                is_completed: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_completed)
+                    .unwrap_or(false),
+            }
+        })
+        .collect();
+
+    info!(
+        user_address = %user_address,
+        count = response_items.len(),
+        "Fetched user deposits"
+    );
+
+    Ok(ApiResponse {
+        success: true,
+        items: response_items,
+        next_page_params: None,
+    })
+}
+
 #[instrument(skip(state, request), fields(request_count = request.l1_transactions.len()))]
 pub async fn get_l2_txns_for_l1_txn(
     State(state): State<AppState>,
@@ -112,16 +190,16 @@ pub async fn get_l2_txns_for_l1_txn(
         .map(|(l1_tx, result)| match result {
             Some((_source_tx, dest_tx)) => {
                 let timestamp = dest_tx
-                    .destination_processed_at
-                    .unwrap_or_else(|| Utc::now().naive_utc())
-                    .and_utc();
+                    .handled_at
+                    .unwrap_or_else(|| Utc::now().fixed_offset())
+                    .naive_utc();
 
                 BatchL2TransactionHashResponse {
                     l1_tx_hash: l1_tx.l1_transaction_hash.clone(),
                     l1_chain_id: l1_tx.l1_chain_id,
-                    l2_tx_hash: Some(dest_tx.destination_tx_hash.clone()),
-                    block_height: dest_tx.destination_height,
-                    timestamp: Some(timestamp),
+                    l2_tx_hash: Some(dest_tx.handle_tx_hash.clone().unwrap_or_default()),
+                    block_height: dest_tx.handle_block_number,
+                    timestamp: Some(DateTime::<Utc>::from_naive_utc_and_offset(timestamp, Utc)),
                     found: true,
                 }
             }
@@ -159,15 +237,8 @@ async fn get_paginated_bridge_transactions<F, Fut>(
 ) -> ApiResult<Vec<BridgeTransactionsResponse>, BridgeTransactionsPagination>
 where
     F: FnOnce(Arc<DbClient>, FetchBridgeTransactionsParams) -> Fut,
-    Fut: Future<
-        Output = Result<
-            Vec<(
-                bridge_source_transactions::Model,
-                bridge_destination_transactions::Model,
-            )>,
-            DbErr,
-        >,
-    >,
+    Fut:
+        Future<Output = Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr>>,
 {
     let items_count = items_count(pagination_query.items_count);
 
@@ -192,23 +263,27 @@ where
         .iter()
         .map(|(source_tx, dest_tx)| {
             let created_at: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(
-                source_tx.source_event_timestamp,
+                source_tx.timestamp.unwrap_or_default().naive_utc(),
                 FixedOffset::east_opt(0).expect("UTC offset should be valid"),
             );
             BridgeTransactionsResponse {
-                l1_tx_hash: source_tx.source_tx_hash.clone(),
-                l2_tx_hash: dest_tx.destination_tx_hash.clone(),
-                l1_block_height: source_tx.source_height,
-                l2_block_height: dest_tx.destination_height,
-                status: dest_tx.destination_status_code,
-                nonce: source_tx.source_nonce,
-                chain_id: source_tx.source_chain_id,
-                l1_token: source_tx.source_token_address.clone(),
-                l2_token: source_tx.destination_token_address.clone(),
-                from: source_tx.source_from_address.clone(),
-                to_twine_address: source_tx.target_recipient_address.clone(),
-                amount: source_tx.amount.clone(),
+                source_tx_hash: source_tx.transaction_hash.clone().unwrap_or_default(),
+                l2_handle_tx_hash: dest_tx.handle_tx_hash.clone().unwrap_or_default(),
+                source_block_height: Some(source_tx.block_number),
+                l2_handle_block_height: dest_tx.handle_block_number,
+                status: dest_tx.handle_status,
+                nonce: source_tx.nonce,
+                chain_id: source_tx.chain_id,
+                l1_token: Some(source_tx.l1_token.clone()),
+                l2_token: Some(source_tx.l2_token.clone()),
+                from: source_tx.l1_address.clone(),
+                to_twine_address: Some(source_tx.twine_address.clone()),
+                amount: Some(source_tx.amount.to_string()),
                 created_at,
+                l2_handled_at: dest_tx.handled_at,
+                l1_execute_hash: dest_tx.execute_tx_hash.clone(),
+                l1_execute_block_height: dest_tx.execute_block_number,
+                l1_executed_at: dest_tx.executed_at,
             }
         })
         .collect();
@@ -218,8 +293,8 @@ where
             .last()
             .map(|(s_tx, _d_tx)| BridgeTransactionsPagination {
                 items_count: Some(items_count),
-                chain_id: Some(s_tx.source_chain_id as u64),
-                nonce: Some(s_tx.source_nonce as u64),
+                chain_id: Some(s_tx.chain_id as u64),
+                nonce: Some(s_tx.nonce as u64),
             })
     } else {
         None

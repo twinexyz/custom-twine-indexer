@@ -10,12 +10,13 @@ use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
 use database::{
     client::DbClient,
-    entities::{bridge_destination_transactions, bridge_source_transactions},
+    entities::{source_transactions, transaction_flows},
     DbOperations,
 };
 use eyre::Result;
 use generic_indexer::handler::ChainEventHandler;
 use sea_orm::{
+    prelude::Decimal,
     sqlx::{decode, types::uuid::timestamp},
     ActiveValue::Set,
 };
@@ -114,6 +115,7 @@ impl TwineEventHandler {
         block_number: i64,
         chain_id: u64,
         status: u16,
+        timestamp: DateTime<Utc>,
     ) -> (Vec<DbOperations>, Vec<DbOperations>) {
         let mut parsed_deposits = Vec::new();
         let mut parsed_withdraws = Vec::new();
@@ -122,27 +124,27 @@ impl TwineEventHandler {
 
         if tokentxns.deposit {
             parsed_deposits.push(DbOperations::BridgeDestinationTransactions(
-                bridge_destination_transactions::ActiveModel {
-                    source_nonce: Set(pr.nonce as i64),
-                    source_chain_id: Set(chain_id as i64),
-                    destination_chain_id: Set(self.chain_id as i64),
-                    destination_height: Set(Some(block_number)),
-                    destination_tx_hash: Set(tx_hash.to_string()),
-                    destination_status_code: Set(Some(status as i16)),
-                    // destination_processed_at: Set(Some(decoded.timestamp.into())),
+                transaction_flows::ActiveModel {
+                    nonce: Set(pr.nonce as i64),
+                    chain_id: Set(chain_id as i64),
+                    handle_block_number: Set(Some(block_number)),
+                    handle_tx_hash: Set(Some(tx_hash.to_string())),
+                    handle_status: Set(Some(status as i16)),
+                    handled_at: Set(Some(timestamp.fixed_offset())),
+                    is_handled: Set(Some(true)),
                     ..Default::default()
                 },
             ));
         } else {
             parsed_withdraws.push(DbOperations::BridgeDestinationTransactions(
-                bridge_destination_transactions::ActiveModel {
-                    source_nonce: Set(pr.nonce as i64),
-                    source_chain_id: Set(chain_id as i64),
-                    destination_chain_id: Set(self.chain_id as i64),
-                    destination_height: Set(Some(block_number)),
-                    destination_tx_hash: Set(tx_hash.to_string()),
-                    destination_status_code: Set(Some(status as i16)),
-                    // destination_processed_at: Set(Some(decoded.timestamp.into())),
+                transaction_flows::ActiveModel {
+                    nonce: Set(pr.nonce as i64),
+                    chain_id: Set(chain_id as i64),
+                    handle_block_number: Set(Some(block_number)),
+                    handle_tx_hash: Set(Some(tx_hash.to_string())),
+                    handle_status: Set(Some(status as i16)),
+                    handled_at: Set(Some(timestamp.fixed_offset())),
+                    is_handled: Set(Some(true)),
                     ..Default::default()
                 },
             ));
@@ -168,6 +170,7 @@ impl TwineEventHandler {
             decoded.block_number,
             decoded.data.chainId.to::<u64>(),
             decoded.data.status as u16,
+            decoded.timestamp,
         );
 
         Ok((deposits, withdraws))
@@ -177,18 +180,21 @@ impl TwineEventHandler {
         let decoded = self.extract_log::<L2Messenger::SentMessage>(log, "event_name")?;
         let data = decoded.data;
 
-        let model = bridge_source_transactions::ActiveModel {
-            source_nonce: Set(data.nonce.try_into().unwrap()),
-            source_chain_id: Set(self.chain_id as i64),
-            source_height: Set(Some(data.blockNumber.try_into().unwrap())),
-            source_from_address: Set(format!("{:?}", data.from)),
-            target_recipient_address: Set(Some(data.to)),
-            destination_token_address: Set(Some(format!("{:?}", data.l2Token))),
-            source_token_address: Set(Some(data.l1Token)),
-            source_tx_hash: Set(decoded.tx_hash_str.clone()),
-            source_event_timestamp: Set(decoded.timestamp.naive_utc()),
-            amount: Set(Some(data.amount.to_string())),
-            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Withdraw),
+        let model = source_transactions::ActiveModel {
+            nonce: Set(data.nonce.try_into().unwrap()),
+            chain_id: Set(self.chain_id as i64),
+            destination_chain_id: Set(Some(data.chainId.to::<u64>() as i64)),
+            block_number: Set(data.blockNumber.try_into().unwrap()),
+            twine_address: Set(format!("{:?}", data.from)),
+            l1_address: Set(data.to),
+            l2_token: Set(format!("{:?}", data.l2Token)),
+            l1_token: Set(data.l1Token),
+            transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
+            timestamp: Set(Some(decoded.timestamp.fixed_offset())),
+            amount: Set(data.amount.to_string().parse::<Decimal>().unwrap()),
+            transaction_type: Set(
+                database::entities::sea_orm_active_enums::TransactionTypeEnum::Withdraw,
+            ),
             ..Default::default()
         };
 

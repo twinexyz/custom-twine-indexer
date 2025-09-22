@@ -1,7 +1,8 @@
 use blockscout_entities::{
     blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
 };
-use entities::{bridge_destination_transactions, bridge_source_transactions};
+
+use crate::entities::{source_transactions, transaction_flows};
 
 mod batches;
 mod blockscout;
@@ -12,8 +13,8 @@ pub mod connect;
 pub mod entities;
 
 pub enum DbOperations {
-    BridgeSourceTransaction(bridge_source_transactions::ActiveModel),
-    BridgeDestinationTransactions(bridge_destination_transactions::ActiveModel),
+    BridgeSourceTransaction(source_transactions::ActiveModel),
+    BridgeDestinationTransactions(transaction_flows::ActiveModel),
 
     CommitBatch {
         batch: twine_transaction_batch::ActiveModel,

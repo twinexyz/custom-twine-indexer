@@ -8,7 +8,7 @@ use common::config::{ChainConfig, SvmConfig};
 use database::{
     blockscout_entities::{twine_transaction_batch, twine_transaction_batch_detail},
     client::DbClient,
-    entities::{bridge_destination_transactions, bridge_source_transactions},
+    entities::{source_transactions, transaction_flows},
     DbOperations,
 };
 use evm::provider::EvmProvider;
@@ -29,8 +29,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::parser::{
     BatchCommitmentAndFinalizationSuccessfulEvent, CommitBatchEvent, FinalizeBatchEvent,
-    ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent, MessageTransactionEvent, SolanaEvent,
-    SolanaLog,
+    ForcedWithdrawalSuccessfulEvent, L2WithdrawExecutedEvent, MessageTransactionEvent,
+    RefundSuccessfulEvent, SolanaEvent, SolanaLog,
 };
 
 pub struct SolanaEventHandler {
@@ -75,21 +75,23 @@ impl ChainEventHandler for SolanaEventHandler {
                 }
             }
 
-            // SolanaEvent::RefundSuccessful(event) => {
-            //     let operation = self.handle_refund(event, log.signature, log.timestamp, log.slot_number).await?;
-            //     operations.push(operation);
-            // }
-            // SolanaEvent::ForcedWithdrawalSuccessful(event) => {
-            //     let operation = self
-            //         .handle_finalize_withdrawal(
-            //             event,
-            //             log.signature,
-            //             log.timestamp,
-            //             log.slot_number,
-            //         )
-            //         .await?;
-            //     operations.push(operation);
-            // }
+            SolanaEvent::RefundSuccessful(event) => {
+                let operation = self
+                    .handle_finalize_refund(event, log.signature, log.timestamp, log.slot_number)
+                    .await?;
+                operations.push(operation);
+            }
+            SolanaEvent::ForcedWithdrawalSuccessful(event) => {
+                let operation = self
+                    .handle_finalize_withdrawal(
+                        event,
+                        log.signature,
+                        log.timestamp,
+                        log.slot_number,
+                    )
+                    .await?;
+                operations.push(operation);
+            }
             SolanaEvent::L2WithdrawExecuted(event) => {
                 let operation: DbOperations = self
                     .handle_finalize_l2_withdrawal(
@@ -101,20 +103,6 @@ impl ChainEventHandler for SolanaEventHandler {
                     .await?;
                 operations.push(operation);
             }
-
-            // SolanaEvents::NativeWithdrawal | SolanaEvents::SplWithdrawal => {
-            //     let operation = self.handle_withdrawal(log).await?;
-            //     operations.push(operation);
-            // }
-            // SolanaEvents::FinalizeSplWithdrawal => {
-            //     let operation = self.handle_finalize_spl_withdraw(log).await?;
-            //     operations.push(operation);
-            // }
-
-            // SolanaEvents::FinalizeNativeWithdrawal => {
-            //     let operation = self.handle_finalize_native_withdraw(log).await?;
-            //     operations.push(operation);
-            // }
             SolanaEvent::BatchCommitmentAndFinalizationSuccessful(event) => {
                 let operation = self
                     .handle_commit_batch(event, log.signature, log.timestamp, log.slot_number)
@@ -159,18 +147,22 @@ impl SolanaEventHandler {
         timestamp: DateTime<Utc>,
         slot_number: u64,
     ) -> eyre::Result<DbOperations> {
-        let model = bridge_source_transactions::ActiveModel {
-            source_nonce: Set(event.nonce as i64),
-            source_chain_id: Set(event.chain_id as i64),
-            source_height: Set(Some(slot_number as i64)),
-            source_from_address: Set(event.l1_pubkey),
-            target_recipient_address: Set(Some(event.twine_address)),
-            destination_token_address: Set(Some(event.l2_token)),
-            source_token_address: Set(Some(event.l1_token)),
-            source_tx_hash: Set(signature),
-            source_event_timestamp: Set(timestamp.naive_utc()),
-            event_type: Set(database::entities::sea_orm_active_enums::EventTypeEnum::Deposit),
-            amount: Set(Some(event.amount)),
+        let l2_chain_id = self.twine_provider.get_chain_id();
+        let model = source_transactions::ActiveModel {
+            nonce: Set(event.nonce as i64),
+            chain_id: Set(event.chain_id as i64),
+            destination_chain_id: Set(Some(l2_chain_id as i64)),
+            block_number: Set(slot_number as i64),
+            l1_address: Set(event.l1_pubkey),
+            twine_address: Set(event.twine_address),
+            l2_token: Set(event.l2_token),
+            l1_token: Set(event.l1_token),
+            transaction_hash: Set(Some(signature)),
+            timestamp: Set(Some(timestamp.fixed_offset())),
+            transaction_type: Set(
+                database::entities::sea_orm_active_enums::TransactionTypeEnum::Deposit,
+            ),
+            amount: Set(event.amount.parse::<Decimal>().unwrap()),
             ..Default::default()
         };
 
@@ -188,19 +180,21 @@ impl SolanaEventHandler {
         timestamp: DateTime<Utc>,
         slot_number: u64,
     ) -> eyre::Result<DbOperations> {
-        let model = bridge_source_transactions::ActiveModel {
-            source_nonce: Set(event.nonce as i64),
-            source_chain_id: Set(event.chain_id as i64),
-            source_height: Set(Some(slot_number as i64)),
-            source_from_address: Set(event.l1_pubkey),
-            target_recipient_address: Set(Some(event.twine_address)),
-            destination_token_address: Set(Some(event.l2_token)),
-            source_token_address: Set(Some(event.l1_token)),
-            source_tx_hash: Set(signature),
-            source_event_timestamp: Set(timestamp.naive_utc()),
-            amount: Set(Some(event.amount)),
-            event_type: Set(
-                database::entities::sea_orm_active_enums::EventTypeEnum::ForcedWithdraw,
+        let l2_chain_id = self.twine_provider.get_chain_id();
+        let model = source_transactions::ActiveModel {
+            nonce: Set(event.nonce as i64),
+            chain_id: Set(event.chain_id as i64),
+            destination_chain_id: Set(Some(l2_chain_id as i64)),
+            block_number: Set(slot_number as i64),
+            l1_address: Set(event.l1_pubkey),
+            twine_address: Set(event.twine_address),
+            l2_token: Set(event.l2_token),
+            l1_token: Set(event.l1_token),
+            transaction_hash: Set(Some(signature)),
+            timestamp: Set(Some(timestamp.fixed_offset())),
+            amount: Set(event.amount.parse::<Decimal>().unwrap()),
+            transaction_type: Set(
+                database::entities::sea_orm_active_enums::TransactionTypeEnum::ForcedWithdraw,
             ),
             ..Default::default()
         };
@@ -217,13 +211,13 @@ impl SolanaEventHandler {
         timestamp: DateTime<Utc>,
         slot_number: u64,
     ) -> eyre::Result<DbOperations> {
-        let model = bridge_destination_transactions::ActiveModel {
-            source_nonce: Set(event.nonce as i64),
-            source_chain_id: Set(event.chain_id as i64),
-            destination_chain_id: Set(self.chain_id() as i64),
-            destination_height: Set(Some(event.slot_number as i64)),
-            destination_tx_hash: Set(signature),
-            destination_processed_at: Set(Some(timestamp.naive_utc())),
+        let model = transaction_flows::ActiveModel {
+            nonce: Set(event.nonce as i64),
+            chain_id: Set(event.chain_id as i64),
+            execute_block_number: Set(Some(event.slot_number as i64)),
+            execute_tx_hash: Set(Some(signature)),
+            executed_at: Set(Some(timestamp.fixed_offset())),
+            is_executed: Set(Some(true)),
             ..Default::default()
         };
 
@@ -239,13 +233,34 @@ impl SolanaEventHandler {
     ) -> eyre::Result<DbOperations> {
         let l2_chain_id = self.twine_provider.get_chain_id();
 
-        let model = bridge_destination_transactions::ActiveModel {
-            source_nonce: Set(event.nonce as i64),
-            source_chain_id: Set(l2_chain_id as i64),
-            destination_chain_id: Set(self.chain_id() as i64),
-            destination_height: Set(Some(event.slot_number as i64)),
-            destination_tx_hash: Set(signature),
-            destination_processed_at: Set(Some(timestamp.naive_utc())),
+        let model = transaction_flows::ActiveModel {
+            nonce: Set(event.nonce as i64),
+            chain_id: Set(l2_chain_id as i64),
+            execute_block_number: Set(Some(event.slot_number as i64)),
+            execute_tx_hash: Set(Some(signature)),
+            executed_at: Set(Some(timestamp.fixed_offset())),
+            is_executed: Set(Some(true)),
+            ..Default::default()
+        };
+
+        let operation = DbOperations::BridgeDestinationTransactions(model);
+        Ok(operation)
+    }
+
+    async fn handle_finalize_refund(
+        &self,
+        event: RefundSuccessfulEvent,
+        signature: String,
+        timestamp: DateTime<Utc>,
+        slot_number: u64,
+    ) -> eyre::Result<DbOperations> {
+        let model = transaction_flows::ActiveModel {
+            nonce: Set(event.nonce as i64),
+            chain_id: Set(event.chain_id as i64),
+            execute_block_number: Set(Some(event.slot_number as i64)),
+            execute_tx_hash: Set(Some(signature)),
+            executed_at: Set(Some(timestamp.fixed_offset())),
+            is_executed: Set(Some(true)),
             ..Default::default()
         };
 

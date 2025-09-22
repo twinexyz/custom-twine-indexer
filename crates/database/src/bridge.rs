@@ -1,18 +1,13 @@
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseTransaction, DbErr, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait, sea_query::OnConflict,
+    ColumnTrait, Condition, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, sea_query::OnConflict,
 };
 use std::collections::HashMap;
 use tracing::{debug, error, instrument, warn};
 
-use crate::{
-    client::DbClient,
-    entities::{
-        bridge_destination_transactions, bridge_source_transactions,
-        sea_orm_active_enums::EventTypeEnum,
-    },
-};
+use crate::client::DbClient;
+use crate::entities::{source_transactions, transaction_flows};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FetchBridgeTransactionsParams {
@@ -25,18 +20,18 @@ impl DbClient {
     #[instrument(skip(self, models, txn), fields(model_count = models.len()))]
     pub async fn bulk_insert_source_transactions(
         &self,
-        models: Vec<bridge_source_transactions::ActiveModel>,
+        models: Vec<source_transactions::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> eyre::Result<()> {
         if models.is_empty() {
             return Ok(());
         }
 
-        bridge_source_transactions::Entity::insert_many(models)
+        source_transactions::Entity::insert_many(models)
             .on_conflict(
                 OnConflict::columns([
-                    bridge_source_transactions::Column::SourceChainId,
-                    bridge_source_transactions::Column::SourceNonce,
+                    source_transactions::Column::ChainId,
+                    source_transactions::Column::Nonce,
                 ])
                 .do_nothing()
                 .to_owned(),
@@ -56,17 +51,17 @@ impl DbClient {
     #[instrument(skip(self, models, txn), fields(model_count = models.len()))]
     pub async fn bulk_insert_destination_transactions(
         &self,
-        models: Vec<bridge_destination_transactions::ActiveModel>,
+        models: Vec<transaction_flows::ActiveModel>,
         txn: &DatabaseTransaction,
     ) -> eyre::Result<()> {
         if models.is_empty() {
             return Ok(());
         }
-        bridge_destination_transactions::Entity::insert_many(models)
+        transaction_flows::Entity::insert_many(models)
             .on_conflict(
                 OnConflict::columns([
-                    bridge_destination_transactions::Column::SourceChainId,
-                    bridge_destination_transactions::Column::SourceNonce,
+                    transaction_flows::Column::ChainId,
+                    transaction_flows::Column::Nonce,
                 ])
                 .do_nothing()
                 .to_owned(),
@@ -86,51 +81,37 @@ impl DbClient {
     #[instrument(skip(self), fields(event_type = ?event_type, params = ?params))]
     async fn _fetch_paginated_bridge_events(
         &self,
-        event_type: EventTypeEnum,
+        event_type: String,
         params: &FetchBridgeTransactionsParams,
-    ) -> Result<
-        Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
-        let mut query_builder = bridge_source_transactions::Entity::find()
-            .filter(bridge_source_transactions::Column::EventType.eq(event_type));
+    ) -> Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
+        let mut query_builder = source_transactions::Entity::find()
+            .filter(source_transactions::Column::TransactionType.eq(event_type));
 
         if let (Some(chain_id), Some(nonce)) = (params.cursor_chain_id, params.cursor_nonce) {
-            let reference_tx = bridge_source_transactions::Entity::find()
+            let reference_tx = source_transactions::Entity::find()
                 .filter(
                     Condition::all()
-                        .add(bridge_source_transactions::Column::SourceChainId.eq(chain_id))
-                        .add(bridge_source_transactions::Column::SourceNonce.eq(nonce)),
+                        .add(source_transactions::Column::ChainId.eq(chain_id))
+                        .add(source_transactions::Column::Nonce.eq(nonce)),
                 )
                 .one(&self.primary)
                 .await?;
 
             if let Some(tx) = reference_tx {
-                let timestamp = tx.source_event_timestamp;
+                let timestamp = tx.timestamp;
                 query_builder = query_builder.filter(
                     Condition::any()
-                        .add(bridge_source_transactions::Column::SourceEventTimestamp.lt(timestamp))
+                        .add(source_transactions::Column::Timestamp.lt(timestamp))
                         .add(
                             Condition::all()
-                                .add(
-                                    bridge_source_transactions::Column::SourceEventTimestamp
-                                        .eq(timestamp),
-                                )
-                                .add(
-                                    bridge_source_transactions::Column::SourceChainId.lt(chain_id),
-                                ),
+                                .add(source_transactions::Column::Timestamp.eq(timestamp))
+                                .add(source_transactions::Column::ChainId.lt(chain_id)),
                         )
                         .add(
                             Condition::all()
-                                .add(
-                                    bridge_source_transactions::Column::SourceEventTimestamp
-                                        .eq(timestamp),
-                                )
-                                .add(bridge_source_transactions::Column::SourceChainId.eq(chain_id))
-                                .add(bridge_source_transactions::Column::SourceNonce.lt(nonce)),
+                                .add(source_transactions::Column::Timestamp.eq(timestamp))
+                                .add(source_transactions::Column::ChainId.eq(chain_id))
+                                .add(source_transactions::Column::Nonce.lt(nonce)),
                         ),
                 );
             } else {
@@ -139,25 +120,47 @@ impl DbClient {
             }
         }
 
-        let joined_data = query_builder
-            .join(
-                JoinType::InnerJoin,
-                bridge_source_transactions::Relation::BridgeDestinationTransactions.def(),
-            )
-            .order_by_desc(bridge_source_transactions::Column::SourceEventTimestamp)
-            .order_by_desc(bridge_source_transactions::Column::SourceChainId)
-            .order_by_desc(bridge_source_transactions::Column::SourceNonce)
+        // First get the source transactions
+        let source_transactions = query_builder
+            .order_by_desc(source_transactions::Column::Timestamp)
+            .order_by_desc(source_transactions::Column::ChainId)
+            .order_by_desc(source_transactions::Column::Nonce)
             .limit(params.items_count)
-            .select_also(bridge_destination_transactions::Entity)
             .all(&self.primary)
             .await?;
 
-        let filtered_data: Vec<_> = joined_data
-            .into_iter()
-            .filter_map(|(source_model, dest_model_opt)| {
-                dest_model_opt.map(|dest_model| (source_model, dest_model))
-            })
-            .collect();
+        if source_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build a condition to get all matching transaction flows in one query
+        let mut flow_condition = Condition::any();
+        for source_tx in &source_transactions {
+            flow_condition = flow_condition.add(
+                Condition::all()
+                    .add(transaction_flows::Column::ChainId.eq(source_tx.chain_id))
+                    .add(transaction_flows::Column::Nonce.eq(source_tx.nonce)),
+            );
+        }
+
+        let transaction_flows = transaction_flows::Entity::find()
+            .filter(flow_condition)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map for quick lookup
+        let mut flow_map = std::collections::HashMap::new();
+        for flow in transaction_flows {
+            flow_map.insert((flow.chain_id, flow.nonce), flow);
+        }
+
+        // Combine the results
+        let mut filtered_data = Vec::new();
+        for source_tx in source_transactions {
+            if let Some(flow) = flow_map.get(&(source_tx.chain_id, source_tx.nonce)) {
+                filtered_data.push((source_tx, flow.clone()));
+            }
+        }
 
         debug!(
             fetched_count = filtered_data.len(),
@@ -170,14 +173,8 @@ impl DbClient {
     pub async fn fetch_l1_deposits_paginated(
         &self,
         params: FetchBridgeTransactionsParams,
-    ) -> Result<
-        Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
-        self._fetch_paginated_bridge_events(EventTypeEnum::Deposit, &params)
+    ) -> Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
+        self._fetch_paginated_bridge_events("Deposit".to_string(), &params)
             .await
     }
 
@@ -185,14 +182,8 @@ impl DbClient {
     pub async fn fetch_l2_withdraws_paginated(
         &self,
         params: FetchBridgeTransactionsParams,
-    ) -> Result<
-        Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
-        self._fetch_paginated_bridge_events(EventTypeEnum::Withdraw, &params)
+    ) -> Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
+        self._fetch_paginated_bridge_events("Withdraw".to_string(), &params)
             .await
     }
 
@@ -200,14 +191,8 @@ impl DbClient {
     pub async fn fetch_l1_forced_withdraws_paginated(
         &self,
         params: FetchBridgeTransactionsParams,
-    ) -> Result<
-        Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
-        self._fetch_paginated_bridge_events(EventTypeEnum::ForcedWithdraw, &params)
+    ) -> Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
+        self._fetch_paginated_bridge_events("ForcedWithdraw".to_string(), &params)
             .await
     }
 
@@ -216,38 +201,29 @@ impl DbClient {
         &self,
         q: &str,
         limit: u64,
-    ) -> Result<
-        Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
+    ) -> Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
         let text_pattern = format!("%{}%", q);
         let mut condition = Condition::any();
 
         //  Text-based search conditions
         let text_columns_source = [
-            bridge_source_transactions::Column::SourceTxHash,
-            bridge_source_transactions::Column::SourceFromAddress,
-            bridge_source_transactions::Column::SourceToAddress,
-            bridge_source_transactions::Column::TargetRecipientAddress,
-            bridge_source_transactions::Column::SourceTokenAddress,
-            bridge_source_transactions::Column::DestinationTokenAddress,
+            source_transactions::Column::TransactionHash,
+            source_transactions::Column::L1Address,
+            source_transactions::Column::TwineAddress,
+            source_transactions::Column::L2Token,
+            source_transactions::Column::L1Token,
         ];
         for col in text_columns_source {
             condition = condition.add(Expr::col(col).like(text_pattern.clone()));
         }
-        condition = condition.add(
-            Expr::col(bridge_destination_transactions::Column::DestinationTxHash)
-                .like(text_pattern.clone()),
-        );
+        condition = condition
+            .add(Expr::col(transaction_flows::Column::ExecuteTxHash).like(text_pattern.clone()));
 
         condition = condition.add(
             Expr::expr(
                 Expr::col((
-                    bridge_source_transactions::Entity,
-                    bridge_source_transactions::Column::SourceHeight,
+                    source_transactions::Entity,
+                    source_transactions::Column::BlockNumber,
                 ))
                 .cast_as(sea_orm::sea_query::Alias::new("TEXT")),
             )
@@ -256,8 +232,8 @@ impl DbClient {
         condition = condition.add(
             Expr::expr(
                 Expr::col((
-                    bridge_source_transactions::Entity,
-                    bridge_source_transactions::Column::SourceNonce,
+                    source_transactions::Entity,
+                    source_transactions::Column::Nonce,
                 ))
                 .cast_as(sea_orm::sea_query::Alias::new("TEXT")),
             )
@@ -266,34 +242,54 @@ impl DbClient {
         condition = condition.add(
             Expr::expr(
                 Expr::col((
-                    bridge_destination_transactions::Entity,
-                    bridge_destination_transactions::Column::DestinationHeight,
+                    transaction_flows::Entity,
+                    transaction_flows::Column::ExecuteBlockNumber,
                 ))
                 .cast_as(sea_orm::sea_query::Alias::new("TEXT")),
             )
             .like(text_pattern.clone()),
         );
 
-        // Final Query
-        let query = bridge_source_transactions::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                bridge_source_transactions::Relation::BridgeDestinationTransactions.def(),
-            )
+        // First get the source transactions
+        let source_transactions = source_transactions::Entity::find()
             .filter(condition)
-            .order_by_desc(bridge_source_transactions::Column::SourceEventTimestamp)
+            .order_by_desc(source_transactions::Column::Timestamp)
             .limit(limit)
-            .select_also(bridge_destination_transactions::Entity);
+            .all(&self.primary)
+            .await?;
 
-        let joined_data = query.all(&self.primary).await?;
+        if source_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let results: Vec<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )> = joined_data
-            .into_iter()
-            .filter_map(|(source, dest_opt)| dest_opt.map(|dest| (source, dest)))
-            .collect();
+        // Build a condition to get all matching transaction flows in one query
+        let mut flow_condition = Condition::any();
+        for source_tx in &source_transactions {
+            flow_condition = flow_condition.add(
+                Condition::all()
+                    .add(transaction_flows::Column::ChainId.eq(source_tx.chain_id))
+                    .add(transaction_flows::Column::Nonce.eq(source_tx.nonce)),
+            );
+        }
+
+        let transaction_flows = transaction_flows::Entity::find()
+            .filter(flow_condition)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map for quick lookup
+        let mut flow_map = std::collections::HashMap::new();
+        for flow in transaction_flows {
+            flow_map.insert((flow.chain_id, flow.nonce), flow);
+        }
+
+        // Combine the results
+        let mut results = Vec::new();
+        for source_tx in source_transactions {
+            if let Some(flow) = flow_map.get(&(source_tx.chain_id, source_tx.nonce)) {
+                results.push((source_tx, flow.clone()));
+            }
+        }
 
         debug!(
             search_query = q,
@@ -308,35 +304,22 @@ impl DbClient {
         &self,
         l1_tx_hash: &str,
         chain_id: i64,
-    ) -> Result<
-        Option<(
-            bridge_source_transactions::Model,
-            bridge_destination_transactions::Model,
-        )>,
-        DbErr,
-    > {
-        let source_tx: Option<bridge_source_transactions::Model> =
-            bridge_source_transactions::Entity::find()
-                .filter(
-                    Condition::all()
-                        .add(bridge_source_transactions::Column::SourceTxHash.eq(l1_tx_hash))
-                        .add(bridge_source_transactions::Column::SourceChainId.eq(chain_id)),
-                )
-                .one(&self.primary)
-                .await?;
+    ) -> Result<Option<(source_transactions::Model, transaction_flows::Model)>, DbErr> {
+        let source_tx: Option<source_transactions::Model> = source_transactions::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(source_transactions::Column::TransactionHash.eq(l1_tx_hash))
+                    .add(source_transactions::Column::ChainId.eq(chain_id)),
+            )
+            .one(&self.primary)
+            .await?;
 
         if let Some(source_model) = source_tx {
-            let dest_tx = bridge_destination_transactions::Entity::find()
+            let dest_tx = transaction_flows::Entity::find()
                 .filter(
                     Condition::all()
-                        .add(
-                            bridge_destination_transactions::Column::SourceChainId
-                                .eq(source_model.source_chain_id),
-                        )
-                        .add(
-                            bridge_destination_transactions::Column::SourceNonce
-                                .eq(source_model.source_nonce),
-                        ),
+                        .add(transaction_flows::Column::ChainId.eq(source_model.chain_id))
+                        .add(transaction_flows::Column::Nonce.eq(source_model.nonce)),
                 )
                 .one(&self.primary)
                 .await?;
@@ -345,7 +328,7 @@ impl DbClient {
                 debug!(
                     l1_tx_hash = l1_tx_hash,
                     chain_id = chain_id,
-                    l2_tx_hash = dest_model.destination_tx_hash,
+                    l2_tx_hash = dest_model.handle_tx_hash,
                     "Found L2 transaction for L1 hash and chain ID"
                 );
                 return Ok(Some((source_model, dest_model)));
@@ -364,15 +347,7 @@ impl DbClient {
     pub async fn batch_find_l2_transactions_by_l1_transactions(
         &self,
         l1_transactions: &[(String, u64)],
-    ) -> Result<
-        Vec<
-            Option<(
-                bridge_source_transactions::Model,
-                bridge_destination_transactions::Model,
-            )>,
-        >,
-        DbErr,
-    > {
+    ) -> Result<Vec<Option<(source_transactions::Model, transaction_flows::Model)>>, DbErr> {
         if l1_transactions.is_empty() {
             return Ok(Vec::new());
         }
@@ -388,39 +363,62 @@ impl DbClient {
         for (hash, chain_id) in &hash_chain_pairs {
             condition = condition.add(
                 Condition::all()
-                    .add(bridge_source_transactions::Column::SourceTxHash.eq(hash))
-                    .add(bridge_source_transactions::Column::SourceChainId.eq(*chain_id)),
+                    .add(source_transactions::Column::TransactionHash.eq(hash))
+                    .add(source_transactions::Column::ChainId.eq(*chain_id)),
             );
         }
 
-        // Execute the batch query
-        let joined_data = bridge_source_transactions::Entity::find()
+        // Execute the batch query - first get source transactions
+        let source_transactions = source_transactions::Entity::find()
             .filter(condition)
-            .join(
-                JoinType::InnerJoin,
-                bridge_source_transactions::Relation::BridgeDestinationTransactions.def(),
-            )
-            .select_also(bridge_destination_transactions::Entity)
             .all(&self.primary)
             .await?;
+
+        if source_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build a condition to get all matching transaction flows in one query
+        let mut flow_condition = Condition::any();
+        for source_tx in &source_transactions {
+            flow_condition = flow_condition.add(
+                Condition::all()
+                    .add(transaction_flows::Column::ChainId.eq(source_tx.chain_id))
+                    .add(transaction_flows::Column::Nonce.eq(source_tx.nonce)),
+            );
+        }
+
+        let transaction_flows = transaction_flows::Entity::find()
+            .filter(flow_condition)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map for quick lookup
+        let mut flow_map = std::collections::HashMap::new();
+        for flow in transaction_flows {
+            flow_map.insert((flow.chain_id, flow.nonce), flow);
+        }
+
+        // Combine the results
+        let mut joined_data = Vec::new();
+        for source_tx in source_transactions {
+            if let Some(flow) = flow_map.get(&(source_tx.chain_id, source_tx.nonce)) {
+                joined_data.push((source_tx, flow.clone()));
+            }
+        }
 
         // Create a map of found results for quick lookup
         let mut found_results: HashMap<
             (String, i64),
-            (
-                bridge_source_transactions::Model,
-                bridge_destination_transactions::Model,
-            ),
+            (source_transactions::Model, transaction_flows::Model),
         > = HashMap::new();
 
-        for (source_model, dest_model_opt) in joined_data {
-            if let Some(dest_model) = dest_model_opt {
-                let key = (
-                    source_model.source_tx_hash.clone(),
-                    source_model.source_chain_id,
-                );
-                found_results.insert(key, (source_model, dest_model));
-            }
+        for (source_model, dest_model) in joined_data {
+            let key = (
+                source_model.transaction_hash.clone().unwrap_or_default(),
+                source_model.chain_id,
+            );
+            found_results.insert(key, (source_model, dest_model));
         }
 
         // Build results in the same order as input
@@ -436,6 +434,66 @@ impl DbClient {
             total_processed = results.len(),
             found_count = found_count,
             "Completed optimized batch lookup"
+        );
+
+        Ok(results)
+    }
+
+    #[instrument(skip(self), fields(user_address = %user_address))]
+    pub async fn fetch_user_deposits(
+        &self,
+        user_address: &str,
+    ) -> Result<Vec<(source_transactions::Model, Option<transaction_flows::Model>)>, DbErr> {
+        // First get all deposit transactions for the user
+        let source_transactions = source_transactions::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(source_transactions::Column::TransactionType.eq("Deposit"))
+                    .add(source_transactions::Column::L1Address.eq(user_address)),
+            )
+            .order_by_desc(source_transactions::Column::Timestamp)
+            .all(&self.primary)
+            .await?;
+
+        if source_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build a condition to get all matching transaction flows in one query
+        let mut flow_condition = Condition::any();
+        for source_tx in &source_transactions {
+            flow_condition = flow_condition.add(
+                Condition::all()
+                    .add(transaction_flows::Column::ChainId.eq(source_tx.chain_id))
+                    .add(transaction_flows::Column::Nonce.eq(source_tx.nonce)),
+            );
+        }
+
+        let transaction_flows = transaction_flows::Entity::find()
+            .filter(flow_condition)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map for quick lookup
+        let mut flow_map = std::collections::HashMap::new();
+        for flow in transaction_flows {
+            flow_map.insert((flow.chain_id, flow.nonce), flow);
+        }
+
+        // Combine the results - include all source transactions, even if no flow exists
+        let mut results = Vec::new();
+        for source_tx in source_transactions {
+            let flow = flow_map
+                .get(&(source_tx.chain_id, source_tx.nonce))
+                .cloned();
+            results.push((source_tx, flow));
+        }
+
+        debug!(
+            user_address = %user_address,
+            total_deposits = results.len(),
+            handled_deposits = results.iter().filter(|(_, flow)| flow.is_some()).count(),
+            "Fetched user deposits with LEFT JOIN behavior"
         );
 
         Ok(results)
