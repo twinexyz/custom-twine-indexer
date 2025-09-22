@@ -1,4 +1,4 @@
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::DbErr;
@@ -11,13 +11,14 @@ use crate::{
     pagination::{items_count, BridgeTransactionsPagination, PlaceholderPagination},
     types::{
         BatchL2TransactionHashRequest, BatchL2TransactionHashResponse, BridgeTransactionsResponse,
+        UserDepositsResponse,
     },
     ApiResponse, ApiResult, AppState,
 };
 use database::{
     bridge::FetchBridgeTransactionsParams,
     client::DbClient,
-    entities::{transaction_flows, source_transactions},
+    entities::{source_transactions, transaction_flows},
 };
 
 #[instrument(skip_all)]
@@ -71,6 +72,83 @@ pub async fn get_l1_forced_withdraws(
         |client, params| async move { client.fetch_l1_forced_withdraws_paginated(params).await },
     )
     .await
+}
+
+#[instrument(skip(state), fields(user_address = %user_address))]
+pub async fn get_user_deposits(
+    State(state): State<AppState>,
+    Path(user_address): Path<String>,
+) -> ApiResult<Vec<UserDepositsResponse>, PlaceholderPagination> {
+    info!(
+        user_address = %user_address,
+        "Fetching deposits for user"
+    );
+
+    let results = state
+        .db_client
+        .fetch_user_deposits(&user_address)
+        .await
+        .map_err(AppError::from)?;
+
+    let response_items: Vec<UserDepositsResponse> = results
+        .iter()
+        .map(|(source_tx, dest_tx_opt)| {
+            let created_at: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(
+                source_tx.timestamp.unwrap_or_default().naive_utc(),
+                FixedOffset::east_opt(0).expect("UTC offset should be valid"),
+            );
+
+            UserDepositsResponse {
+                l1_tx_hash: source_tx.transaction_hash.clone().unwrap_or_default(),
+                l2_tx_hash: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.handle_tx_hash.clone()),
+                l1_block_height: Some(source_tx.block_number),
+                l2_block_height: dest_tx_opt.as_ref().and_then(|tx| tx.handle_block_number),
+                status: dest_tx_opt.as_ref().and_then(|tx| tx.handle_status),
+                nonce: source_tx.nonce,
+                chain_id: source_tx.chain_id,
+                l1_token: Some(source_tx.l1_token.clone()),
+                l2_token: Some(source_tx.l2_token.clone()),
+                from: source_tx.l1_address.clone(),
+                to_twine_address: Some(source_tx.twine_address.clone()),
+                amount: Some(source_tx.amount.to_string()),
+                created_at,
+                l2_handled_at: dest_tx_opt.as_ref().and_then(|tx| tx.handled_at),
+                l1_execute_hash: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.execute_tx_hash.clone()),
+                l1_execute_block_height: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.execute_block_number),
+                l1_executed_at: dest_tx_opt.as_ref().and_then(|tx| tx.executed_at),
+                is_handled: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_handled)
+                    .unwrap_or(false),
+                is_executed: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_executed)
+                    .unwrap_or(false),
+                is_completed: dest_tx_opt
+                    .as_ref()
+                    .and_then(|tx| tx.is_completed)
+                    .unwrap_or(false),
+            }
+        })
+        .collect();
+
+    info!(
+        user_address = %user_address,
+        count = response_items.len(),
+        "Fetched user deposits"
+    );
+
+    Ok(ApiResponse {
+        success: true,
+        items: response_items,
+        next_page_params: None,
+    })
 }
 
 #[instrument(skip(state, request), fields(request_count = request.l1_transactions.len()))]
@@ -159,15 +237,8 @@ async fn get_paginated_bridge_transactions<F, Fut>(
 ) -> ApiResult<Vec<BridgeTransactionsResponse>, BridgeTransactionsPagination>
 where
     F: FnOnce(Arc<DbClient>, FetchBridgeTransactionsParams) -> Fut,
-    Fut: Future<
-        Output = Result<
-            Vec<(
-                source_transactions::Model,
-                transaction_flows::Model,
-            )>,
-            DbErr,
-        >,
-    >,
+    Fut:
+        Future<Output = Result<Vec<(source_transactions::Model, transaction_flows::Model)>, DbErr>>,
 {
     let items_count = items_count(pagination_query.items_count);
 

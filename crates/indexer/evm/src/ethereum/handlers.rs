@@ -13,7 +13,7 @@ use database::{
         blocks, transactions, twine_transaction_batch, twine_transaction_batch_detail,
     },
     client::DbClient,
-    entities::{transaction_flows, source_transactions},
+    entities::{source_transactions, transaction_flows},
     DbOperations,
 };
 use eyre::Result;
@@ -178,7 +178,9 @@ impl EthereumEventHandler {
             transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
             timestamp: Set(Some(decoded.timestamp.fixed_offset())),
             amount: Set(data.amount.to_string().parse::<Decimal>().unwrap()),
-            transaction_type: Set(database::entities::sea_orm_active_enums::TransactionTypeEnum::Deposit),
+            transaction_type: Set(
+                database::entities::sea_orm_active_enums::TransactionTypeEnum::Deposit,
+            ),
             ..Default::default()
         };
 

@@ -4,7 +4,9 @@ use crate::{
 };
 use axum::extract::{Query, State};
 use chrono::{DateTime, Utc};
-use database::entities::{sea_orm_active_enums::TransactionTypeEnum, source_transactions, transaction_flows};
+use database::entities::{
+    sea_orm_active_enums::TransactionTypeEnum, source_transactions, transaction_flows,
+};
 use eyre::{eyre, Result};
 use serde::Deserialize;
 use tracing::{error, instrument};
@@ -71,12 +73,12 @@ fn map_to_suggestion(
 
     dest: &transaction_flows::Model,
 ) -> Result<TransactionSuggestion> {
-    let to_address = source
-        .twine_address
-        .clone();
+    let to_address = source.twine_address.clone();
 
-    let timestamp_utc =
-        DateTime::<Utc>::from_naive_utc_and_offset(source.timestamp.unwrap_or_default().naive_utc(), Utc);
+    let timestamp_utc = DateTime::<Utc>::from_naive_utc_and_offset(
+        source.timestamp.unwrap_or_default().naive_utc(),
+        Utc,
+    );
 
     match source.transaction_type {
         TransactionTypeEnum::Deposit => Ok(TransactionSuggestion {
@@ -88,7 +90,10 @@ fn map_to_suggestion(
             token_symbol: extract_token_symbol(&Some(source.l1_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l1_deposit".to_string(),
-            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
+            url: format!(
+                "/tx/{}",
+                source.transaction_hash.clone().unwrap_or_default()
+            ),
         }),
 
         TransactionTypeEnum::Withdraw => Ok(TransactionSuggestion {
@@ -100,7 +105,10 @@ fn map_to_suggestion(
             token_symbol: extract_token_symbol(&Some(source.l2_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l2_withdraw".to_string(),
-            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
+            url: format!(
+                "/tx/{}",
+                source.transaction_hash.clone().unwrap_or_default()
+            ),
         }),
 
         TransactionTypeEnum::ForcedWithdraw => Ok(TransactionSuggestion {
@@ -112,7 +120,10 @@ fn map_to_suggestion(
             token_symbol: extract_token_symbol(&Some(source.l1_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l1_forced_withdraw".to_string(),
-            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
+            url: format!(
+                "/tx/{}",
+                source.transaction_hash.clone().unwrap_or_default()
+            ),
         }),
     }
 }

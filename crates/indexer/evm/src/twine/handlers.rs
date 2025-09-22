@@ -10,13 +10,15 @@ use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
 use database::{
     client::DbClient,
-    entities::{transaction_flows, source_transactions},
+    entities::{source_transactions, transaction_flows},
     DbOperations,
 };
 use eyre::Result;
 use generic_indexer::handler::ChainEventHandler;
 use sea_orm::{
-    prelude::Decimal, sqlx::{decode, types::uuid::timestamp}, ActiveValue::Set
+    prelude::Decimal,
+    sqlx::{decode, types::uuid::timestamp},
+    ActiveValue::Set,
 };
 use tracing::{error, info, instrument, warn};
 use twine_evm_contracts::evm::{
@@ -190,7 +192,9 @@ impl TwineEventHandler {
             transaction_hash: Set(Some(decoded.tx_hash_str.clone())),
             timestamp: Set(Some(decoded.timestamp.fixed_offset())),
             amount: Set(data.amount.to_string().parse::<Decimal>().unwrap()),
-            transaction_type: Set(database::entities::sea_orm_active_enums::TransactionTypeEnum::Withdraw),
+            transaction_type: Set(
+                database::entities::sea_orm_active_enums::TransactionTypeEnum::Withdraw,
+            ),
             ..Default::default()
         };
 

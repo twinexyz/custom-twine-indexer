@@ -438,4 +438,64 @@ impl DbClient {
 
         Ok(results)
     }
+
+    #[instrument(skip(self), fields(user_address = %user_address))]
+    pub async fn fetch_user_deposits(
+        &self,
+        user_address: &str,
+    ) -> Result<Vec<(source_transactions::Model, Option<transaction_flows::Model>)>, DbErr> {
+        // First get all deposit transactions for the user
+        let source_transactions = source_transactions::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(source_transactions::Column::TransactionType.eq("Deposit"))
+                    .add(source_transactions::Column::L1Address.eq(user_address)),
+            )
+            .order_by_desc(source_transactions::Column::Timestamp)
+            .all(&self.primary)
+            .await?;
+
+        if source_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build a condition to get all matching transaction flows in one query
+        let mut flow_condition = Condition::any();
+        for source_tx in &source_transactions {
+            flow_condition = flow_condition.add(
+                Condition::all()
+                    .add(transaction_flows::Column::ChainId.eq(source_tx.chain_id))
+                    .add(transaction_flows::Column::Nonce.eq(source_tx.nonce)),
+            );
+        }
+
+        let transaction_flows = transaction_flows::Entity::find()
+            .filter(flow_condition)
+            .all(&self.primary)
+            .await?;
+
+        // Create a map for quick lookup
+        let mut flow_map = std::collections::HashMap::new();
+        for flow in transaction_flows {
+            flow_map.insert((flow.chain_id, flow.nonce), flow);
+        }
+
+        // Combine the results - include all source transactions, even if no flow exists
+        let mut results = Vec::new();
+        for source_tx in source_transactions {
+            let flow = flow_map
+                .get(&(source_tx.chain_id, source_tx.nonce))
+                .cloned();
+            results.push((source_tx, flow));
+        }
+
+        debug!(
+            user_address = %user_address,
+            total_deposits = results.len(),
+            handled_deposits = results.iter().filter(|(_, flow)| flow.is_some()).count(),
+            "Fetched user deposits with LEFT JOIN behavior"
+        );
+
+        Ok(results)
+    }
 }
