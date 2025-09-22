@@ -4,10 +4,7 @@ use crate::{
 };
 use axum::extract::{Query, State};
 use chrono::{DateTime, Utc};
-use database::entities::{
-    bridge_destination_transactions, bridge_source_transactions,
-    sea_orm_active_enums::EventTypeEnum,
-};
+use database::entities::{sea_orm_active_enums::TransactionTypeEnum, source_transactions, transaction_flows};
 use eyre::{eyre, Result};
 use serde::Deserialize;
 use tracing::{error, instrument};
@@ -70,55 +67,52 @@ pub async fn quick_search(
 }
 
 fn map_to_suggestion(
-    source: &bridge_source_transactions::Model,
+    source: &source_transactions::Model,
 
-    dest: &bridge_destination_transactions::Model,
+    dest: &transaction_flows::Model,
 ) -> Result<TransactionSuggestion> {
     let to_address = source
-        .target_recipient_address
-        .as_deref()
-        .or(source.source_to_address.as_deref())
-        .unwrap_or_default()
-        .to_string();
+        .twine_address
+        .clone();
 
     let timestamp_utc =
-        DateTime::<Utc>::from_naive_utc_and_offset(source.source_event_timestamp, Utc);
+        DateTime::<Utc>::from_naive_utc_and_offset(source.timestamp.unwrap_or_default().naive_utc(), Utc);
 
-    match source.event_type {
-        EventTypeEnum::Deposit => Ok(TransactionSuggestion {
-            l1_hash: source.source_tx_hash.clone(),
-            l2_hash: dest.destination_tx_hash.clone(),
-            block_number: source.source_height.unwrap_or(0).to_string(),
-            from: source.source_from_address.clone(),
+    match source.transaction_type {
+        TransactionTypeEnum::Deposit => Ok(TransactionSuggestion {
+            l1_hash: source.transaction_hash.clone().unwrap_or_default(),
+            l2_hash: dest.handle_tx_hash.clone().unwrap_or_default(),
+            block_number: source.block_number.to_string(),
+            from: source.l1_address.clone(),
             to: to_address,
-            token_symbol: extract_token_symbol(&source.source_token_address),
+            token_symbol: extract_token_symbol(&Some(source.l1_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l1_deposit".to_string(),
-            url: format!("/tx/{}", source.source_tx_hash),
+            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
         }),
 
-        EventTypeEnum::Withdraw => Ok(TransactionSuggestion {
-            l1_hash: dest.destination_tx_hash.clone(),
-            l2_hash: source.source_tx_hash.clone(),
-            block_number: source.source_height.unwrap_or(0).to_string(),
-            from: source.source_from_address.clone(),
+        TransactionTypeEnum::Withdraw => Ok(TransactionSuggestion {
+            l1_hash: dest.execute_tx_hash.clone().unwrap_or_default(),
+            l2_hash: source.transaction_hash.clone().unwrap_or_default(),
+            block_number: source.block_number.to_string(),
+            from: source.l1_address.clone(),
             to: to_address,
-            token_symbol: extract_token_symbol(&source.source_token_address),
+            token_symbol: extract_token_symbol(&Some(source.l2_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l2_withdraw".to_string(),
-            url: format!("/tx/{}", source.source_tx_hash),
+            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
         }),
 
-        EventTypeEnum::ForcedWithdraw => Ok(TransactionSuggestion {
-            l1_hash: source.source_tx_hash.clone(),
-            l2_hash: dest.destination_tx_hash.clone(),
-            block_number: source.source_height.unwrap_or(0).to_string(),
-            from: source.source_from_address.clone(),
+        TransactionTypeEnum::ForcedWithdraw => Ok(TransactionSuggestion {
+            l1_hash: source.transaction_hash.clone().unwrap_or_default(),
+            l2_hash: dest.handle_tx_hash.clone().unwrap_or_default(),
+            block_number: source.block_number.to_string(),
+            from: source.l1_address.clone(),
             to: to_address,
-            token_symbol: extract_token_symbol(&source.source_token_address),
+            token_symbol: extract_token_symbol(&Some(source.l1_token.clone())),
             timestamp: timestamp_utc,
             r#type: "l1_forced_withdraw".to_string(),
-            url: format!("/tx/{}", source.source_tx_hash),
+            url: format!("/tx/{}", source.transaction_hash.clone().unwrap_or_default()),
         }),
     }
 }

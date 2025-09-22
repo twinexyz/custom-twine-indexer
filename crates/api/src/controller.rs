@@ -17,7 +17,7 @@ use crate::{
 use database::{
     bridge::FetchBridgeTransactionsParams,
     client::DbClient,
-    entities::{bridge_destination_transactions, bridge_source_transactions},
+    entities::{transaction_flows, source_transactions},
 };
 
 #[instrument(skip_all)]
@@ -112,16 +112,16 @@ pub async fn get_l2_txns_for_l1_txn(
         .map(|(l1_tx, result)| match result {
             Some((_source_tx, dest_tx)) => {
                 let timestamp = dest_tx
-                    .destination_processed_at
-                    .unwrap_or_else(|| Utc::now().naive_utc())
-                    .and_utc();
+                    .handled_at
+                    .unwrap_or_else(|| Utc::now().fixed_offset())
+                    .naive_utc();
 
                 BatchL2TransactionHashResponse {
                     l1_tx_hash: l1_tx.l1_transaction_hash.clone(),
                     l1_chain_id: l1_tx.l1_chain_id,
-                    l2_tx_hash: Some(dest_tx.destination_tx_hash.clone()),
-                    block_height: dest_tx.destination_height,
-                    timestamp: Some(timestamp),
+                    l2_tx_hash: Some(dest_tx.handle_tx_hash.clone().unwrap_or_default()),
+                    block_height: dest_tx.handle_block_number,
+                    timestamp: Some(DateTime::<Utc>::from_naive_utc_and_offset(timestamp, Utc)),
                     found: true,
                 }
             }
@@ -162,8 +162,8 @@ where
     Fut: Future<
         Output = Result<
             Vec<(
-                bridge_source_transactions::Model,
-                bridge_destination_transactions::Model,
+                source_transactions::Model,
+                transaction_flows::Model,
             )>,
             DbErr,
         >,
@@ -192,23 +192,27 @@ where
         .iter()
         .map(|(source_tx, dest_tx)| {
             let created_at: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(
-                source_tx.source_event_timestamp,
+                source_tx.timestamp.unwrap_or_default().naive_utc(),
                 FixedOffset::east_opt(0).expect("UTC offset should be valid"),
             );
             BridgeTransactionsResponse {
-                l1_tx_hash: source_tx.source_tx_hash.clone(),
-                l2_tx_hash: dest_tx.destination_tx_hash.clone(),
-                l1_block_height: source_tx.source_height,
-                l2_block_height: dest_tx.destination_height,
-                status: dest_tx.destination_status_code,
-                nonce: source_tx.source_nonce,
-                chain_id: source_tx.source_chain_id,
-                l1_token: source_tx.source_token_address.clone(),
-                l2_token: source_tx.destination_token_address.clone(),
-                from: source_tx.source_from_address.clone(),
-                to_twine_address: source_tx.target_recipient_address.clone(),
-                amount: source_tx.amount.clone(),
+                source_tx_hash: source_tx.transaction_hash.clone().unwrap_or_default(),
+                l2_handle_tx_hash: dest_tx.handle_tx_hash.clone().unwrap_or_default(),
+                source_block_height: Some(source_tx.block_number),
+                l2_handle_block_height: dest_tx.handle_block_number,
+                status: dest_tx.handle_status,
+                nonce: source_tx.nonce,
+                chain_id: source_tx.chain_id,
+                l1_token: Some(source_tx.l1_token.clone()),
+                l2_token: Some(source_tx.l2_token.clone()),
+                from: source_tx.l1_address.clone(),
+                to_twine_address: Some(source_tx.twine_address.clone()),
+                amount: Some(source_tx.amount.to_string()),
                 created_at,
+                l2_handled_at: dest_tx.handled_at,
+                l1_execute_hash: dest_tx.execute_tx_hash.clone(),
+                l1_execute_block_height: dest_tx.execute_block_number,
+                l1_executed_at: dest_tx.executed_at,
             }
         })
         .collect();
@@ -218,8 +222,8 @@ where
             .last()
             .map(|(s_tx, _d_tx)| BridgeTransactionsPagination {
                 items_count: Some(items_count),
-                chain_id: Some(s_tx.source_chain_id as u64),
-                nonce: Some(s_tx.source_nonce as u64),
+                chain_id: Some(s_tx.chain_id as u64),
+                nonce: Some(s_tx.nonce as u64),
             })
     } else {
         None

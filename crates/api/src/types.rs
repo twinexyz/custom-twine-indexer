@@ -3,13 +3,22 @@ use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 pub struct BridgeTransactionsResponse {
-    pub l1_tx_hash: String,
-    pub l2_tx_hash: String,
-    pub l1_block_height: Option<i64>,
-    pub l2_block_height: Option<i64>,
-    pub status: Option<i16>,
+    pub source_tx_hash: String,
+    pub source_block_height: Option<i64>,
     pub nonce: i64,
     pub chain_id: i64,
+
+
+    pub l2_handle_tx_hash: String,
+    pub l2_handled_at: Option<DateTimeWithTimeZone>,
+    pub l2_handle_block_height: Option<i64>,
+
+    pub l1_execute_hash: Option<String>,
+    pub l1_execute_block_height: Option<i64>,
+    pub l1_executed_at: Option<DateTimeWithTimeZone>,
+
+
+    pub status: Option<i16>,
     pub l1_token: Option<String>,
     pub l2_token: Option<String>,
     pub from: String,

@@ -3,12 +3,16 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "event_type_enum")]
-pub enum EventTypeEnum {
-    #[sea_orm(string_value = "deposit")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "transaction_type_enum"
+)]
+pub enum TransactionTypeEnum {
+    #[sea_orm(string_value = "Deposit")]
     Deposit,
-    #[sea_orm(string_value = "withdraw")]
+    #[sea_orm(string_value = "Withdraw")]
     Withdraw,
-    #[sea_orm(string_value = "forced_withdraw")]
+    #[sea_orm(string_value = "ForcedWithdraw")]
     ForcedWithdraw,
 }
