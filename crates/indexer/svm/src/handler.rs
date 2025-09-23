@@ -137,7 +137,7 @@ impl SolanaEventHandler {
             Pubkey::from_str_const(&self.config.twine_chain_program_address.clone());
         let gateway_id =
             Pubkey::from_str_const(&self.config.tokens_gateway_program_address.clone());
-        return vec![twine_chain_id, gateway_id];
+        return vec![twine_chain_id];
     }
 
     async fn handle_deposit(

@@ -46,7 +46,10 @@ type ApiResult<T, P> = Result<ApiResponse<T, P>, AppError>;
 fn make_server(state: AppState) -> Router {
     Router::new()
         .route("/l1_deposits", get(controller::get_l1_deposits))
-        .route("/get_user_deposits/{user_address}", get(controller::get_user_deposits))
+        .route(
+            "/get_user_deposits/{user_address}",
+            get(controller::get_user_deposits),
+        )
         .route("/l2_withdraws", get(controller::get_l2_withdraws))
         .route("/l1_withdraws", get(controller::get_l1_forced_withdraws))
         .route("/search/quick", get(search::quick_search))

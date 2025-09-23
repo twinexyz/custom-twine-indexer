@@ -12,6 +12,7 @@ pub mod client;
 pub mod connect;
 pub mod entities;
 
+#[derive(Debug, Clone)]
 pub enum DbOperations {
     BridgeSourceTransaction(source_transactions::ActiveModel),
     BridgeDestinationTransactions(transaction_flows::ActiveModel),

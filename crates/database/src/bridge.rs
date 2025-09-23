@@ -63,7 +63,12 @@ impl DbClient {
                     transaction_flows::Column::ChainId,
                     transaction_flows::Column::Nonce,
                 ])
-                .do_nothing()
+                .update_columns([
+                    transaction_flows::Column::ExecuteTxHash,
+                    transaction_flows::Column::ExecuteBlockNumber,
+                    transaction_flows::Column::IsExecuted,
+                    transaction_flows::Column::ExecutedAt,
+                ])
                 .to_owned(),
             )
             .exec_with_returning_many(txn)

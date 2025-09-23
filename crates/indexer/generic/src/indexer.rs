@@ -245,6 +245,7 @@ pub trait ChainIndexer: Send + Sync {
         logs: Vec<<Self::EventHandler as ChainEventHandler>::LogType>,
         max_seen_height: u64,
     ) -> eyre::Result<()> {
+
         let concurrency_limit =
             self.get_indexer_settings().max_concurrency_for_log_process as usize;
         let semaphore = Arc::new(Semaphore::new(concurrency_limit));
