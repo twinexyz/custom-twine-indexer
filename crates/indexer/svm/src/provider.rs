@@ -86,6 +86,10 @@ impl SvmProvider {
         batch_size: u64,
     ) -> eyre::Result<Vec<RpcConfirmedTransactionStatusWithSignature>> {
         let mut all_signatures = Vec::new();
+        let mut unique_signatures: std::collections::HashMap<
+            String,
+            RpcConfirmedTransactionStatusWithSignature,
+        > = std::collections::HashMap::new();
         let mut before: Option<String> = None;
 
         loop {
@@ -134,7 +138,18 @@ impl SvmProvider {
         all_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
         all_signatures.dedup_by(|a, b| a.signature == b.signature);
 
-        Ok(all_signatures)
+        for sig in all_signatures {
+            unique_signatures
+                .entry(sig.signature.clone())
+                .or_insert(sig);
+        }
+
+        let mut filtered_signatures: Vec<RpcConfirmedTransactionStatusWithSignature> =
+            unique_signatures.into_values().collect();
+
+        filtered_signatures.sort_by(|a, b| a.slot.cmp(&b.slot).then(a.signature.cmp(&b.signature)));
+
+        Ok(filtered_signatures)
     }
 
     pub async fn get_transaction(
