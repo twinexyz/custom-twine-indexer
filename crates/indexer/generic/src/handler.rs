@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use common::config::ChainConfig;
-use database::{DbOperations, client::DbClient};
+use database::DbOperations;
 
 #[async_trait]
 pub trait ChainEventHandler {

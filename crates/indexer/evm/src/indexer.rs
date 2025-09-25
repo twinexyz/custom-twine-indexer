@@ -14,7 +14,7 @@ use common::config::{ChainConfig, EvmConfig, IndexerSettings};
 use database::{client::DbClient, entities::last_synced, DbOperations};
 use eyre::{eyre, Error};
 use futures_util::{Stream, StreamExt};
-use generic_indexer::{handler::ChainEventHandler, indexer::ChainIndexer};
+use generic_indexer::{handler::ChainEventHandler, indexer::ChainIndexer, state::IndexerState};
 use tokio::{
     spawn,
     sync::{watch, Semaphore},
@@ -36,7 +36,6 @@ pub struct EvmIndexer<H: EvmEventHandler + ChainEventHandler<LogType = Log>> {
 #[async_trait]
 impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for EvmIndexer<H> {
     type EventHandler = H;
-    type LiveStream = Pin<Box<dyn Stream<Item = eyre::Result<Log>> + Send>>;
 
     fn get_event_handler(&self) -> Self::EventHandler {
         self.handler.clone()
@@ -48,17 +47,6 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
 
     fn get_indexer_settings(&self) -> IndexerSettings {
         self.settings.clone()
-    }
-
-    async fn subscribe_live(&self, from_block: Option<u64>) -> eyre::Result<Self::LiveStream> {
-        self.provider
-            .subscribe_logs(
-                &self.handler.relevant_addresses(),
-                &self.handler.relevant_topics(),
-                from_block,
-            )
-            .await
-            .map(|stream| Box::pin(stream.map(|log| Ok(log))) as Self::LiveStream)
     }
 
     async fn get_initial_state(&self) -> eyre::Result<u64> {
