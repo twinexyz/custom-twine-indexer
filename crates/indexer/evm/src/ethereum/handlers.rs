@@ -252,7 +252,7 @@ impl EthereumEventHandler {
             log.clone(),
             TwineChain::ForcedWithdrawalSuccessful::SIGNATURE,
         )?;
-    let data = decoded.data;
+        let data = decoded.data;
 
         let l2_chain_id = self.twine_provider.get_chain_id();
 

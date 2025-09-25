@@ -70,7 +70,7 @@ impl SolanaIndexer {
     pub fn new(handler: SolanaEventHandler, db: Arc<DbClient>, settings: IndexerSettings) -> Self {
         let config = handler.get_chain_config();
 
-        let provider = SvmProvider::new(&config.http_rpc_url, &config.ws_rpc_url, config.chain_id);
+        let provider = SvmProvider::new(&config.http_rpc_url, config.chain_id);
 
         Self {
             provider,
