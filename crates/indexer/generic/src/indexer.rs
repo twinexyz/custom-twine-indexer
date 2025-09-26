@@ -1,20 +1,19 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use crate::handler::ChainEventHandler;
+use crate::{handler::ChainEventHandler, state::IndexerState};
 use async_trait::async_trait;
 use common::config::IndexerSettings;
 use database::client::DbClient;
 use eyre::Error;
-use futures_util::{Stream, StreamExt};
-use tokio::{sync::Semaphore, task::JoinSet, time::Instant};
+use tokio::{sync::Semaphore, task::JoinSet, time::sleep};
 use tracing::{debug, error, info, instrument};
 
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
     type EventHandler: ChainEventHandler + Clone + Send + Sync + 'static;
-    type LiveStream: Stream<Item = eyre::Result<<Self::EventHandler as ChainEventHandler>::LogType>>
-        + Send
-        + 'static;
 
     async fn get_initial_state(&self) -> eyre::Result<u64>;
 
@@ -23,8 +22,6 @@ pub trait ChainIndexer: Send + Sync {
         from: u64,
         to: u64,
     ) -> eyre::Result<Vec<<Self::EventHandler as ChainEventHandler>::LogType>>;
-
-    async fn subscribe_live(&self, from_block: Option<u64>) -> eyre::Result<Self::LiveStream>;
 
     async fn get_current_chain_height(&self) -> eyre::Result<u64>;
     fn get_block_number_from_log(
@@ -47,10 +44,15 @@ pub trait ChainIndexer: Send + Sync {
             self.get_event_handler().chain_id()
         );
 
-        match self.sync_historical(initial_height).await {
+        let mut indexer_state = IndexerState::new(
+            initial_height,
+            self.get_event_handler().chain_id(),
+            self.get_event_handler().get_chain_config().block_time_ms,
+        );
+
+        match self.sync_chain(&mut indexer_state).await {
             Ok(()) => {
                 info!("Historical sync completed successfully");
-                self.sync_live().await?;
             }
             Err(e) => {
                 error!("Error during historical sync: {:?}", e);
@@ -62,182 +64,147 @@ pub trait ChainIndexer: Send + Sync {
     }
 
     #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]
-    async fn sync_live(&self) -> Result<(), Error> {
-        let settings = self.get_indexer_settings();
-
-        let max_batch_size: usize = settings.max_log_batch_size as usize;
-        let max_batch_time: Duration = Duration::from_secs(settings.max_log_batch_time);
-
-        let mut reconnect_attempts = 0;
-
+    async fn sync_chain(&self, indexer_state: &mut IndexerState) -> Result<(), Error> {
+        let chain_config = self.get_event_handler().get_chain_config();
+        let block_time_ms = chain_config.block_time_ms;
+        let batch_size = chain_config.block_sync_batch_size;
         loop {
-            let last_synced = self
-                .get_db_client()
-                .get_last_synced_height(self.get_event_handler().chain_id() as i64, 0)
-                .await?;
+            let current_chain_height = self.get_current_chain_height().await?;
 
-            if reconnect_attempts > 5 {
-                info!("Switching to historical from live sync");
-                self.sync_historical(last_synced as u64).await?;
+            let current_indexer_height = indexer_state.get_last_processed_block();
+            if current_indexer_height >= current_chain_height {
+                info!(
+                    "Historical sync caught up to block {}. Switching to live or sleeping.",
+                    current_indexer_height
+                );
+                sleep(Duration::from_millis(block_time_ms / 2)).await;
                 continue;
             }
 
-            match self.subscribe_live(Some(last_synced as u64)).await {
-                Ok(stream) => {
-                    info!("Subscribed to live logs");
-                    reconnect_attempts = 0;
+            let mut start_block = current_indexer_height;
+            while start_block <= current_chain_height {
+                let mut reconnect_attempt = 0;
+                let batch_end = (start_block + batch_size).min(current_chain_height);
 
-                    let mut buffer = Vec::with_capacity(max_batch_size);
-                    let mut last_flush = tokio::time::Instant::now();
-                    let mut max_seen_block = last_synced;
+                info!(
+                    "Processing blocks {} to {} (batch of {}) and lagging by {} blocks",
+                    start_block,
+                    batch_end,
+                    batch_end - start_block + 1,
+                    (current_chain_height - batch_end).max(0)
+                );
 
-                    let mut value = Box::pin(stream);
-                    loop {
-                        let sleep_duration = max_batch_time.saturating_sub(last_flush.elapsed());
-                        let sleep_future = tokio::time::sleep(sleep_duration);
-                        tokio::pin!(sleep_future);
+                match self.get_historical_logs(start_block, batch_end).await {
+                    Ok(logs) => {
+                        if logs.is_empty() {
+                            info!(
+                                "No relevant logs found in blocks {} to {}",
+                                start_block, batch_end
+                            );
+                        } else {
+                            info!(
+                                "Processing {} logs from blocks {} to {}",
+                                logs.len(),
+                                start_block,
+                                batch_end
+                            );
 
-                        tokio::select! {
-                            maybe_log = value.next() => {
-                                match maybe_log {
-                                    Some(log) => {
-                                        if let Ok(log) = log {
-                                            let log_block_number = self.get_block_number_from_log(&log.clone());
-
-
-
-                                            if let Some(block_number) = log_block_number {
-                                           max_seen_block = max_seen_block.max(block_number as i64);
-                                        }
-
-                                        buffer.push(log);
-
-                                            let mut valid_logs: Vec<_> = buffer.clone();
-
-                                            if valid_logs.len() >= max_batch_size {
-                                                self.process_buffer(&mut valid_logs, max_seen_block).await?;
-                                                // self.process_buffer(&mut buffer, max_seen_block).await?;
-                                                last_flush = Instant::now();
-                                            }
-                                        }
-
-                                    }
-                                    None => {
-                                        info!("Stream closed. Reconnecting...");
-                                        break;
-                                    }
+                            match self.process_logs(logs, batch_end).await {
+                                Ok(_) => {
+                                    info!(
+                                        "Successfully processed and persisted logs for blocks {} to {}",
+                                        start_block, batch_end
+                                    );
                                 }
-                            }
-
-                            _ = &mut sleep_future => {
-                                if !buffer.is_empty() {
-                                    self.process_buffer(&mut buffer, max_seen_block).await?;
-                                    last_flush = Instant::now();
-                                    max_seen_block = 0;
+                                Err(e) => {
+                                    error!(
+                                        "Error processing batch for blocks {} to {}: {:?}. Will retry this batch.",
+                                        start_block, batch_end, e
+                                    );
+                                    // Implement retry logic with backoff, or halt if unrecoverable
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    continue; // Retry the same batch
                                 }
                             }
                         }
+
+                        indexer_state.update_block(batch_end);
+                        start_block = batch_end + 1;
+                    }
+
+                    Err(e) => {
+                        reconnect_attempt += 1;
+
+                        error!(
+                            "Error while getting logs from {:?} to {:?}, error: {:?}",
+                            start_block, batch_end, e
+                        );
+
+                        let delay = Duration::from_secs(5);
+
+                        tokio::time::sleep(delay * 2u32.pow(reconnect_attempt)).await;
+                        continue; // Retry the same batch
                     }
                 }
-
-                Err(e) => {
-                    let delay = Duration::from_secs(5);
-
-                    reconnect_attempts += 1;
-                    error!(
-                        "Error subscribing to logs: {:?}. Reconnect attemp:{:?}, Retrying in {:?}",
-                        e, reconnect_attempts, delay
-                    );
-                    tokio::time::sleep(delay * 2u32.pow(reconnect_attempts)).await;
-                }
             }
+
+            let sleep_duration = self.calculate_sleep_duration(
+                current_indexer_height,
+                current_chain_height,
+                block_time_ms,
+                None,
+            );
+            tokio::time::sleep(sleep_duration).await;
+
+            continue;
         }
     }
 
-    #[instrument(skip_all, fields(CHAIN = %self.get_event_handler().chain_id()))]
-    async fn sync_historical(&self, from: u64) -> Result<(), Error> {
-        let current_block = self.get_current_chain_height().await?;
-        let mut start_block = from;
+    /// Calculate sleep duration based on actual block timing
+    // #[instrument(skip(self), fields(chain_id = %self.handler.get_chain_config().chain_id))]
+    fn calculate_sleep_duration(
+        &self,
+        current_block: u64,
+        available_latest_block: u64,
+        block_time_ms: u64,
+        last_processed_block_info: Option<(u64, u64)>,
+    ) -> Duration {
+        if current_block >= available_latest_block {
+            // Use the timestamp from the last processed block if available
+            if let Some((_, timestamp)) = last_processed_block_info {
+                let current_time = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
 
-        let mut reconnect_attempt = 0;
+                // Calculate when the next block should be produced
+                let next_block_expected_time = timestamp + block_time_ms;
 
-        if start_block >= current_block {
-            info!(
-                "Historical sync caught up to block {}. Switching to live or sleeping.",
-                start_block
-            );
-
-            ()
-        }
-
-        while start_block < current_block {
-            let end_block = (start_block
-                + self
-                    .get_event_handler()
-                    .get_chain_config()
-                    .block_sync_batch_size)
-                .min(current_block);
-
-            info!(
-                "Missing blocks: {} and Fetching logs for blocks {} to {}",
-                current_block - start_block,
-                start_block,
-                end_block
-            );
-
-            match self.get_historical_logs(start_block, end_block).await {
-                Ok(logs) => {
-                    if logs.is_empty() {
-                        info!(
-                            "No relevant logs found in blocks {} to {}",
-                            start_block, end_block
-                        );
-                    } else {
-                        info!(
-                            "Processing {} logs from blocks {} to {}",
-                            logs.len(),
-                            start_block,
-                            end_block
-                        );
-
-                        match self.process_logs(logs, end_block).await {
-                            Ok(_) => {
-                                info!(
-                                    "Successfully processed and persisted logs for blocks {} to {}",
-                                    start_block, end_block
-                                );
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Error processing batch for blocks {} to {}: {:?}. Will retry this batch.",
-                                    start_block, end_block, e
-                                );
-                                // Implement retry logic with backoff, or halt if unrecoverable
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                                continue; // Retry the same batch
-                            }
-                        }
-                    }
-
-                    start_block = end_block + 1;
-                }
-
-                Err(e) => {
-                    reconnect_attempt += 1;
-
-                    error!(
-                        "Error while getting logs from {:?} to {:?}, error: {:?}",
-                        start_block, end_block, e
-                    );
-
-                    let delay = Duration::from_secs(5);
-
-                    tokio::time::sleep(delay * 2u32.pow(reconnect_attempt)).await;
-                    continue; // Retry the same batch
+                if next_block_expected_time > current_time {
+                    let time_until_next_block = next_block_expected_time - current_time;
+                    // Cap sleep time to reasonable bounds
+                    let sleep_ms = time_until_next_block.min(block_time_ms * 2).max(100);
+                    return Duration::from_millis(sleep_ms);
                 }
             }
+
+            // Fallback: sleep for a portion of block time when caught up
+            return Duration::from_millis(block_time_ms / 2);
         }
-        Ok(())
+
+        // If we're behind, use shorter sleep intervals to catch up faster
+        let blocks_behind = available_latest_block - current_block;
+
+        if blocks_behind > 10 {
+            // Far behind: very short sleep to catch up quickly
+            Duration::from_millis(100)
+        } else if blocks_behind > 5 {
+            // Moderately behind: short sleep
+            Duration::from_millis(block_time_ms / 4)
+        } else {
+            // Close to caught up: normal sleep
+            Duration::from_millis(block_time_ms / 2)
+        }
     }
 
     async fn process_logs(

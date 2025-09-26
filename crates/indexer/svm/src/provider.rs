@@ -5,10 +5,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use eyre::eyre;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use serde_json::json;
 use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
+    nonblocking::rpc_client::RpcClient,
     rpc_client::GetConfirmedSignaturesForAddress2Config,
     rpc_config::{
         RpcSignaturesForAddressConfig, RpcTransactionConfig, RpcTransactionLogsConfig,
@@ -23,7 +23,7 @@ use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
 };
-use tokio::sync::{mpsc::Receiver, OnceCell};
+use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info};
 
@@ -32,13 +32,11 @@ use crate::parser::{parse_json_log, SolanaLog};
 #[derive(Clone)]
 pub struct SvmProvider {
     http: Arc<RpcClient>,
-    ws: Arc<OnceCell<Arc<PubsubClient>>>,
     commitment: CommitmentConfig,
-    ws_url: String,
 }
 
 impl SvmProvider {
-    pub fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
+    pub fn new(http_url: &str, chain_id: u64) -> Self {
         // let pubsub_client = Arc::new(
         //     PubsubClient::new(ws_url)
         //         .await
@@ -50,25 +48,9 @@ impl SvmProvider {
                 http_url.to_string(),
                 Duration::from_secs(30),
             )),
-            ws: Arc::new(OnceCell::new()),
 
             commitment: CommitmentConfig::finalized(),
-            ws_url: ws_url.to_string(),
         }
-    }
-
-    async fn ws_provider(&self) -> eyre::Result<&Arc<PubsubClient>> {
-        self.ws
-            .get_or_try_init(|| async {
-                let pubsub_client = PubsubClient::new(&self.ws_url)
-                    .await
-                    .map_err(|e| eyre::eyre!("Failed to connect to WebSocket: {}", e))?;
-
-                let provider = Arc::new(pubsub_client);
-
-                Ok(provider)
-            })
-            .await
     }
 
     pub async fn get_slot(&self) -> eyre::Result<u64> {
@@ -255,39 +237,5 @@ impl SvmProvider {
         all_found_events.sort_by_key(|event| event.slot_number);
 
         Ok(all_found_events)
-    }
-
-    pub async fn subscribe_logs(
-        &self,
-        program_id: &Pubkey,
-    ) -> Result<ReceiverStream<Response<RpcLogsResponse>>, eyre::Error> {
-        let (tx, rx) = tokio::sync::mpsc::channel(256);
-
-        let program_id = *program_id; // Copy the pubkey
-        let ws = self.ws_provider().await?;
-        let ws_client = Arc::clone(&ws);
-
-        tokio::spawn(async move {
-            let filter = RpcTransactionLogsFilter::Mentions(vec![program_id.to_string()]);
-            let config = RpcTransactionLogsConfig {
-                commitment: Some(CommitmentConfig::finalized()),
-            };
-
-            match ws_client.logs_subscribe(filter, config).await {
-                Ok((mut subscription, _unsubscriber)) => {
-                    while let Some(logs) = subscription.next().await {
-                        if let Err(e) = tx.send(logs).await {
-                            error!("Failed to send logs: {}", e);
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to subscribe to logs: {}", e);
-                }
-            }
-        });
-
-        Ok(ReceiverStream::new(rx))
     }
 }

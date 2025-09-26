@@ -30,7 +30,6 @@ async fn main() -> Result<()> {
         cfg.l1s.ethereum.clone(),
         Arc::new(EvmProvider::new(
             &cfg.twine.common.http_rpc_url,
-            &cfg.twine.common.ws_rpc_url,
             cfg.twine.common.chain_id,
         )),
     );
@@ -39,7 +38,6 @@ async fn main() -> Result<()> {
         cfg.l1s.solana.clone(),
         Arc::new(EvmProvider::new(
             &cfg.twine.common.http_rpc_url,
-            &cfg.twine.common.ws_rpc_url,
             cfg.twine.common.chain_id,
         )),
     );

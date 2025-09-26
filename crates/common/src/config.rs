@@ -1,4 +1,4 @@
-use config::{Config, File, Value};
+use config::{Config, File};
 use dotenv::dotenv;
 use eyre::{eyre, Result};
 use serde::{de::DeserializeOwned, Deserialize};
@@ -43,10 +43,10 @@ pub struct ApiConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct ChainConfig {
     pub http_rpc_url: String,
-    pub ws_rpc_url: String,
     pub chain_id: u64,
     pub start_block: u64,
     pub block_sync_batch_size: u64,
+    pub block_time_ms: u64,
 }
 
 #[derive(Deserialize, Debug, Clone)]

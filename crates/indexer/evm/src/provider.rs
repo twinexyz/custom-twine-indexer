@@ -1,31 +1,24 @@
 use alloy::{
     primitives::Address,
-    providers::{Provider, ProviderBuilder, RootProvider},
-    rpc::types::{Block, BlockTransactions, Filter, FilterBlockOption, Log, Transaction},
-    transports::ws::WsConnect,
+    providers::{Provider, ProviderBuilder},
+    rpc::types::{Block, Filter, Log, Transaction},
 };
-use futures_util::Stream;
-use std::{pin::Pin, sync::Arc};
-use tokio::sync::OnceCell;
+use std::sync::Arc;
 use twine_rpc::client::BatchClient;
 
 #[derive(Clone)]
 pub struct EvmProvider {
     http: Arc<dyn Provider + Send + Sync>,
-    ws: Arc<OnceCell<Arc<dyn Provider + Send + Sync>>>,
     chain_id: u64,
-    ws_url: String,
     http_url: String,
 }
 
 impl EvmProvider {
-    pub fn new(http_url: &str, ws_url: &str, chain_id: u64) -> Self {
+    pub fn new(http_url: &str, chain_id: u64) -> Self {
         let http = ProviderBuilder::new().on_http(http_url.parse().expect("Invalid Http URL"));
 
         Self {
             http: Arc::new(http),
-            ws: Arc::new(OnceCell::new()),
-            ws_url: ws_url.to_string(),
             http_url: http_url.to_string(),
             chain_id,
         }
@@ -38,24 +31,6 @@ impl EvmProvider {
 
     pub fn get_chain_id(&self) -> u64 {
         self.chain_id
-    }
-
-    async fn ws_provider(&self) -> eyre::Result<&Arc<dyn Provider + Send + Sync>> {
-        self.ws
-            .get_or_try_init(|| async {
-                // The builder returns a `Result`, so we use `?` to get the inner provider.
-                let provider = ProviderBuilder::new()
-                    .on_ws(WsConnect::new(self.ws_url.clone()))
-                    .await?;
-
-                // Explicitly create an Arc of the trait object `dyn Provider`.
-                // This is the key change to fix the type mismatch error.
-                let provider_arc: Arc<dyn Provider + Send + Sync> = Arc::new(provider);
-
-                // The closure needs to return a Result, so we wrap the success value in Ok.
-                Ok(provider_arc)
-            })
-            .await
     }
 
     pub async fn get_logs(
@@ -76,28 +51,6 @@ impl EvmProvider {
             .get_logs(&filter)
             .await
             .map_err(eyre::Report::from)
-    }
-
-    pub async fn subscribe_logs(
-        &self,
-        addresses: &Vec<alloy::primitives::Address>,
-        topics: &[&str],
-        from_block: Option<u64>,
-    ) -> eyre::Result<impl Stream<Item = Log>> {
-        let mut filter = Filter::new().address(addresses.to_vec()).events(topics);
-
-        if let Some(from_block) = from_block {
-            filter = filter.from_block(from_block);
-        }
-
-        let ws_provider = self.ws_provider().await?;
-
-        let stream = ws_provider
-            .subscribe_logs(&filter)
-            .await
-            .map_err(eyre::Report::from)?;
-
-        Ok(stream.into_stream())
     }
 
     pub async fn get_block_number(&self) -> eyre::Result<u64> {
