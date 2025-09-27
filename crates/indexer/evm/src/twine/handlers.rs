@@ -1,5 +1,6 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
+use crate::provider::EvmProvider;
 use alloy::{
     primitives::{map::HashMap, Bytes, FixedBytes, B256},
     rpc::types::Log,
@@ -10,7 +11,9 @@ use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
 use database::{
     client::DbClient,
-    entities::{source_transactions, transaction_flows},
+    entities::{
+        source_transactions, transaction_flows, uniswap_pools, uniswap_swaps, uniswap_tokens,
+    },
     DbOperations,
 };
 use eyre::Result;
@@ -29,7 +32,7 @@ use twine_evm_contracts::evm::{
 use crate::{
     error::ParserError,
     handler::{EvmEventHandler, LogContext},
-    twine::get_event_name_from_signature_hash,
+    twine::{get_event_name_from_signature_hash, PairCreated, Swap},
 };
 
 use super::TWINE_EVENT_SIGNATURES;
@@ -39,6 +42,7 @@ pub struct TwineEventHandler {
     db_client: Arc<DbClient>,
     chain_id: u64,
     config: TwineConfig,
+    twine_provider: Arc<EvmProvider>,
 }
 
 #[async_trait]
@@ -75,7 +79,14 @@ impl ChainEventHandler for TwineEventHandler {
                 let operation = self.handle_sent_message(log).await?;
                 operations.push(operation);
             }
-
+            PairCreated::SIGNATURE_HASH => {
+                let operation = self.handle_uniswap_pair_created(log).await?;
+                operations.push(operation);
+            }
+            Swap::SIGNATURE_HASH => {
+                let operation = self.handle_uniswap_swap(log).await?;
+                operations.push(operation);
+            }
             other => {
                 error!("Unknown event to handle")
             }
@@ -86,11 +97,16 @@ impl ChainEventHandler for TwineEventHandler {
 }
 
 impl TwineEventHandler {
-    pub fn new(db_client: Arc<DbClient>, config: TwineConfig) -> Self {
+    pub fn new(
+        db_client: Arc<DbClient>,
+        config: TwineConfig,
+        twine_provider: Arc<EvmProvider>,
+    ) -> Self {
         Self {
             db_client,
             chain_id: config.common.chain_id,
             config,
+            twine_provider,
         }
     }
 
@@ -200,6 +216,104 @@ impl TwineEventHandler {
 
         Ok(DbOperations::BridgeSourceTransaction(model))
     }
+
+    async fn handle_uniswap_swap(&self, log: Log) -> Result<DbOperations> {
+        info!("+=================GOT UNISWAP SWAP EVENT=================");
+
+        let decoded = self.extract_log::<Swap>(log.clone(), "Swap event")?;
+        let data = decoded.data;
+
+        let model = uniswap_swaps::ActiveModel {
+            tx_hash: Set(decoded.tx_hash_str.clone()),
+            log_index: Set(log.log_index.unwrap_or_default() as i32),
+            sender: Set(data.sender.to_string()),
+            to: Set(data.to.to_string()),
+            pair: Set(log.address().to_string()),
+            amount0_in: Set(data
+                .amount0In
+                .to_string()
+                .parse::<Decimal>()
+                .unwrap_or_default()),
+            amount1_in: Set(data
+                .amount1In
+                .to_string()
+                .parse::<Decimal>()
+                .unwrap_or_default()),
+            amount0_out: Set(data
+                .amount0Out
+                .to_string()
+                .parse::<Decimal>()
+                .unwrap_or_default()),
+            amount1_out: Set(data
+                .amount1Out
+                .to_string()
+                .parse::<Decimal>()
+                .unwrap_or_default()),
+            block_number: Set(decoded.block_number),
+            block_time: Set(decoded.timestamp.fixed_offset()),
+            created_at: Set(decoded.timestamp.fixed_offset()),
+            ..Default::default()
+        };
+
+        Ok(DbOperations::UniswapSwap { swap: model })
+    }
+
+    async fn handle_uniswap_pair_created(&self, log: Log) -> Result<DbOperations> {
+        info!("+=================GOT UNISWAP PAIR CREATED EVENT=================");
+
+        let decoded = self.extract_log::<PairCreated>(log.clone(), "PairCreated event")?;
+        let data = decoded.data;
+
+        let model = uniswap_pools::ActiveModel {
+            pair: Set(data.pair.to_string()),
+            token0: Set(data.token0.to_string()),
+            token1: Set(data.token1.to_string()),
+            all_pairs_length: Set(0),
+            tx_hash: Set(decoded.tx_hash_str.clone()),
+            block_number: Set(decoded.block_number),
+            block_time: Set(decoded.timestamp.fixed_offset()),
+            created_at: Set(decoded.timestamp.fixed_offset()),
+            ..Default::default()
+        };
+
+        let mut tokens = Vec::new();
+
+        let is_token0_exists = self
+            .db_client
+            .is_token_exists(&data.token0.to_string())
+            .await?;
+        let is_token1_exists = self
+            .db_client
+            .is_token_exists(&data.token1.to_string())
+            .await?;
+
+        if !is_token0_exists {
+            let token_info = self.twine_provider.get_token_info(data.token0).await?;
+            tokens.push(uniswap_tokens::ActiveModel {
+                address: Set(data.token0.to_string()),
+                name: Set(Some(token_info.name)),
+                symbol: Set(Some(token_info.symbol)),
+                decimals: Set(token_info.decimals as i32),
+                ..Default::default()
+            });
+        }
+
+        if !is_token1_exists {
+            let token_info = self.twine_provider.get_token_info(data.token1).await?;
+            tokens.push(uniswap_tokens::ActiveModel {
+                address: Set(data.token1.to_string()),
+                name: Set(Some(token_info.name)),
+                symbol: Set(Some(token_info.symbol)),
+                decimals: Set(token_info.decimals as i32),
+                ..Default::default()
+            });
+        }
+
+        Ok(DbOperations::UniswapPool {
+            pool: model,
+            tokens,
+        })
+    }
 }
 
 #[async_trait]
@@ -208,8 +322,21 @@ impl EvmEventHandler for TwineEventHandler {
         TWINE_EVENT_SIGNATURES.to_vec()
     }
 
-    fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
-        let addresss = [self.config.l2_twine_messenger_address.clone()];
+    async fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+        let mut addresss = vec![
+            self.config.l2_twine_messenger_address.clone(),
+            self.config.uniswap_factory_address.clone(),
+        ];
+
+        let uniswap_pairs = match self.db_client.get_all_pair_addresses().await {
+            Ok(pairs) => pairs,
+            Err(e) => {
+                error!("Failed to get all uniswap pairs from database: {}", e);
+                Vec::new()
+            }
+        };
+
+        addresss.extend(uniswap_pairs);
 
         let contract_addresss = addresss
             .iter()

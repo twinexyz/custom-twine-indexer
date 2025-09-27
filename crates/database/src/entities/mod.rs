@@ -7,3 +7,6 @@ pub mod last_synced;
 pub mod sea_orm_active_enums;
 pub mod source_transactions;
 pub mod transaction_flows;
+pub mod uniswap_pools;
+pub mod uniswap_swaps;
+pub mod uniswap_tokens;

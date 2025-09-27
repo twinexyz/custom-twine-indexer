@@ -24,7 +24,14 @@ async fn main() -> Result<()> {
     let db_client = DbClient::new(db_conn.clone(), Some(blockscout_db_conn.clone()));
     let arc_db = Arc::new(db_client);
 
-    let twine_handler = TwineEventHandler::new(Arc::clone(&arc_db), cfg.twine.clone());
+    let twine_handler = TwineEventHandler::new(
+        Arc::clone(&arc_db),
+        cfg.twine.clone(),
+        Arc::new(EvmProvider::new(
+            &cfg.twine.common.http_rpc_url,
+            cfg.twine.common.chain_id,
+        )),
+    );
     let l1_evm_handler = EthereumEventHandler::new(
         Arc::clone(&arc_db),
         cfg.l1s.ethereum.clone(),

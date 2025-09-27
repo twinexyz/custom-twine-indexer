@@ -93,3 +93,34 @@ pub struct UserDepositsResponse {
     pub is_executed: bool,
     pub is_completed: bool,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UserSwapEventsResponse {
+    pub user_address: String,
+    pub swap_id: i64,
+    pub tx_hash: String,
+    pub log_index: i32,
+    pub block_number: i64,
+    pub block_time: DateTimeWithTimeZone,
+
+    // Token0 (L1 token) information
+    pub l1_token: String,
+    pub l1_token_address: String,
+    pub l1_token_decimals: i32,
+
+    // Token1 (L2 token) information
+    pub l2_token: String,
+    pub l2_token_address: String,
+    pub l2_token_decimals: i32,
+
+    // Amounts (as strings for JSON serialization)
+    pub l1_token_amount_in: String,
+    pub l1_token_amount_out: String,
+    pub l2_token_amount_in: String,
+    pub l2_token_amount_out: String,
+
+    // Additional swap info
+    pub sender: String,
+    pub to: String,
+    pub pair_address: String,
+}

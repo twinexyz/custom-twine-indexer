@@ -11,7 +11,7 @@ use crate::{
     pagination::{items_count, BridgeTransactionsPagination, PlaceholderPagination},
     types::{
         BatchL2TransactionHashRequest, BatchL2TransactionHashResponse, BridgeTransactionsResponse,
-        UserDepositsResponse,
+        UserDepositsResponse, UserSwapEventsResponse,
     },
     ApiResponse, ApiResult, AppState,
 };
@@ -304,5 +304,69 @@ where
         success: true,
         items: response_items,
         next_page_params,
+    })
+}
+
+#[instrument(skip(state), fields(user_address = %user_address))]
+pub async fn get_user_swap_events(
+    State(state): State<AppState>,
+    Path(user_address): Path<String>,
+) -> ApiResult<Vec<UserSwapEventsResponse>, PlaceholderPagination> {
+    info!(
+        user_address = %user_address,
+        "Fetching swap events for user"
+    );
+
+    let results = state
+        .db_client
+        .get_user_swap_events(&user_address)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch user swap events: {}", e);
+            AppError::Internal
+        })?;
+
+    let response_items: Vec<UserSwapEventsResponse> = results
+        .iter()
+        .map(|swap_event| UserSwapEventsResponse {
+            user_address: swap_event.user_address.clone(),
+            swap_id: swap_event.swap_id,
+            tx_hash: swap_event.tx_hash.clone(),
+            log_index: swap_event.log_index,
+            block_number: swap_event.block_number,
+            block_time: swap_event.block_time,
+
+            // Token information
+            l1_token: swap_event.l1_token.clone(),
+            l1_token_address: swap_event.l1_token_address.clone(),
+            l1_token_decimals: swap_event.l1_token_decimals,
+
+            l2_token: swap_event.l2_token.clone(),
+            l2_token_address: swap_event.l2_token_address.clone(),
+            l2_token_decimals: swap_event.l2_token_decimals,
+
+            // Convert Decimal amounts to strings for JSON serialization
+            l1_token_amount_in: swap_event.l1_token_amount_in.to_string(),
+            l1_token_amount_out: swap_event.l1_token_amount_out.to_string(),
+            l2_token_amount_in: swap_event.l2_token_amount_in.to_string(),
+            l2_token_amount_out: swap_event.l2_token_amount_out.to_string(),
+
+            // Additional info
+            sender: swap_event.sender.clone(),
+            to: swap_event.to.clone(),
+            pair_address: swap_event.pair_address.clone(),
+        })
+        .collect();
+
+    info!(
+        user_address = %user_address,
+        count = response_items.len(),
+        "Fetched user swap events"
+    );
+
+    Ok(ApiResponse {
+        success: true,
+        items: response_items,
+        next_page_params: None,
     })
 }

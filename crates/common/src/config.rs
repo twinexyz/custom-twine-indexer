@@ -79,6 +79,7 @@ pub struct CelestiaConfig {
 pub struct TwineConfig {
     pub common: ChainConfig,
     pub l2_twine_messenger_address: String,
+    pub uniswap_factory_address: String,
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct L1sConfig {

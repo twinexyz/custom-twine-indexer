@@ -103,7 +103,7 @@ impl ChainEventHandler for EthereumEventHandler {
 
 #[async_trait]
 impl EvmEventHandler for EthereumEventHandler {
-    fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+    async fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
         let addresss = [
             self.config.l1_erc20_gateway_address.clone(),
             self.config.eth_twine_chain_address.clone(),
