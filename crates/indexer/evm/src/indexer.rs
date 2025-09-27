@@ -65,7 +65,7 @@ impl<H: EvmEventHandler + ChainEventHandler<LogType = Log>> ChainIndexer for Evm
     async fn get_historical_logs(&self, from: u64, to: u64) -> eyre::Result<Vec<Log>> {
         self.provider
             .get_logs(
-                &self.handler.relevant_addresses(),
+                &self.handler.relevant_addresses().await,
                 &self.handler.relevant_topics(),
                 from,
                 to,

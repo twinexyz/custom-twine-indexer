@@ -66,6 +66,10 @@ impl DbClient {
         let mut l2_txns = Vec::new();
         let mut update_details = Vec::new();
 
+        let mut uniswap_swaps = Vec::new();
+        let mut uniswap_pools = Vec::new();
+        let mut uniswap_tokens = Vec::new();
+
         for data_item in ops {
             for op in data_item {
                 match op {
@@ -91,6 +95,14 @@ impl DbClient {
                         batch_number,
                         chain_id,
                     } => update_details.push((batch_number, finalize_hash, chain_id)),
+
+                    DbOperations::UniswapSwap { swap } => {
+                        uniswap_swaps.push(swap);
+                    }
+                    DbOperations::UniswapPool { pool, tokens } => {
+                        uniswap_pools.push(pool);
+                        uniswap_tokens.extend(tokens);
+                    }
                 }
             }
         }
@@ -108,6 +120,19 @@ impl DbClient {
             )
             .await?;
         }
+        if !uniswap_tokens.is_empty() {
+            self.bulk_insert_uniswap_tokens(uniswap_tokens, &primary_txn)
+                .await?;
+        }
+        if !uniswap_pools.is_empty() {
+            self.bulk_insert_uniswap_pools(uniswap_pools, &primary_txn)
+                .await?;
+        }
+        if !uniswap_swaps.is_empty() {
+            self.bulk_insert_uniswap_swaps(uniswap_swaps, &primary_txn)
+                .await?;
+        }
+
         primary_txn.commit().await?;
 
         // Blockscout database operations (only if blockscout connection exists)

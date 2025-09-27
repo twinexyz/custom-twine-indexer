@@ -29,7 +29,7 @@ pub struct LogContext<T> {
 
 #[async_trait]
 pub trait EvmEventHandler: Send + Sync + Clone + 'static {
-    fn relevant_addresses(&self) -> Vec<Address>;
+    async fn relevant_addresses(&self) -> Vec<Address>;
 
     fn relevant_topics(&self) -> Vec<&'static str>;
 
