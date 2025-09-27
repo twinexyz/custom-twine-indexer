@@ -103,21 +103,17 @@ pub struct UserSwapEventsResponse {
     pub block_number: i64,
     pub block_time: DateTimeWithTimeZone,
 
-    // Token0 (L1 token) information
-    pub l1_token: String,
-    pub l1_token_address: String,
-    pub l1_token_decimals: i32,
+    // From token (what user swapped from)
+    pub from_token: String,
+    pub from_token_address: String,
+    pub from_token_decimals: i32,
+    pub from_token_amount: String,
 
-    // Token1 (L2 token) information
-    pub l2_token: String,
-    pub l2_token_address: String,
-    pub l2_token_decimals: i32,
-
-    // Amounts (as strings for JSON serialization)
-    pub l1_token_amount_in: String,
-    pub l1_token_amount_out: String,
-    pub l2_token_amount_in: String,
-    pub l2_token_amount_out: String,
+    // To token (what user received)
+    pub to_token: String,
+    pub to_token_address: String,
+    pub to_token_decimals: i32,
+    pub to_token_amount: String,
 
     // Additional swap info
     pub sender: String,

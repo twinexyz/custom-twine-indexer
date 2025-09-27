@@ -328,33 +328,71 @@ pub async fn get_user_swap_events(
 
     let response_items: Vec<UserSwapEventsResponse> = results
         .iter()
-        .map(|swap_event| UserSwapEventsResponse {
-            user_address: swap_event.user_address.clone(),
-            swap_id: swap_event.swap_id,
-            tx_hash: swap_event.tx_hash.clone(),
-            log_index: swap_event.log_index,
-            block_number: swap_event.block_number,
-            block_time: swap_event.block_time,
+        .map(|swap_event| {
+            // Determine swap direction based on which amounts are non-zero
+            let is_token0_to_token1 =
+                swap_event.l1_token_amount_in > sea_orm::prelude::Decimal::new(0, 0);
 
-            // Token information
-            l1_token: swap_event.l1_token.clone(),
-            l1_token_address: swap_event.l1_token_address.clone(),
-            l1_token_decimals: swap_event.l1_token_decimals,
+            let (
+                from_token,
+                from_token_address,
+                from_token_decimals,
+                from_token_amount,
+                to_token,
+                to_token_address,
+                to_token_decimals,
+                to_token_amount,
+            ) = if is_token0_to_token1 {
+                // Swapping token0 -> token1 (amount0In > 0, amount1Out > 0)
+                (
+                    swap_event.l1_token.clone(),
+                    swap_event.l1_token_address.clone(),
+                    swap_event.l1_token_decimals,
+                    swap_event.l1_token_amount_in.to_string(),
+                    swap_event.l2_token.clone(),
+                    swap_event.l2_token_address.clone(),
+                    swap_event.l2_token_decimals,
+                    swap_event.l2_token_amount_out.to_string(),
+                )
+            } else {
+                // Swapping token1 -> token0 (amount1In > 0, amount0Out > 0)
+                (
+                    swap_event.l2_token.clone(),
+                    swap_event.l2_token_address.clone(),
+                    swap_event.l2_token_decimals,
+                    swap_event.l2_token_amount_in.to_string(),
+                    swap_event.l1_token.clone(),
+                    swap_event.l1_token_address.clone(),
+                    swap_event.l1_token_decimals,
+                    swap_event.l1_token_amount_out.to_string(),
+                )
+            };
 
-            l2_token: swap_event.l2_token.clone(),
-            l2_token_address: swap_event.l2_token_address.clone(),
-            l2_token_decimals: swap_event.l2_token_decimals,
+            UserSwapEventsResponse {
+                user_address: swap_event.user_address.clone(),
+                swap_id: swap_event.swap_id,
+                tx_hash: swap_event.tx_hash.clone(),
+                log_index: swap_event.log_index,
+                block_number: swap_event.block_number,
+                block_time: swap_event.block_time,
 
-            // Convert Decimal amounts to strings for JSON serialization
-            l1_token_amount_in: swap_event.l1_token_amount_in.to_string(),
-            l1_token_amount_out: swap_event.l1_token_amount_out.to_string(),
-            l2_token_amount_in: swap_event.l2_token_amount_in.to_string(),
-            l2_token_amount_out: swap_event.l2_token_amount_out.to_string(),
+                // From token (what user swapped from)
+                from_token,
+                from_token_address,
+                from_token_decimals,
+                from_token_amount,
 
-            // Additional info
-            sender: swap_event.sender.clone(),
-            to: swap_event.to.clone(),
-            pair_address: swap_event.pair_address.clone(),
+                // To token (what user received)
+                to_token,
+                to_token_address,
+                to_token_decimals,
+                to_token_amount,
+
+                // Additional info
+                sender: swap_event.sender.clone(),
+                to: swap_event.to.clone(),
+                pair_address: swap_event.pair_address.clone(),
+            }
         })
         .collect();
 

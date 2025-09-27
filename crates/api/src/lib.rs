@@ -57,7 +57,10 @@ fn make_server(state: AppState) -> Router {
             "/get_l2_txns_for_l1_txn",
             post(controller::get_l2_txns_for_l1_txn),
         )
-        .route("/get_user_swap_events/{user_address}", get(controller::get_user_swap_events))
+        .route(
+            "/get_user_swap_events/{user_address}",
+            get(controller::get_user_swap_events),
+        )
         .route("/status", get(controller::health_check))
         .with_state(state)
 }
