@@ -69,7 +69,14 @@ pub trait ChainIndexer: Send + Sync {
         let block_time_ms = chain_config.block_time_ms;
         let batch_size = chain_config.block_sync_batch_size;
         loop {
-            let current_chain_height = self.get_current_chain_height().await?;
+            let current_chain_height = match self.get_current_chain_height().await {
+                Ok(height) => height,
+                Err(e) => {
+                    error!("Error while getting current chain height: {:?}", e);
+                    sleep(Duration::from_secs(block_time_ms)).await;
+                    continue;
+                }
+            };
 
             let current_indexer_height = indexer_state.get_last_processed_block();
             if current_indexer_height >= current_chain_height {

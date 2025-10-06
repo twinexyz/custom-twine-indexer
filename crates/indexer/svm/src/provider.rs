@@ -46,7 +46,7 @@ impl SvmProvider {
         Self {
             http: Arc::new(RpcClient::new_with_timeout(
                 http_url.to_string(),
-                Duration::from_secs(30),
+                Duration::from_secs(60),
             )),
 
             commitment: CommitmentConfig::finalized(),
