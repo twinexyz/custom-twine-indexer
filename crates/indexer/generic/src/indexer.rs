@@ -11,6 +11,8 @@ use eyre::Error;
 use tokio::{sync::Semaphore, task::JoinSet, time::sleep};
 use tracing::{debug, error, info, instrument};
 
+const MAX_RETRIES: i32 = 20;
+
 #[async_trait]
 pub trait ChainIndexer: Send + Sync {
     type EventHandler: ChainEventHandler + Clone + Send + Sync + 'static;
@@ -140,6 +142,12 @@ pub trait ChainIndexer: Send + Sync {
                     }
 
                     Err(e) => {
+                        if reconnect_attempt > MAX_RETRIES {
+                            panic!(
+                                "Max retries reached while getting logs from {:?} to {:?}, error: {:?}",
+                                start_block, batch_end, e
+                            );
+                        }
                         reconnect_attempt += 1;
 
                         error!(
@@ -149,7 +157,7 @@ pub trait ChainIndexer: Send + Sync {
 
                         let delay = Duration::from_secs(5);
 
-                        tokio::time::sleep(delay * 2u32.pow(reconnect_attempt)).await;
+                        tokio::time::sleep(delay * 2u32.pow(reconnect_attempt as u32)).await;
                         continue; // Retry the same batch
                     }
                 }
