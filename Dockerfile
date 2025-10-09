@@ -1,26 +1,40 @@
-FROM rust:1.81-slim AS builder
+FROM rust:1.86 AS base
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libpq-dev && rm -rf /var/lib/apt/lists/*
-RUN cargo install sea-orm-cli 
+#ARG GITHUB_USERNAME
+#ARG GITHUB_TOKEN
+
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
+    apt update && \
+    apt install -y \
+    build-essential \
+    clang \
+    libssl-dev \
+    pkg-config && \
+    rm -rf /var/lib/apt/lists/* && \
+    git config --global credential.helper store && \
+    echo "https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
+    chmod 600 ~/.git-credentials
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY bin ./bin
-COPY migration ./migration
+COPY . .
 
 RUN cargo build --release --bin api --bin indexer
 
-FROM debian:bookworm-slim
+FROM base AS dependency
 
-FROM rust:1.81
+RUN cargo install sea-orm-cli@1.1.15
 
-RUN apt-get update && apt-get install -y libssl-dev libpq-dev && rm -rf /var/lib/apt/lists/*
+FROM rust:1.86 as final
 
-WORKDIR /app
+RUN apt-get update --allow-insecure-repositories && \
+    apt-get install -y build-essential clang libssl-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/* && \
+    wget -c https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/bin/yq && \
+    chmod +x /usr/bin/yq
 
-COPY --from=builder /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
-COPY --from=builder /app/target/release/api /usr/local/bin/api
-COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
-COPY --from=builder /app/migration /app/migration
+COPY --from=dependency /usr/local/cargo/bin/sea-orm-cli /usr/local/bin/sea-orm-cli
+COPY --from=base /app/target/release/api /usr/local/bin/api
+COPY --from=base /app/target/release/indexer /usr/local/bin/indexer
+COPY --from=base /app/migration migration

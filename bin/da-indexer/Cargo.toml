@@ -1,0 +1,17 @@
+[package]
+name = "da-indexer"
+edition = "2021"
+
+[dependencies]
+api-lib = { workspace = true }
+common = { workspace = true }
+eyre = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+da = { workspace = true }
+database = {workspace = true}
+
+[dev-dependencies]
+pre-commit-hooks = "0.3"
+sea-orm-cli = "1.1.7"

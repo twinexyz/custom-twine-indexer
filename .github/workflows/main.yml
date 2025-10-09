@@ -1,0 +1,111 @@
+name: Pipelines
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'staging'
+      - 'develop'
+    tags:
+      - '**'  # This will trigger on all tags
+    paths-ignore:
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - 'main'
+      - 'staging'
+      - 'develop'
+
+jobs:
+  pre-notify:
+    uses: twinexyz/workflows/.github/workflows/notify.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      commit_message: ${{ github.event.head_commit.message }}
+      commit_url: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+      commit_actor: ${{ github.actor }}
+      event_name: ${{ github.event_name }}
+      workflow_name: ${{ github.workflow }}
+      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      job_status: started
+  #precommit:
+  #  needs: ["pre-notify"]
+  #  uses: twinexyz/workflows/.github/workflows/precommit.yml@main
+  #  secrets: inherit
+  #dependency-check:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/dependency-review.yml@main
+  #  secrets: inherit
+  #  with:
+  #    branch_slug: ${{ github.ref_name }}
+  #semgrep:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/semgrep.yml@main
+  #  secrets: inherit
+  #test:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/test.yml@main
+  #  secrets: inherit
+  #audit:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/audit.yml@main
+  #  secrets: inherit
+  #file-scan:
+  #  needs: ["pre-notify"] #, "precommit"]
+  #  uses: twinexyz/workflows/.github/workflows/file-scan.yml@main
+  #  secrets: inherit
+  #
+  build:
+    needs: ["pre-notify"]
+    uses: twinexyz/workflows/.github/workflows/build-matrix.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      docker_targets: '["final"]'
+      dependency_clone: false
+  container-scan:
+    needs: ["build"]
+    uses: twinexyz/workflows/.github/workflows/container-scan.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+  deploy:
+    needs: ["pre-notify", "build"]
+    #needs: ["pre-notify", "build-amd64", "build-arm64"]
+    uses: twinexyz/workflows/.github/workflows/deploy.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      app_name: "api,indexer"
+  post-notify:
+    if: always()
+    #needs: ["pre-notify", "precommit", "build"]
+    needs: ["pre-notify", "build", "deploy"]
+    uses: twinexyz/workflows/.github/workflows/notify.yml@main
+    secrets: inherit
+    with:
+      sha: ${{ github.sha  }}
+      branch_slug: ${{ github.ref_name }}
+      repo_name: ${{ github.event.repository.name }}
+      commit_message: ${{ github.event.head_commit.message }}
+      commit_url: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+      commit_actor: ${{ github.actor }}
+      event_name: ${{ github.event_name }}
+      workflow_name: ${{ github.workflow }}
+      run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      job_status: ${{ needs.build.result }}
+      precommit_duration: ${{ needs.precommit.outputs.duration }}
+      build_duration: ${{ needs.build.outputs.duration }}
+      anchore_scan_duration: ${{ needs.container-scan.outputs.anchore_scan_duration }}
+      anchore_sbom_scan_duration: ${{ needs.container-scan.outputs.anchore_sbom_scan_duration }}
+      trivy_scan_duration: ${{ needs.container-scan.outputs.trivy_scan_duration }}
+      docker_scout_scan_duration: ${{ needs.container-scan.outputs.docker_scout_scan_duration }}

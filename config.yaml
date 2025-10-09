@@ -1,0 +1,67 @@
+# ===================================================================
+# API SERVICE CONFIGURATION
+# ===================================================================
+api:
+  database:
+    url: "postgres://rabindraregmi:admin@localhost:5432/indexer"
+  port: 7777
+
+# ===================================================================
+# INDEXER SERVICE CONFIGURATION
+# ===================================================================
+indexer:
+  database:
+    url: "postgres://rabindraregmi:admin@localhost:5432/indexer"
+  blockscout:
+    url: "postgres://rabindraregmi:admin@localhost:5432/blockscout"
+  
+  settings:
+    max_log_batch_size: 1000
+    max_log_batch_time: 12
+    max_concurrency_for_log_process: 1000
+
+  l1s:
+    ethereum:
+      common:
+        http_rpc_url: "https://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        ws_rpc_url: "wss://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        chain_id: 11155111
+        start_block: 9087470
+        block_sync_batch_size: 100
+      chain: "evm"
+      l1_message_queue_address: "0x06B45B9D4b1AbF392E2D30e433239E3b91aC0e71"
+      l1_erc20_gateway_address: "0x97FFADA7BE33A6C88bdF1db705c31b3Ee082BD7b"
+      eth_twine_chain_address: "0xa586eA75687F21Ab14A563C88E2440c44540b91C"
+    solana:
+      common:
+        http_rpc_url: "https://solana-devnet.core.chainstack.com/ca55faa405ab06b82b90511bf258b050"
+        ws_rpc_url: "wss://solana-devnet.core.chainstack.com/ca55faa405ab06b82b90511bf258b050"
+        chain_id: 103
+        start_block: 404112006
+        block_sync_batch_size: 10000
+      chain: "svm"
+      tokens_gateway_program_address: "64RtUeZggjF2jeDrC6qmaEH2szhrbxQ5DX7afiy7HqRt"
+      twine_chain_program_address: "9mypqQniPSQs73QaGM4raPmvReXJFLTfvD3YKtbJrbvy"
+  twine:
+    common:
+      http_rpc_url: "https://rpc1.twine.limited"
+      ws_rpc_url: "wss://ws1.twine.limited"
+      chain_id: 1337
+      start_block: 1
+      block_sync_batch_size: 1000
+    l2_twine_messenger_address: "0x67d269191c92Caf3cD7723F116c85e6E9bf55933"
+
+# ===================================================================
+# DA_INDEXER SERVICE CONFIGURATION
+# ===================================================================
+da_indexer:
+  database:
+    url: "postgres://blockscout:password@localhost:5432/blockscout"
+  blockscout:
+    url: "postgres://blockscout:password@localhost:5432/blockscout"
+  celestia:
+    rpc_url: "https://celestia-rpc.example.com"
+    wss_url: "wss://celestia-wss.example.com"
+    start_height: 0
+    namespace: "fsdfsd"
+    rpc_auth_token: "fdafadsfasd"

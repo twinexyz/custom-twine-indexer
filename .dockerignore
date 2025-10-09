@@ -1,0 +1,13 @@
+.cargo
+docker-compose.yml
+Dockerfile
+Dockerfile.org
+Dockerfile.test
+.dockerignore
+.env
+.git
+.github
+.gitignore
+ingress.yaml
+README.md
+sonar-project.properties
