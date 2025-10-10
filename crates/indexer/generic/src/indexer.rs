@@ -75,7 +75,7 @@ pub trait ChainIndexer: Send + Sync {
                 Ok(height) => height,
                 Err(e) => {
                     error!("Error while getting current chain height: {:?}", e);
-                    sleep(Duration::from_secs(block_time_ms)).await;
+                    sleep(Duration::from_millis(block_time_ms)).await;
                     continue;
                 }
             };
