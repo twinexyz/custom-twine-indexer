@@ -1,7 +1,4 @@
-FROM rust:1.86 AS base
-
-#ARG GITHUB_USERNAME
-#ARG GITHUB_TOKEN
+FROM rust:1.89 AS base
 
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
@@ -25,11 +22,11 @@ RUN cargo build --release --bin api --bin indexer
 FROM base AS dependency
 ARG ARCH
 
-RUN cargo install sea-orm-cli@1.1.15
+RUN cargo install sea-orm-cli
 RUN wget -c https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_${ARCH} -O /usr/bin/yq && \
     chmod +x /usr/bin/yq
 
-FROM rust:1.86 as final
+FROM rust:1.89 as final
 
 RUN apt-get update --allow-insecure-repositories && \
     apt-get install -y build-essential clang libssl-dev pkg-config && \
