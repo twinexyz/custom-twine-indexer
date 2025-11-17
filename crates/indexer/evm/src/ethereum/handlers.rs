@@ -281,7 +281,7 @@ impl EthereumEventHandler {
 
         let model = transaction_flows::ActiveModel {
             nonce: Set(data.nonce.try_into().unwrap()),
-            chain_id: Set(l2_chain_id as i64),
+            chain_id: Set(data.ChainId as i64),
             execute_block_number: Set(Some(data.blockNumber.try_into().unwrap())),
             execute_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
             executed_at: Set(Some(decoded.timestamp.fixed_offset())),
