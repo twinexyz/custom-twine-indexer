@@ -1,5 +1,5 @@
 FROM rust:1.89 AS base
-ARG ARCH 
+ARG ARCH
 
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     --mount=type=secret,id=github_username,env=GITHUB_USERNAME \
@@ -20,7 +20,7 @@ COPY . .
 
 RUN cargo build --release --bin api --bin indexer && \
     cargo install sea-orm-cli --locked
-    
+
 RUN wget -c https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_${ARCH} -O /usr/bin/yq && \
     chmod +x /usr/bin/yq
 
