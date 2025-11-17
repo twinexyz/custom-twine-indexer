@@ -19,7 +19,7 @@ WORKDIR /app
 COPY . .
 
 RUN cargo build --release --bin api --bin indexer && \
-    cargo install sea-orm-cli
+    cargo install sea-orm-cli --locked
     
 RUN wget -c https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_${ARCH} -O /usr/bin/yq && \
     chmod +x /usr/bin/yq
