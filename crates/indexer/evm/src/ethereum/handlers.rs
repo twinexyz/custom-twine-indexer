@@ -107,7 +107,7 @@ impl EvmEventHandler for EthereumEventHandler {
         let addresss = [
             self.config.l1_erc20_gateway_address.clone(),
             self.config.eth_twine_chain_address.clone(),
-            self.config.l1_message_queue_address.clone(),
+            self.config.l1_message_handler_address.clone(),
         ];
 
         let contract_addresss = addresss
