@@ -1,10 +1,8 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
-use alloy::{
-    primitives::{FixedBytes, B256},
-    rpc::types::Log,
-    sol_types::SolEvent,
-};
+use alloy_primitives::B256;
+use alloy_rpc_types::Log;
+use alloy_sol_types::{SolEvent as _, SolType};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::{ChainConfig, EvmConfig};
@@ -21,9 +19,9 @@ use generic_indexer::handler::ChainEventHandler;
 use num_traits::FromPrimitive;
 use sea_orm::{prelude::Decimal, sqlx::types::uuid::timestamp, ActiveValue::Set, IntoActiveModel};
 use tracing::{debug, error, info, instrument, warn};
-use twine_evm_contracts::evm::ethereum::{
-    l1_message_handler::L1MessageHandler,
-    twine_chain::TwineChain::{self, CommitedBatch, FinalizedBatch},
+use twine_evm_contracts::{
+    l1_message_handler::{L1MessageHandler, TwineTypes},
+    twine_chain::TwineChain,
 };
 
 use crate::{
@@ -84,7 +82,7 @@ impl ChainEventHandler for EthereumEventHandler {
                 operations.push(operation);
             }
 
-            FinalizedBatch::SIGNATURE_HASH => {
+            TwineChain::FinalizedBatch::SIGNATURE_HASH => {
                 let operation = self.handle_commit_batch(log).await?;
                 operations.push(operation);
             }
@@ -103,7 +101,7 @@ impl ChainEventHandler for EthereumEventHandler {
 
 #[async_trait]
 impl EvmEventHandler for EthereumEventHandler {
-    async fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+    async fn relevant_addresses(&self) -> Vec<alloy_primitives::Address> {
         let addresss = [
             self.config.l1_erc20_gateway_address.clone(),
             self.config.eth_twine_chain_address.clone(),
@@ -112,7 +110,7 @@ impl EvmEventHandler for EthereumEventHandler {
 
         let contract_addresss = addresss
             .iter()
-            .map(|addr| addr.parse::<alloy::primitives::Address>())
+            .map(|addr| addr.parse::<alloy_primitives::Address>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| eyre::eyre!("Invalid address format: {}", e))
             .unwrap();
@@ -148,10 +146,8 @@ impl EthereumEventHandler {
         let data = decoded.data;
 
         match data.txnType {
-            L1MessageHandler::TransactionType::Deposit => self.handle_queue_deposit_txn(log).await,
-            L1MessageHandler::TransactionType::Withdraw => {
-                self.handle_queue_withdrawal_txn(log).await
-            }
+            0 => self.handle_queue_deposit_txn(log).await, // Deposit
+            1 => self.handle_queue_withdrawal_txn(log).await, // Withdraw
             _ => return Err(eyre::eyre!("Invalid transaction type")),
         }
     }
@@ -281,7 +277,7 @@ impl EthereumEventHandler {
 
         let model = transaction_flows::ActiveModel {
             nonce: Set(data.nonce.try_into().unwrap()),
-            chain_id: Set(data.ChainId as i64),
+            chain_id: Set(data.chainId.try_into().unwrap()),
             execute_block_number: Set(Some(data.blockNumber.try_into().unwrap())),
             execute_tx_hash: Set(Some(decoded.tx_hash_str.clone())),
             executed_at: Set(Some(decoded.timestamp.fixed_offset())),
@@ -294,7 +290,10 @@ impl EthereumEventHandler {
     }
 
     async fn handle_commit_batch(&self, log: Log) -> Result<DbOperations> {
-        let decoded = self.extract_log::<FinalizedBatch>(log.clone(), FinalizedBatch::SIGNATURE)?;
+        let decoded = self.extract_log::<TwineChain::FinalizedBatch>(
+            log.clone(),
+            TwineChain::FinalizedBatch::SIGNATURE,
+        )?;
 
         let data = decoded.data;
 
@@ -316,7 +315,9 @@ impl EthereumEventHandler {
             timestamp: Set(decoded.timestamp.naive_utc()),
             start_block: Set(start_block as i64),
             end_block: Set(end_block as i64),
-            root_hash: Set(alloy::hex::decode(root_hash.trim_start_matches("0x")).unwrap()),
+            root_hash: Set(
+                alloy_primitives::hex::decode(root_hash.trim_start_matches("0x")).unwrap(),
+            ),
             ..Default::default()
         };
 

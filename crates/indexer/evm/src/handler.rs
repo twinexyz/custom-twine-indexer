@@ -1,15 +1,12 @@
-use std::{collections::HashMap, future::Future, pin::Pin};
-
-use alloy::{
-    primitives::{Address, B256},
-    rpc::types::Log,
-    sol_types::SolEvent,
-};
+use alloy_primitives::Address;
+use alloy_rpc_types::Log;
+use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::ChainConfig;
 use database::{client::DbClient, DbOperations};
 use eyre::Result;
+use std::{collections::HashMap, future::Future, pin::Pin};
 use tracing::{debug, info};
 
 use crate::error::ParserError;
