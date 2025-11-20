@@ -1,11 +1,9 @@
 use std::env;
 
 use super::EVMChain;
-use alloy::{
-    primitives::{address, Address},
-    providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockTransactions, Filter, Log},
-};
+use alloy_primitives::{Address, Log};
+use alloy_provider::{Provider, ProviderBuilder, WsConnect};
+use alloy_rpc_types::Filter;
 use chrono::{DateTime, Utc};
 use common::{
     blockscout_entities::{twine_batch_l2_blocks, twine_batch_l2_transactions},
@@ -44,7 +42,7 @@ pub async fn subscribe_stream(
     provider: &dyn Provider,
     contract_addresses: &[String],
     chain: EVMChain,
-) -> Result<impl Stream<Item = Log>> {
+) -> Result<impl Stream<Item = alloy_rpc_types::Log>> {
     let events = chain.get_event_signatures();
     let addresses = contract_addresses
         .iter()
@@ -73,7 +71,7 @@ pub async fn poll_missing_logs(
     max_blocks_per_request: u64,
     contract_addresses: &[String],
     chain: EVMChain,
-) -> Result<Vec<Log>> {
+) -> Result<Vec<alloy_rpc_types::Log>> {
     let current_block = with_retry(|| async {
         provider
             .get_block_number()

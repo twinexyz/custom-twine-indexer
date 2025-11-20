@@ -1,28 +1,12 @@
-use super::EVMChain;
-use crate::common::{poll_missing_logs, subscribe_stream, with_retry};
-use crate::error::ParserError;
-use crate::handler::EvmEventHandler;
-use alloy::primitives::FixedBytes;
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
-use alloy::rpc::types::{Filter, Log};
-use alloy::sol_types::SolEvent;
-use async_trait::async_trait;
-use common::config::TwineConfig;
-use common::indexer::{MAX_RETRIES, RETRY_DELAY};
+use alloy_primitives::FixedBytes;
+use alloy_provider::Provider;
+use alloy_sol_types::{sol, SolEvent as _};
 use database::client::DbClient;
-use database::entities::last_synced;
-use eyre::{Report, Result};
-use futures_util::StreamExt;
-use handlers::TwineEventHandler;
-use sea_orm::ActiveValue::Set;
-use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
-use tracing::{error, info};
-use twine_evm_contracts::evm::twine::l2_messenger::L2Messenger;
+use twine_evm_contracts::l2_twine_messenger::L2TwineMessenger;
 
 // Uniswap V2 events we want to listen to
-alloy::sol! {
+sol! {
     /// Uniswap V2 Factory PairCreated event
     /// Emitted when a new pair is created in the Uniswap V2 Factory
     event PairCreated(
@@ -47,8 +31,8 @@ alloy::sol! {
 pub mod handlers;
 
 pub const TWINE_EVENT_SIGNATURES: &[&str] = &[
-    L2Messenger::L1TransactionsHandled::SIGNATURE,
-    L2Messenger::SentMessage::SIGNATURE,
+    L2TwineMessenger::L1TransactionsHandled::SIGNATURE,
+    L2TwineMessenger::SentMessage::SIGNATURE,
     ///Uniswap related events
     PairCreated::SIGNATURE,
     Swap::SIGNATURE,
@@ -69,10 +53,12 @@ pub struct TwineIndexer {
 pub fn get_event_name_from_signature_hash(sig: &FixedBytes<32>) -> String {
     match *sig {
         // Twine events
-        L2Messenger::L1TransactionsHandled::SIGNATURE_HASH => {
-            L2Messenger::L1TransactionsHandled::SIGNATURE.to_string()
+        L2TwineMessenger::L1TransactionsHandled::SIGNATURE_HASH => {
+            L2TwineMessenger::L1TransactionsHandled::SIGNATURE.to_string()
         }
-        L2Messenger::SentMessage::SIGNATURE_HASH => L2Messenger::SentMessage::SIGNATURE.to_string(),
+        L2TwineMessenger::SentMessage::SIGNATURE_HASH => {
+            L2TwineMessenger::SentMessage::SIGNATURE.to_string()
+        }
 
         // Uniswap events
         PairCreated::SIGNATURE_HASH => PairCreated::SIGNATURE.to_string(),
