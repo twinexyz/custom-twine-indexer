@@ -9,7 +9,7 @@ pub enum ParserError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     UnknownEvent {
-        signature: alloy::primitives::B256,
+        signature: alloy_primitives::B256,
     },
     BatchNotFound {
         start_block: u64,

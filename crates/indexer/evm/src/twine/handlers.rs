@@ -1,11 +1,9 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use crate::provider::EvmProvider;
-use alloy::{
-    primitives::{map::HashMap, Bytes, FixedBytes, B256},
-    rpc::types::Log,
-    sol_types::{SolEvent, SolValue},
-};
+use alloy_primitives::{map::HashMap, Bytes, FixedBytes, B256};
+use alloy_rpc_types::Log;
+use alloy_sol_types::{SolEvent, SolValue};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::config::TwineConfig;
@@ -24,10 +22,7 @@ use sea_orm::{
     ActiveValue::Set,
 };
 use tracing::{error, info, instrument, warn};
-use twine_evm_contracts::evm::{
-    ethereum::{l1_message_handler::L1MessageHandler, twine_chain::TwineChain::CommitedBatch},
-    twine::l2_messenger::L2Messenger::{self, L1Txns},
-};
+use twine_evm_contracts::l2_twine_messenger::{L1Txns, L2TwineMessenger};
 
 use crate::{
     error::ParserError,
@@ -70,12 +65,12 @@ impl ChainEventHandler for TwineEventHandler {
         );
 
         match *sig {
-            L2Messenger::L1TransactionsHandled::SIGNATURE_HASH => {
+            L2TwineMessenger::L1TransactionsHandled::SIGNATURE_HASH => {
                 let (deposits, withdraws) = self.handle_l1_transactions_handled(log).await?;
                 operations.extend(deposits);
                 operations.extend(withdraws);
             }
-            L2Messenger::SentMessage::SIGNATURE_HASH => {
+            L2TwineMessenger::SentMessage::SIGNATURE_HASH => {
                 let operation = self.handle_sent_message(log).await?;
                 operations.push(operation);
             }
@@ -174,7 +169,7 @@ impl TwineEventHandler {
         &self,
         log: Log,
     ) -> Result<(Vec<DbOperations>, Vec<DbOperations>)> {
-        let decoded = self.extract_log::<L2Messenger::L1TransactionsHandled>(log, "")?;
+        let decoded = self.extract_log::<L2TwineMessenger::L1TransactionsHandled>(log, "")?;
 
         let pr = self
             .decode_precompile_return(decoded.data.transactionOutput)
@@ -193,7 +188,7 @@ impl TwineEventHandler {
     }
 
     async fn handle_sent_message(&self, log: Log) -> Result<DbOperations> {
-        let decoded = self.extract_log::<L2Messenger::SentMessage>(log, "event_name")?;
+        let decoded = self.extract_log::<L2TwineMessenger::SentMessage>(log, "event_name")?;
         let data = decoded.data;
 
         let model = source_transactions::ActiveModel {
@@ -322,7 +317,7 @@ impl EvmEventHandler for TwineEventHandler {
         TWINE_EVENT_SIGNATURES.to_vec()
     }
 
-    async fn relevant_addresses(&self) -> Vec<alloy::primitives::Address> {
+    async fn relevant_addresses(&self) -> Vec<alloy_primitives::Address> {
         let mut addresss = vec![
             self.config.l2_twine_messenger_address.clone(),
             self.config.uniswap_factory_address.clone(),
@@ -340,7 +335,7 @@ impl EvmEventHandler for TwineEventHandler {
 
         let contract_addresss = addresss
             .iter()
-            .map(|addr| addr.parse::<alloy::primitives::Address>())
+            .map(|addr| addr.parse::<alloy_primitives::Address>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| eyre::eyre!("Invalid address format: {}", e))
             .unwrap();
