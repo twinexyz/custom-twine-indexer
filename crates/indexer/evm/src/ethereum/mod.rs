@@ -20,10 +20,12 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
+use twine_evm_contracts::l1_message_handler::L1MessageHandler;
 use twine_evm_contracts::twine_chain::TwineChain;
 
 pub mod handlers;
 pub const ETHEREUM_EVENT_SIGNATURES: &[&str] = &[
+    L1MessageHandler::MessageTransaction::SIGNATURE,
     TwineChain::L2WithdrawExecuted::SIGNATURE,
     TwineChain::ForcedWithdrawalSuccessful::SIGNATURE,
     TwineChain::RefundSuccessful::SIGNATURE,
