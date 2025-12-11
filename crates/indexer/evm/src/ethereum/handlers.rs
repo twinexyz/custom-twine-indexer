@@ -162,6 +162,8 @@ impl EthereumEventHandler {
         let data = decoded.data;
         let l2_chain_id = self.twine_provider.get_chain_id();
 
+        info!("data: {:?}", data.chainId);
+
         let model = source_transactions::ActiveModel {
             nonce: Set(data.nonce.try_into().unwrap()),
             chain_id: Set(data.chainId.try_into().unwrap()),

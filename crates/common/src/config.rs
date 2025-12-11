@@ -85,6 +85,8 @@ pub struct TwineConfig {
 pub struct L1sConfig {
     pub ethereum: EvmConfig,
     pub solana: SvmConfig,
+    pub arbitrum: EvmConfig,
+    pub base: EvmConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
