@@ -1,8 +1,8 @@
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_rpc_types::{Block, Filter, Log, Transaction};
-use alloy_sol_types::{SolCall, sol};
 use alloy_rpc_types::TransactionRequest;
+use alloy_rpc_types::{Block, Filter, Log, Transaction};
+use alloy_sol_types::{sol, SolCall};
 use std::sync::Arc;
 use twine_rpc::client::BatchClient;
 
@@ -118,7 +118,6 @@ impl EvmProvider {
 
     /// Get ERC-20 token information (name, symbol, decimals) for a given token address
     pub async fn get_token_info(&self, token_address: Address) -> eyre::Result<TokenInfo> {
-
         // Create contract calls
         let name_call = ERC20::nameCall {};
         let symbol_call = ERC20::symbolCall {};
