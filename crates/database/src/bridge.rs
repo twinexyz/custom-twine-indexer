@@ -503,4 +503,51 @@ impl DbClient {
 
         Ok(results)
     }
+
+    #[instrument(skip(self), fields(l2_tx_hash = l2_tx_hash, destination_chain_id = destination_chain_id))]
+    pub async fn find_execute_tx_hash_for_l2_withdraw(
+        &self,
+        l2_tx_hash: &str,
+        destination_chain_id: i64,
+    ) -> Result<Option<transaction_flows::Model>, DbErr> {
+        // First find the source transaction (L2 withdraw)
+        let source_tx: Option<source_transactions::Model> = source_transactions::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(source_transactions::Column::TransactionHash.eq(l2_tx_hash))
+                    .add(source_transactions::Column::TransactionType.eq("Withdraw"))
+                    .add(source_transactions::Column::DestinationChainId.eq(destination_chain_id)),
+            )
+            .one(&self.primary)
+            .await?;
+
+        if let Some(source_model) = source_tx {
+            // Find the execute transaction in transaction_flows using destination_chain_id and nonce
+            let execute_tx = transaction_flows::Entity::find()
+                .filter(
+                    Condition::all()
+                        .add(transaction_flows::Column::ChainId.eq(destination_chain_id))
+                        .add(transaction_flows::Column::Nonce.eq(source_model.nonce)),
+                )
+                .one(&self.primary)
+                .await?;
+
+            if let Some(execute_model) = execute_tx {
+                debug!(
+                    l2_tx_hash = l2_tx_hash,
+                    destination_chain_id = destination_chain_id,
+                    execute_tx_hash = execute_model.execute_tx_hash,
+                    "Found execute transaction for L2 withdraw"
+                );
+                return Ok(Some(execute_model));
+            }
+        }
+
+        debug!(
+            l2_tx_hash = l2_tx_hash,
+            destination_chain_id = destination_chain_id,
+            "No execute transaction found for L2 withdraw"
+        );
+        Ok(None)
+    }
 }

@@ -32,6 +32,28 @@ indexer:
       l1_message_queue_address: "0x06B45B9D4b1AbF392E2D30e433239E3b91aC0e71"
       l1_erc20_gateway_address: "0x97FFADA7BE33A6C88bdF1db705c31b3Ee082BD7b"
       eth_twine_chain_address: "0xa586eA75687F21Ab14A563C88E2440c44540b91C"
+    arbitrum:
+      common:
+        http_rpc_url: "https://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        ws_rpc_url: "wss://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        chain_id: 11155111
+        start_block: 9087470
+        block_sync_batch_size: 100
+      chain: "evm"
+      l1_message_queue_address: "0x06B45B9D4b1AbF392E2D30e433239E3b91aC0e71"
+      l1_erc20_gateway_address: "0x97FFADA7BE33A6C88bdF1db705c31b3Ee082BD7b"
+      eth_twine_chain_address: "0xa586eA75687F21Ab14A563C88E2440c44540b91C"
+    base:
+      common:
+        http_rpc_url: "https://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        ws_rpc_url: "wss://ethereum-sepolia.core.chainstack.com/a0b2070b8ba82ed45ad6387c1e8fe5c8"
+        chain_id: 11155111
+        start_block: 9087470
+        block_sync_batch_size: 100
+      chain: "evm"
+      l1_message_queue_address: "0x06B45B9D4b1AbF392E2D30e433239E3b91aC0e71"
+      l1_erc20_gateway_address: "0x97FFADA7BE33A6C88bdF1db705c31b3Ee082BD7b"
+      eth_twine_chain_address: "0xa586eA75687F21Ab14A563C88E2440c44540b91C"
     solana:
       common:
         http_rpc_url: "https://solana-devnet.core.chainstack.com/ca55faa405ab06b82b90511bf258b050"
