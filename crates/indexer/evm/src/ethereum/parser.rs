@@ -1,9 +1,5 @@
-use alloy::primitives::ruint::aliases::B256;
-use alloy::primitives::FixedBytes;
-use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::{BlockTransactions, Log};
-use alloy::sol;
-use alloy::sol_types::SolEvent;
+use alloy_primitives::FixedBytes;
+use alloy_sol_types::SolEvent as _;
 use blake3::hash;
 use chrono::{DateTime, Utc};
 use common::blockscout_entities::{
@@ -17,11 +13,8 @@ use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::env;
 use tracing::{debug, error, info};
-use twine_evm_contracts::evm::ethereum::l1_message_handler::L1MessageHandler;
-use twine_evm_contracts::evm::ethereum::twine_chain::TwineChain::{
-    self, CommitedBatch, FinalizedBatch, ForcedWithdrawalSuccessful, L2WithdrawExecuted,
-    RefundSuccessful,
-};
+use twine_evm_contracts::l1_message_handler::L1MessageHandler;
+use twine_evm_contracts::twine_chain::TwineChain;
 
 pub fn get_event_name_from_signature_hash(sig: &FixedBytes<32>) -> String {
     match *sig {
@@ -40,9 +33,13 @@ pub fn get_event_name_from_signature_hash(sig: &FixedBytes<32>) -> String {
             TwineChain::RefundSuccessful::SIGNATURE.to_string()
         }
 
-        CommitedBatch::SIGNATURE_HASH => CommitedBatch::SIGNATURE.to_string(),
+        TwineChain::CommitedBatch::SIGNATURE_HASH => {
+            TwineChain::CommitedBatch::SIGNATURE.to_string()
+        }
 
-        FinalizedBatch::SIGNATURE_HASH => FinalizedBatch::SIGNATURE.to_string(),
+        TwineChain::FinalizedBatch::SIGNATURE_HASH => {
+            TwineChain::FinalizedBatch::SIGNATURE.to_string()
+        }
 
         other => "Unknown Event".to_string(),
     }

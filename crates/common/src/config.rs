@@ -52,7 +52,7 @@ pub struct ChainConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct EvmConfig {
     pub common: ChainConfig,
-    pub l1_message_queue_address: String,
+    pub l1_message_handler_address: String,
     pub l1_erc20_gateway_address: String,
     pub eth_twine_chain_address: String,
     pub chain: String,
@@ -85,6 +85,8 @@ pub struct TwineConfig {
 pub struct L1sConfig {
     pub ethereum: EvmConfig,
     pub solana: SvmConfig,
+    pub arbitrum: EvmConfig,
+    pub base: EvmConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]

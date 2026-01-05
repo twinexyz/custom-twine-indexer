@@ -66,6 +66,16 @@ pub struct BatchL2TransactionHashResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct L2WithdrawExecuteHashResponse {
+    pub l2_tx_hash: String,
+    pub destination_chain_id: u64,
+    pub execute_tx_hash: Option<String>,
+    pub execute_block_height: Option<i64>,
+    pub executed_at: Option<DateTimeWithTimeZone>,
+    pub found: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct UserDepositsResponse {
     pub l1_tx_hash: String,
     pub l1_block_height: Option<i64>,

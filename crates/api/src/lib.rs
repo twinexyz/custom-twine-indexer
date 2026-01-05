@@ -45,23 +45,31 @@ type ApiResult<T, P> = Result<ApiResponse<T, P>, AppError>;
 
 fn make_server(state: AppState) -> Router {
     Router::new()
-        .route("/l1_deposits", get(controller::get_l1_deposits))
+        .route("/indexer/l1_deposits", get(controller::get_l1_deposits))
         .route(
-            "/get_user_deposits/{user_address}",
+            "/indexer/get_user_deposits/{user_address}",
             get(controller::get_user_deposits),
         )
-        .route("/l2_withdraws", get(controller::get_l2_withdraws))
-        .route("/l1_withdraws", get(controller::get_l1_forced_withdraws))
-        .route("/search/quick", get(search::quick_search))
+        .route("/indexer/l2_withdraws", get(controller::get_l2_withdraws))
         .route(
-            "/get_l2_txns_for_l1_txn",
+            "/indexer/l1_withdraws",
+            get(controller::get_l1_forced_withdraws),
+        )
+        .route("/indexer/search/quick", get(search::quick_search))
+        .route(
+            "/indexer/get_l2_txns_for_l1_txn",
             post(controller::get_l2_txns_for_l1_txn),
         )
         .route(
-            "/get_user_swap_events/{user_address}",
+            "/indexer/get_user_swap_events/{user_address}",
             get(controller::get_user_swap_events),
         )
-        .route("/status", get(controller::health_check))
+        .route(
+            "/indexer/get_execute_tx_hash_for_l2_withdraw/{l2_tx_hash}/{destination_chain_id}",
+            get(controller::get_execute_tx_hash_for_l2_withdraw),
+        )
+        .route("/indexer/status", get(controller::health_check))
+        .route("/health", get(controller::health_check))
         .with_state(state)
 }
 pub async fn start_api(

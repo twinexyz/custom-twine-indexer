@@ -8,7 +8,8 @@ use std::{
     time::Duration,
 };
 
-use alloy::{primitives::U64, rpc::types::Log};
+use alloy_primitives::U64;
+use alloy_rpc_types::Log;
 use async_trait::async_trait;
 use common::config::{ChainConfig, EvmConfig, IndexerSettings};
 use database::{client::DbClient, entities::last_synced, DbOperations};

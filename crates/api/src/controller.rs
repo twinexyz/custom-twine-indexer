@@ -11,7 +11,7 @@ use crate::{
     pagination::{items_count, BridgeTransactionsPagination, PlaceholderPagination},
     types::{
         BatchL2TransactionHashRequest, BatchL2TransactionHashResponse, BridgeTransactionsResponse,
-        UserDepositsResponse, UserSwapEventsResponse,
+        L2WithdrawExecuteHashResponse, UserDepositsResponse, UserSwapEventsResponse,
     },
     ApiResponse, ApiResult, AppState,
 };
@@ -405,6 +405,64 @@ pub async fn get_user_swap_events(
     Ok(ApiResponse {
         success: true,
         items: response_items,
+        next_page_params: None,
+    })
+}
+
+#[instrument(skip(state), fields(l2_tx_hash = %l2_tx_hash, destination_chain_id = destination_chain_id))]
+pub async fn get_execute_tx_hash_for_l2_withdraw(
+    State(state): State<AppState>,
+    Path((l2_tx_hash, destination_chain_id)): Path<(String, u64)>,
+) -> ApiResult<L2WithdrawExecuteHashResponse, PlaceholderPagination> {
+    info!(
+        l2_tx_hash = %l2_tx_hash,
+        destination_chain_id = destination_chain_id,
+        "Fetching execute transaction hash for L2 withdraw"
+    );
+
+    let execute_tx = state
+        .db_client
+        .find_execute_tx_hash_for_l2_withdraw(&l2_tx_hash, destination_chain_id as i64)
+        .await
+        .map_err(AppError::from)?;
+
+    let response = match execute_tx {
+        Some(execute_model) => {
+            info!(
+                l2_tx_hash = %l2_tx_hash,
+                destination_chain_id = destination_chain_id,
+                execute_tx_hash = execute_model.execute_tx_hash,
+                "Found execute transaction for L2 withdraw"
+            );
+            L2WithdrawExecuteHashResponse {
+                l2_tx_hash: l2_tx_hash.clone(),
+                destination_chain_id,
+                execute_tx_hash: execute_model.execute_tx_hash.clone(),
+                execute_block_height: execute_model.execute_block_number,
+                executed_at: execute_model.executed_at,
+                found: true,
+            }
+        }
+        None => {
+            info!(
+                l2_tx_hash = %l2_tx_hash,
+                destination_chain_id = destination_chain_id,
+                "No execute transaction found for L2 withdraw"
+            );
+            L2WithdrawExecuteHashResponse {
+                l2_tx_hash: l2_tx_hash.clone(),
+                destination_chain_id,
+                execute_tx_hash: None,
+                execute_block_height: None,
+                executed_at: None,
+                found: false,
+            }
+        }
+    };
+
+    Ok(ApiResponse {
+        success: true,
+        items: response,
         next_page_params: None,
     })
 }
