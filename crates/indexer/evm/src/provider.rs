@@ -31,7 +31,7 @@ pub struct EvmProvider {
 
 impl EvmProvider {
     pub fn new(http_url: &str, chain_id: u64) -> Self {
-        let http = ProviderBuilder::new().on_http(http_url.parse().expect("Invalid Http URL"));
+        let http = ProviderBuilder::new().connect_http(http_url.parse().expect("Invalid Http URL"));
 
         Self {
             http: Arc::new(http),

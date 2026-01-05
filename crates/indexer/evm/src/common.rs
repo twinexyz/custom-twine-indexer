@@ -138,7 +138,7 @@ pub async fn poll_missing_logs(
 pub async fn create_ws_provider(ws_rpc_url: String, chain: EVMChain) -> Result<impl Provider> {
     let provider = with_retry(|| async {
         ProviderBuilder::new()
-            .on_ws(WsConnect::new(&ws_rpc_url))
+            .connect_ws(WsConnect::new(&ws_rpc_url))
             .await
             .map_err(eyre::Report::from)
     })
@@ -154,7 +154,7 @@ pub async fn create_http_provider(http_rpc_url: String, chain: EVMChain) -> Resu
         .parse()
         .map_err(|e| eyre::eyre!("Invalid HTTP URL: {}", e))?;
 
-    let provider = ProviderBuilder::new().on_http(parsed_url);
+    let provider = ProviderBuilder::new().connect_http(parsed_url);
 
     let chain_id =
         with_retry(|| async { provider.get_chain_id().await.map_err(eyre::Report::from) }).await?;

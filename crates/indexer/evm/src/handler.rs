@@ -40,7 +40,10 @@ pub trait EvmEventHandler: Send + Sync + Clone + 'static {
             .ok_or(ParserError::MissingTransactionHash)?;
         let tx_hash_str = tx_hash.to_string();
 
-        let block_number = log.block_number.ok_or(ParserError::MissingBlockNumber)? as i64;
+        let block_number = log
+            .block_number
+            .map(|n| n as i64)
+            .ok_or(ParserError::MissingBlockNumber)?;
 
         let timestamp = log
             .block_timestamp
